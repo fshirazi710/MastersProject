@@ -9,4 +9,7 @@ https://nodejs.org/en/download/
 
 4 - Run 'npm start' from the root of the repository. If it works it should display the simple text "Hello World" and on the next line "Hello from new!"
 
-This example shows you how to export and import in a really simple way.
+This example shows you how to export and import in a really simple way. 
+
+If it succeeds it should look like this:
+![Alt text](HelloWorldSuccess "Title")
