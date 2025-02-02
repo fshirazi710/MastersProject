@@ -17,6 +17,9 @@ Cargo.lock
 .venv/
 venv/
 
+# Node Modules
+node_modules/
+
 # Nuxt build output
 .nuxt/
 dist/
