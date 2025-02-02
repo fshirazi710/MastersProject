@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-function Contact() {
+function LoginForm() {
   const password = 'swordfish';
   const email = 'email@gmail.com';
 
@@ -45,4 +45,4 @@ function Contact() {
   );
 }
 
-export default Contact;
+export default LoginForm;
