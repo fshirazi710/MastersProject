@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 
 function Contact() {
   const password = 'swordfish';
-  const email = 'email';
+  const email = 'email@gmail.com';
 
   const [authorized, setAuthorized] = useState(false);
 
@@ -13,7 +13,7 @@ function Contact() {
     const enteredPassword = e.target.querySelector(
       'input[type="password"]').value;
 
-    const auth = enteredPassword == password && enteredEmail == email;
+    const auth = enteredPassword === password && enteredEmail == email;
     setAuthorized(auth)
   }
 
@@ -23,23 +23,23 @@ function Contact() {
       <input type = "email" placeholder = "Email"/> <br/>
       <h2>Enter Password</h2>
       <input type = "password" placeholder = "Password"/> <br/> <br/>
-      <input type = "submit" />
+      <input type = "submit" value = "Submit"/>
     </form>
   );
 
   const electionInfo = (
-    <ul>
-      <li>
+    <div>
+      <h1>
         Voting system
-      </li>
-      <li>
+      </h1>
+      <h2>
         List of open elections
-      </li>
-    </ul>
+      </h2>
+    </div>
   );
 
   return (
-      <div id="authorization">
+      <div id="authorization" className = "authorization_form">
         {authorized ? electionInfo : login}
       </div>
   );
