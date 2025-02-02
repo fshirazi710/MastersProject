@@ -12,4 +12,4 @@ https://nodejs.org/en/download/
 This example shows you how to export and import in a really simple way. 
 
 If it succeeds it should look like this:
-![Alt text](HelloWorldSuccess "Title")
+![image](https://github.com/user-attachments/assets/b5bb5196-4ecf-49b4-88c3-22ff318e87c3)
