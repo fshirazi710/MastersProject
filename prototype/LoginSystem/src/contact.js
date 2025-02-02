@@ -2,37 +2,45 @@ import React, { useState } from 'react';
 
 function Contact() {
   const password = 'swordfish';
+  const email = 'email';
+
   const [authorized, setAuthorized] = useState(false);
 
   function handleSubmit(e) {
+    const enteredEmail = e.target.querySelector(
+      'input[type="email"]').value;
+
     const enteredPassword = e.target.querySelector(
       'input[type="password"]').value;
-    const auth = enteredPassword == password;
+
+    const auth = enteredPassword == password && enteredEmail == email;
     setAuthorized(auth)
   }
 
   const login = (
     <form action = "#" onSubmit = {handleSubmit}>
-      <input type = "password" placeholder = "Password"/>
+      <h2>Enter Email</h2>
+      <input type = "email" placeholder = "Email"/> <br/>
+      <h2>Enter Password</h2>
+      <input type = "password" placeholder = "Password"/> <br/> <br/>
       <input type = "submit" />
     </form>
   );
 
-  const contactInfo = (
+  const electionInfo = (
     <ul>
       <li>
-        client@example.com
+        Voting system
       </li>
       <li>
-        555.555.5555
+        List of open elections
       </li>
     </ul>
   );
 
   return (
       <div id="authorization">
-        <h1>{authorized ? 'Contact' : 'Enter the Password'}</h1>
-        {authorized ? contactInfo : login}
+        {authorized ? electionInfo : login}
       </div>
   );
 }
