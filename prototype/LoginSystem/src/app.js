@@ -1,13 +1,12 @@
 import React from 'react';
 import Contact from './contact'
 
-function MyComponent() {
-  return <h1>Hello world</h1>;
+function LoginSystemTitle() {
+  return <h1>Simple Login System</h1>;
 }
-
 
 function App() {
   return <Contact />;
 }
 
-export {App as App, MyComponent as MyComponent};
+export {App as App, LoginSystemTitle as LoginSystemTitle};

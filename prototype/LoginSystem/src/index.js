@@ -1,8 +1,15 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 
-import {App} from './app';
+import {App, LoginSystemTitle} from './app';
+
+const contents = (
+  <div>
+    <LoginSystemTitle/>
+    <App/>
+  </div>
+);
 
 ReactDOM.createRoot(
   document.getElementById('main')
-).render(<App />);
+).render(contents);
