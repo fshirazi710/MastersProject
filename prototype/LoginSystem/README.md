@@ -4,7 +4,7 @@
 If you are using Windows you can follow the instructions here to install node on your computer, you want to install the most recent version on their site, which when I ran it was `v22.13.1`:
 https://nodejs.org/en/download/
 This will also install npm for you. You want to use the msi installer since it will install node for you in `Program Files` and automatically add it to your path environmental variable, so after you finish going through with the installer you can do `npm -v` and `node -v` in a command prompt to verify they work and use node and npm from the cmd from there on.
-
+su
 
 ![image](https://github.com/user-attachments/assets/f0f761c4-921d-4504-ad9b-95b8c959f277)
 
@@ -22,7 +22,7 @@ Then follow to the end.
 
 3 - To run the fast-api backend, first you need to make sure you have a few dependencies installed.
 So open a cmd prompt **with admin privileges** (otherwise the dependencies may be installed to appdata instead of sitepackages, and thus not be added to your path automatically with all the other libraries in Python's sitepackages folder). Then run:
- `pip install fastapi uvicorn sqlalchemy databases pymysql aiomysql`
+ `pip install fastapi uvicorn sqlalchemy databases pymysql aiomysql "fastapi[standard]" sqlmodel`
 
 4 - After you install the dependencies, cd to `LoginSystem/backend` then run `fastapi dev main.py` and this will start up the fast-api backend, at `http://127.0.0.1:8000`.
 
