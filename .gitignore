@@ -16,6 +16,7 @@ Cargo.lock
 # Virtual environment
 .venv/
 venv/
+__pycache__
 
 # Nuxt build output
 .nuxt/
