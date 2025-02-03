@@ -22,7 +22,7 @@ Then follow to the end.
 
 3 - To run the fast-api backend, first you need to make sure you have a few dependencies installed.
 So open a cmd prompt **with admin privileges** (otherwise the dependencies may be installed to appdata instead of sitepackages, and thus not be added to your path automatically with all the other libraries in Python's sitepackages folder). Then run:
- `pip install fastapi uvicorn sqlalchemy databases pymysql aiomysql "fastapi[standard]" sqlmodel`
+ `python -m pip install fastapi uvicorn sqlalchemy databases pymysql aiomysql "fastapi[standard]" sqlmodel`
 
 4 - After you install the dependencies, cd to `LoginSystem/backend` then run `fastapi dev main.py` and this will start up the fast-api backend, at `http://127.0.0.1:8000`.
 
