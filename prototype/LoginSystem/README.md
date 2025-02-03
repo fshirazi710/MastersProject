@@ -3,7 +3,17 @@
 1 - To run the react frontend, first you need to make sure you have node and npm installed. 
 If you are using Windows you can follow the instructions here to install node on your computer, you want to install the most recent version on their site, which when I ran it was `v22.13.1`:
 https://nodejs.org/en/download/
-This will also install npm for you. 
+This will also install npm for you. You want to use the msi installer since it will install node for you in `Program Files`
+![image](https://github.com/user-attachments/assets/f0f761c4-921d-4504-ad9b-95b8c959f277)
+
+You want to install all of the default packages in the installer:
+![image](https://github.com/user-attachments/assets/ee2a800e-593c-4611-9d3b-06a8b120732e)
+
+When you get to the "tools for Native Modules Page", you can just leave the checkbox unchecked as follows:
+![image](https://github.com/user-attachments/assets/e5142f0b-ddbe-4b45-aa45-c114654288ca)
+
+Then follow to the end.
+
 
 2 - cd to `LoginSystem/frontend`. Then, run `npm install` if this is your first time running it and you don't have a `frontend/node_modules` folder. Finally, run `npm start` and the react frontend app should start running at:
 `http://localhost:3000/`.
