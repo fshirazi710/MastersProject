@@ -20,6 +20,9 @@ venv/
 # Node Modules
 node_modules/
 
+# Cache files
+__pycache__/
+
 # Nuxt build output
 .nuxt/
 dist/
