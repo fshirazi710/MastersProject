@@ -3,7 +3,9 @@
 1 - To run the react frontend, first you need to make sure you have node and npm installed. 
 If you are using Windows you can follow the instructions here to install node on your computer, you want to install the most recent version on their site, which when I ran it was `v22.13.1`:
 https://nodejs.org/en/download/
-This will also install npm for you. You want to use the msi installer since it will install node for you in `Program Files`
+This will also install npm for you. You want to use the msi installer since it will install node for you in `Program Files` and automatically add it to your path environmental variable, so after you finish going through with the installer you can do `npm -v` and `node -v` in a command prompt to verify they work and use node and npm from the cmd from there on.
+
+
 ![image](https://github.com/user-attachments/assets/f0f761c4-921d-4504-ad9b-95b8c959f277)
 
 You want to install all of the default packages in the installer:
