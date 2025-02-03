@@ -14,4 +14,9 @@ So open a cmd prompt **with admin privileges** (otherwise the dependencies may b
 
 4 - After you install the dependencies, cd to `LoginSystem/backend` then run `fastapi dev main.py` and this will start up the fast-api backend, at `http://127.0.0.1:8000`.
 
-5 - Try putting in an email and a password then clicking submit for the frontend, it should send a POST request to the endpoint at `/add_user/` in the backend, then add a User entry to `database.db` for the backend. You can view the updated database in vscode with the extension `SQLite Explorer` which should let you right-click and press `Open Database` on the `database.db` file in the backend folder, expend the `SQLite Explorer` arrow in te bottom left below `Timeline`, click on the `user` table, then on the play button next to it.
+5 - Try putting in an email and a password then clicking submit for the frontend, it should send a POST request to the endpoint at `/add_user/` in the backend, then add a User entry to `database.db` for the backend.
+Note that the email you enter has to be in the format of a normal email, so it should have an `@` and a `.` in the string somewhere.
+
+You can view the updated database in vscode with the extension `SQLite Explorer` which should let you right-click and press `Open Database` on the `database.db` file in the backend folder, expend the `SQLite Explorer` arrow in te bottom left below `Timeline`, click on the `user` table, then on the play button next to it.
+
+![image](https://github.com/user-attachments/assets/6ea1176d-6981-4f00-a8e4-0045d2defe40)
