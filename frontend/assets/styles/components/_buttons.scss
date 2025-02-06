@@ -1,0 +1,37 @@
+@use '../variables' as *;
+
+// Global button styles used throughout the application
+.btn {
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: transform 0.2s, opacity 0.2s;
+  
+  // Primary action buttons
+  &.primary {
+    background-color: $primary-color;
+    color: #1a1a1a;
+  }
+  
+  // Secondary/outline buttons
+  &.secondary {
+    background-color: transparent;
+    border: 2px solid $primary-color;
+    color: $primary-color;
+  }
+  
+  // Hover effects
+  &:hover {
+    transform: translateY(-1px);
+    opacity: 0.9;
+  }
+  
+  // Disabled state
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+} 

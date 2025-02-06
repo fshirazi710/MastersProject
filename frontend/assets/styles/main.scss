@@ -1,0 +1,48 @@
+// Main stylesheet that imports and coordinates all other styles
+
+// Import global utilities
+@use '@/assets/styles/_variables' as *;
+@use '@/assets/styles/_mixins' as *;
+
+// Import component-specific styles
+@use '@/assets/styles/components/_buttons';
+@use '@/assets/styles/components/_cards';
+@use '@/assets/styles/components/_votes';
+@use '@/assets/styles/components/_forms';
+
+// Import page-specific styles
+@use '@/assets/styles/pages/_home';
+
+// Global base styles
+body {
+  font-family: $font-family;
+  background-color: $background-color;
+  color: $text-color;
+}
+
+// Layout utility classes
+.container {
+  max-width: $desktop;
+  margin: 0 auto;
+  padding: 0 $spacing-md;
+}
+
+// Global form styles
+.form-input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid $border-color;
+  border-radius: 4px;
+  font-size: 1rem;
+  
+  &:focus {
+    outline: none;
+    border-color: $primary-color;
+  }
+}
+
+// Grid system utilities
+.grid {
+  display: grid;
+  gap: $spacing-md;
+} 

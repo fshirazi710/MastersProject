@@ -1,0 +1,70 @@
+@use '../variables' as *;
+@use '../mixins' as *;
+
+// Main container for the active votes page
+.active-votes {
+  max-width: $desktop;
+  margin: 0 auto;
+  padding: $spacing-lg;
+}
+
+// Search and filter controls section
+.filters {
+  display: flex;
+  gap: $spacing-md;
+  margin-bottom: $spacing-lg;
+  flex-wrap: wrap;
+}
+
+// Search input container
+.search-bar {
+  flex: 1;
+  min-width: 200px;
+}
+
+// Search input styling
+.search-input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid $border-color;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+// Filter dropdown styling
+.filter-select {
+  padding: 0.75rem;
+  border: 1px solid $border-color;
+  border-radius: 4px;
+  font-size: 1rem;
+  min-width: 150px;
+}
+
+// Grid layout for vote cards
+.votes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: $spacing-lg;
+}
+
+// Message shown when no votes match filters
+.no-results {
+  text-align: center;
+  padding: 3rem;
+  background: white;
+  border-radius: 8px;
+  color: #666;
+}
+
+// Mobile responsive adjustments
+@include mobile {
+  .filters {
+    flex-direction: column;
+  }
+  
+  .search-bar,
+  .filter-options,
+  .filter-select {
+    width: 100%;
+  }
+} 

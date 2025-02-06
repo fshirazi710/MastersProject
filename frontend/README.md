@@ -59,6 +59,97 @@ The frontend serves as the user interface layer, focusing on:
 - State management (to be implemented)
 - API client (to be implemented)
 
+## SCSS Architecture and Best Practices
+
+### Directory Structure
+```
+assets/styles/
+├── _variables.scss    # Global variables (colors, spacing, etc.)
+├── _mixins.scss      # Reusable mixins and functions
+├── components/       # Component-specific styles
+│   ├── _buttons.scss # Button styles
+│   ├── _cards.scss   # Card component styles
+│   ├── _forms.scss   # Form styles
+│   └── _votes.scss   # Vote-related styles
+├── pages/           # Page-specific styles
+│   └── _home.scss   # Home page styles
+└── main.scss        # Main style entry point
+```
+
+### Key Principles
+
+1. **Module Organization**
+   - Each component gets its own SCSS file
+   - Use `@use` instead of `@import` for module imports
+   - Keep styles scoped to their component
+   - Page-specific styles go in the `pages/` directory
+
+2. **Import Structure**
+   - Import variables and mixins at the top of each file that uses them
+   - Use `@use '../variables' as *` pattern
+   - Keep imports consistent across files
+
+3. **Component Style Pattern**
+   - Base styles first
+   - Nested modifiers second
+   - Media queries last
+   - Maximum nesting depth of 3 levels
+
+4. **Variable Usage**
+   - Use design tokens from _variables.scss
+   - Maintain consistent spacing, colors, and typography
+   - Avoid hard-coded values
+
+5. **Responsive Design**
+   - Use breakpoint mixins consistently
+   - Mobile-first approach
+   - Test across different screen sizes
+
+6. **Vue Component Integration**
+   - Use `<style lang="scss" scoped>`
+   - Keep component-specific overrides minimal
+   - Move reusable styles to SCSS modules
+
+7. **File Naming**
+   - Prefix partial files with underscore
+   - Use kebab-case for multi-word files
+
+### Best Practices
+
+1. **Keep Specificity Low**
+   - Avoid deep nesting (max 3 levels)
+   - Use classes instead of element selectors
+   - Avoid `!important`
+
+2. **Maintain Consistency**
+   - Use variables for repeated values
+   - Follow established naming patterns
+   - Keep similar components styled similarly
+
+3. **Performance**
+   - Split styles into logical modules
+   - Use appropriate selectors
+   - Minimize style rule duplications
+
+4. **Documentation**
+   - Comment complex selectors
+   - Document mixin parameters
+   - Explain non-obvious style decisions
+
+### Common Issues and Solutions
+
+1. **Undefined Mixin Error**
+   - Ensure mixins are imported in files that use them
+   - Check import paths are correct
+
+2. **Variable Scope**
+   - Import variables in each file that needs them
+   - Use consistent import patterns
+
+3. **Component Style Isolation**
+   - Use scoped styles in Vue components
+   - Be mindful of selector specificity
+
 ### Key Components
 ```
 frontend/
@@ -110,3 +201,20 @@ VITE_API_URL=http://localhost:8000
 - [Nuxt Documentation](https://nuxt.com)
 - [Vue.js Documentation](https://vuejs.org)
 - [Vue Style Guide](https://vuejs.org/style-guide)
+
+## Package Dependencies
+
+### Production Dependencies
+Dependencies required to run the application in production:
+- `nuxt`: Core framework
+- `vue`: View library
+- `vue-router`: Routing functionality
+
+These packages are essential for the actual functioning of the app and get shipped to production.
+
+### Development Dependencies
+Dependencies only needed during development or building:
+- `sass`: SCSS compiler
+- `sass-loader`: Webpack loader for SCSS
+
+These packages are used only during development/build and don't get shipped to production. For example, Sass compiles SCSS to CSS during build, but only the compiled CSS is shipped to production.
