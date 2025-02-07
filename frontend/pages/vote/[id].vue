@@ -53,7 +53,7 @@
       </div>
       <form @submit.prevent="handleVote" class="voting-form">
         <div class="options-list">
-          <div v-for="option in vote.options" :key="option.id" class="option-item">
+          <label v-for="option in vote.options" :key="option.id" class="option-item">
             <input
               type="radio"
               :id="option.id"
@@ -62,8 +62,10 @@
               name="vote-option"
               required
             >
-            <label :for="option.id">{{ option.text }}</label>
-          </div>
+            <div class="option-content">
+              {{ option.text }}
+            </div>
+          </label>
         </div>
         <button type="submit" class="btn primary" :disabled="!selectedOption">
           Submit Encrypted Vote
