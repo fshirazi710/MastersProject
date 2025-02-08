@@ -1,0 +1,51 @@
+@use '../variables' as *;
+@use '../mixins' as *;
+
+.faq-page {
+  max-width: $desktop;
+  margin: 0 auto;
+  padding: $spacing-lg;
+
+  h1 {
+    text-align: center;
+    margin-bottom: $spacing-xl;
+  }
+}
+
+.faq-section {
+  margin-bottom: $spacing-xl;
+
+  h2 {
+    color: $primary-color;
+    margin-bottom: $spacing-lg;
+  }
+}
+
+.faq-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: $spacing-lg;
+}
+
+.faq-item {
+  background: white;
+  padding: $spacing-lg;
+  border-radius: 8px;
+  @include card-shadow;
+
+  h3 {
+    margin-bottom: $spacing-md;
+    color: $text-color;
+  }
+
+  p {
+    color: $text-secondary;
+    line-height: 1.6;
+  }
+}
+
+@include mobile {
+  .faq-grid {
+    grid-template-columns: 1fr;
+  }
+} 
