@@ -1,38 +1,72 @@
 <template>
   <div class="home">
+    <!-- Hero section - Main landing area -->
     <section class="hero">
       <h1>Timed Release Crypto System</h1>
       <p class="subtitle">Secure time-locked message delivery on the blockchain</p>
+      <!-- Call to action buttons with navigation -->
       <div class="cta-buttons">
-        <button class="btn primary">Get Started</button>
-        <button class="btn secondary">Learn More</button>
+        <NuxtLink to="/create-vote" class="btn primary">Create Vote</NuxtLink>
+        <NuxtLink to="/faq" class="btn secondary">Learn More</NuxtLink>
       </div>
     </section>
 
+    <!-- Features section - Highlight key functionality -->
     <section class="features">
       <h2>Key Features</h2>
+      <!-- Feature cards grid -->
       <div class="feature-grid">
-        <div class="feature-card">
-          <h3>Secure Messaging</h3>
-          <p>End-to-end encrypted communication with time-lock capabilities</p>
+        <!-- Secure Voting feature -->
+        <div class="feature-card" @click="navigateTo('/faq#security')">
+          <h3>Secure Voting</h3>
+          <p>End-to-end encrypted voting with time-lock capabilities</p>
         </div>
-        <div class="feature-card">
+        
+        <!-- Time Lock feature -->
+        <div class="feature-card" @click="navigateTo('/faq#time-lock')">
           <h3>Time Lock</h3>
-          <p>Set specific release times for your encrypted messages</p>
+          <p>Set specific release times for vote results</p>
         </div>
-        <div class="feature-card">
+        
+        <!-- Blockchain feature -->
+        <div class="feature-card" @click="navigateTo('/faq#blockchain')">
           <h3>Blockchain Powered</h3>
-          <p>Leveraging blockchain technology for secure and transparent operations</p>
+          <p>Leveraging blockchain technology for transparent voting</p>
         </div>
-        <div class="feature-card">
+        
+        <!-- User Control feature -->
+        <div class="feature-card" @click="navigateTo('/faq#user-control')">
           <h3>User Control</h3>
-          <p>Full control over your messages and release conditions</p>
+          <p>Full control over your voting participation</p>
         </div>
       </div>
     </section>
   </div>
 </template>
 
+<script setup>
+// Import navigateTo from Nuxt
+const { navigateTo } = useRouter()
+
+// Track feature card clicks for analytics
+const trackFeatureClick = (feature) => {
+  // TODO: Implement analytics tracking
+  console.log(`Feature clicked: ${feature}`)
+}
+
+// Handle learn more click with section highlight
+const handleLearnMore = (section) => {
+  navigateTo({
+    path: '/faq',
+    hash: section
+  })
+}
+</script>
+
 <style lang="scss" scoped>
-// Any component-specific overrides only
+// Component-specific style overrides only
+// Main styles are in _home.scss
+.feature-card {
+  cursor: pointer;
+}
 </style> 

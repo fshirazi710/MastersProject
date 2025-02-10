@@ -12,6 +12,8 @@
 
 // Import page-specific styles
 @use '@/assets/styles/pages/_home';
+@use '@/assets/styles/pages/_vote-details';
+@use '@/assets/styles/pages/_faq';
 
 // Global base styles
 body {
