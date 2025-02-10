@@ -1,0 +1,2 @@
+[CORS]
+CORS_ALLOWED_ORIGINGS = http://localhost:3000
