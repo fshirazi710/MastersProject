@@ -77,31 +77,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-
-// TODO: Replace with actual API call
-const votes = ref([
-  {
-    id: 1,
-    title: 'Community Governance Proposal',
-    description: 'Vote on the new community guidelines and governance structure',
-    startDate: '2024-03-20T10:00:00',
-    endDate: '2024-03-27T10:00:00',
-    status: 'active',
-    participantCount: 156,
-    optionCount: 3
-  },
-  {
-    id: 2,
-    title: 'Technical Committee Election',
-    description: 'Select members for the technical advisory committee',
-    startDate: '2024-03-25T00:00:00',
-    endDate: '2024-04-01T00:00:00',
-    status: 'upcoming',
-    participantCount: 0,
-    optionCount: 5
-  },
-  // Add more mock data as needed
-])
+import axios from 'axios'
 
 // Search and filter state
 const searchQuery = ref('')
@@ -117,6 +93,25 @@ const filteredVotes = computed(() => {
     const matchesStatus = statusFilter.value === 'all' || vote.status === statusFilter.value
     return matchesSearch && matchesStatus
   })
+})
+
+// Reactive reference for votes
+const votes = ref([])
+
+// Fetch votes from the FastAPI backend
+const getVotes = () => {
+  axios.get("http://127.0.0.1:8000/all-votes")
+    .then(response => {
+      votes.value = response.data.data
+    })
+    .catch(error => {
+      console.error("Failed to fetch votes:", error)
+    })
+}
+
+// Hook to execute the getVotes function when the component is mounted
+onMounted(() => {
+  getVotes()
 })
 
 // Format date strings for display

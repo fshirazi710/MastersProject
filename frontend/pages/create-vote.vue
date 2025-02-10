@@ -92,6 +92,10 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import axios from 'axios'
+
+const router = useRouter();
 
 // Initialize form data with reactive reference
 const voteData = ref({
@@ -112,13 +116,13 @@ const removeOption = (index) => {
   voteData.value.options.splice(index, 1)
 }
 
-// Handle form submission
 const handleSubmit = () => {
-  // TODO: Add validation
-  // TODO: Add API integration
-  // TODO: Add error handling
-  // TODO: Add success feedback
-  console.log('Form submitted:', voteData.value)
+  axios.post("http://127.0.0.1:8000/create-vote", voteData.value)
+    .then(response => {
+      alert(response.data.message)
+      router.push('/active-votes')
+    })
+    console.log('Form submitted:', voteData.value)
 }
 </script>
 
