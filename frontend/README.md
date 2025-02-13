@@ -227,3 +227,29 @@ Dependencies only needed during development or building:
 - `sass-loader`: Webpack loader for SCSS
 
 These packages are used only during development/build and don't get shipped to production. For example, Sass compiles SCSS to CSS during build, but only the compiled CSS is shipped to production.
+
+### Key Design Decisions
+
+1. **Secret Holder System**
+   - No limit on number of secret holders (more = better security)
+   - Reward pool is divided equally among all participating holders
+   - Minimum deposits kept low (0.001 ETH) to encourage participation
+   - Security deposits are returned after successful participation
+
+2. **Information Architecture**
+   - Complex reward explanations belong in become-holder view
+   - Create-vote form keeps minimal, essential inputs
+   - Dynamic reward calculations shown where holders make decisions
+   - Clear separation between vote creation and holder recruitment
+
+3. **User Experience Principles**
+   - Show relevant information where decisions are made
+   - Display dynamic reward calculations for holders
+   - Keep forms simple and focused
+   - Provide clear feedback about deposits and rewards
+
+4. **Common Pitfalls to Avoid**
+   - Don't put holder-specific information in vote creation
+   - Avoid hardcoding minimum holder counts
+   - Don't complicate the vote creation process
+   - Keep deposit requirements clear and simple

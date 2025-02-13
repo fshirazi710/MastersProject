@@ -6,6 +6,18 @@
     <div class="info-card">
       <h2>What is a Secret Holder?</h2>
       <p>Secret holders are trusted parties who maintain encrypted keys that help secure the voting process. Each holder plays a crucial role in the final vote revelation.</p>
+      
+      <div class="reward-info">
+        <h3>💰 Rewards System</h3>
+        <p>The reward pool is divided equally among all participating secret holders who successfully:</p>
+        <ul class="reward-list">
+          <li>Maintain their key throughout the voting period</li>
+          <li>Release their key share after voting ends</li>
+          <li>Complete all holder responsibilities</li>
+        </ul>
+        <p class="note">Note: More holders = smaller individual rewards, but better system security</p>
+      </div>
+
       <ul class="responsibilities">
         <li>Hold a portion of the decryption key</li>
         <li>Release your key share after voting ends</li>
@@ -24,6 +36,12 @@
           <div class="meta-item">
             <span class="label">Required Deposit:</span>
             <span class="value">{{ session.requiredDeposit }} ETH</span>
+            <span class="note">(Returned after successful participation)</span>
+          </div>
+          <div class="meta-item">
+            <span class="label">Reward Pool:</span>
+            <span class="value">{{ session.rewardPool }} ETH</span>
+            <span class="reward-per-holder">Current reward per holder: {{ (session.rewardPool / session.currentHolders).toFixed(6) }} ETH</span>
           </div>
           <div class="meta-item">
             <span class="label">Holders:</span>

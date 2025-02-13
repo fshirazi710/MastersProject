@@ -69,11 +69,11 @@
               id="initiatorDeposit"
               v-model="voteData.initiatorDeposit"
               required
-              min="0.003"
+              min="0.001"
               step="0.001"
               class="form-input"
             >
-            <p class="helper-text">Minimum 0.003 ETH (0.001 ETH per holder minimum)</p>
+            <p class="helper-text">Total amount to reward secret holders</p>
           </div>
 
           <div class="form-group">
@@ -87,7 +87,7 @@
               step="0.001"
               class="form-input"
             >
-            <p class="helper-text">Minimum 0.001 ETH security deposit per holder</p>
+            <p class="helper-text">Security deposit required from each holder</p>
           </div>
         </div>
       </div>
