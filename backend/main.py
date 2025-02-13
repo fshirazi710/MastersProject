@@ -1,20 +1,21 @@
 from fastapi import FastAPI
-from app.routers.vote_router import router as vote_router
 from starlette.middleware.cors import CORSMiddleware
-from app.constants import CORS_ALLOWED_ORIGINS
-from app.routers.secret_holder_router import router as secret_holder_router
+from app.core.config import settings
+from app.api.v1.router import api_router
 
-app = FastAPI()
-
-# Allow requests from the frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[CORS_ALLOWED_ORIGINS],
-    allow_credentials=True,
-    allow_methods=["*"], # Allow all HTTP methods (GET, POST, etc...)
-    allow_headers=["*"], # Allow all headers
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
 
-# Include routers
-app.include_router(vote_router)
-app.include_router(secret_holder_router)
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include API router
+app.include_router(api_router, prefix=settings.API_V1_STR)

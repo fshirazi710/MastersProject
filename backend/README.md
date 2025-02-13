@@ -82,27 +82,41 @@ SECRET_KEY=your_secret_key
 ### Project Structure
 ```
 backend/
-├── src/
-│   ├── controllers/        # Request handlers
-│   │   ├── messages.py
-│   │   └── agents.py
-│   ├── routes/            # API route definitions
-│   │   ├── messages.py
-│   │   └── agents.py
-│   ├── services/          # Business logic
-│   │   ├── blockchain.py  # Web3 interactions
-│   │   ├── crypto.py      # Cryptographic operations
-│   │   └── database.py    # Database operations
-│   ├── models/            # Data models
-│   │   ├── message.py
-│   │   └── agent.py
-│   └── utils/             # Helper functions
-│       ├── web3_utils.py
-│       └── crypto_utils.py
-├── config/                # Configuration files
-│   ├── database.py
-│   └── settings.py
-└── tests/                # Unit tests
+├── app/
+│   ├── api/
+│   │   ├── v1/
+│   │   │   ├── endpoints/
+│   │   │   │   ├── secret_holders.py    # From secret_holder_router.py
+│   │   │   │   ├── elections.py         # From vote_router.py
+│   │   │   │   └── health.py
+│   │   │   └── router.py
+│   │   └── deps.py
+│   ├── core/
+│   │   ├── config.py                    # Enhanced version of constants.py
+│   │   ├── security.py
+│   │   └── blockchain.py                # From services/blockchain.py
+│   ├── db/
+│   │   ├── session.py
+│   │   └── base.py
+│   ├── models/                          # Database models
+│   │   ├── election.py                  # Enhanced from vote.py
+│   │   ├── secret_holder.py
+│   │   └── vote.py
+│   ├── schemas/                         # Pydantic models
+│   │   ├── election.py
+│   │   ├── secret_holder.py
+│   │   └── vote.py
+│   └── services/
+│       ├── blockchain.py
+│       ├── crypto.py
+│       └── election.py
+├── alembic/
+│   └── versions/
+├── tests/
+│   ├── api/
+│   ├── services/
+│   └── conftest.py
+└── main.py
 ```
 
 ### Running the Server
