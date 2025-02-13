@@ -19,6 +19,8 @@ The frontend serves as the user interface layer, focusing on:
   - Title and description
   - Start/end dates
   - Dynamic voting options
+  - Secret holder requirements
+  - Deposit configuration
 - ✅ Active Votes listing with:
   - Search and filtering
   - Status indicators
@@ -28,6 +30,10 @@ The frontend serves as the user interface layer, focusing on:
   - Status indicators
   - Secret holder list
   - Result display (when available)
+- ✅ Secret Holder Features:
+  - Deposit requirements
+  - Holder registration
+  - Status tracking
 
 ### Frontend TODO List
 - [ ] User Interface Components
@@ -41,6 +47,7 @@ The frontend serves as the user interface layer, focusing on:
   - Vote status fetching
   - Result retrieval
   - Error handling
+  - Deposit management
 - [ ] User Experience
   - Loading indicators
   - Success/error notifications
@@ -50,30 +57,45 @@ The frontend serves as the user interface layer, focusing on:
   - Component documentation
   - API integration docs
   - Usage examples
+  - Deposit flow documentation
 
 ## Technical Architecture
 
 ### Frontend Stack
 - Nuxt 3 (Vue.js framework)
 - Vue Router for navigation
-- State management (to be implemented)
-- API client (to be implemented)
-
-## SCSS Architecture and Best Practices
+- SCSS for styling
+- Axios for API requests
 
 ### Directory Structure
 ```
-assets/styles/
-├── _variables.scss    # Global variables (colors, spacing, etc.)
-├── _mixins.scss      # Reusable mixins and functions
-├── components/       # Component-specific styles
-│   ├── _buttons.scss # Button styles
-│   ├── _cards.scss   # Card component styles
-│   ├── _forms.scss   # Form styles
-│   └── _votes.scss   # Vote-related styles
-├── pages/           # Page-specific styles
-│   └── _home.scss   # Home page styles
-└── main.scss        # Main style entry point
+frontend/
+├── assets/
+│   └── styles/
+│       ├── _variables.scss     # Global design tokens
+│       ├── _mixins.scss       # Reusable mixins
+│       ├── main.scss          # Main style entry
+│       ├── components/        # Component styles
+│       │   ├── _buttons.scss  # Button variations
+│       │   ├── _cards.scss    # Card components
+│       │   ├── _forms.scss    # Form elements
+│       │   └── _votes.scss    # Vote-specific styles
+│       └── pages/            # Page-specific styles
+│           ├── _home.scss    
+│           ├── _vote-details.scss
+│           ├── _faq.scss
+│           ├── _become-holder.scss
+│           └── _create-vote.scss
+├── components/               # Vue components
+│   └── AppLayout.vue        # Main layout wrapper
+├── pages/                   # Route pages
+│   ├── index.vue           # Home page
+│   ├── create-vote.vue     # Vote creation
+│   ├── active-votes.vue    # Vote listing
+│   ├── become-holder.vue   # Holder registration
+│   └── vote/
+│       └── [id].vue        # Individual vote view
+└── public/                 # Static assets
 ```
 
 ### Key Principles
@@ -150,20 +172,6 @@ assets/styles/
    - Use scoped styles in Vue components
    - Be mindful of selector specificity
 
-### Key Components
-```
-frontend/
-├── components/          # Reusable UI components
-│   ├── AppLayout.vue   # Main layout wrapper
-│   └── [future components...]
-├── pages/              # Route pages
-│   ├── index.vue       # Home page
-│   ├── create-vote.vue # Vote creation
-│   ├── active-votes.vue# Vote listing
-│   └── vote/[id].vue   # Individual vote
-└── [future directories...]
-```
-
 ## Setup and Development
 
 ```bash
@@ -209,6 +217,7 @@ Dependencies required to run the application in production:
 - `nuxt`: Core framework
 - `vue`: View library
 - `vue-router`: Routing functionality
+- `axios`: HTTP client
 
 These packages are essential for the actual functioning of the app and get shipped to production.
 

@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from app.routers.vote_router import router as vote_router
 from starlette.middleware.cors import CORSMiddleware
 from app.constants import CORS_ALLOWED_ORIGINS
+from app.routers.secret_holder_router import router as secret_holder_router
 
 app = FastAPI()
 
@@ -16,3 +17,4 @@ app.add_middleware(
 
 # Include routers
 app.include_router(vote_router)
+app.include_router(secret_holder_router)
