@@ -31,3 +31,17 @@ class SecretHolder(BaseModel):
     election_id = Column(Integer, ForeignKey("elections.id"))
     election = relationship("Election", back_populates="secret_holders")
     shares = relationship("Share", back_populates="holder") 
+
+class JoinSessionRequest(BaseModel):
+    sessionId: int
+    depositAmount: float
+
+class SecretHolderPosition(BaseModel):
+    id: int
+    title: str
+    description: str
+    requiredDeposit: float
+    currentHolders: int
+    requiredHolders: int
+    startDate: str
+    endDate: str
