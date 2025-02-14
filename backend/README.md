@@ -220,3 +220,21 @@ The service includes:
 ## License
 
 [Add license information here]
+
+## Changes Made and Why:
+# Made a new branch just to make sure that I didn't remove anything vital from the changes Luke had made
+
+1. Removed api/ and its contents
+    - This was confusing to look at, as it seemed the code within was redundant when looking at the rest of the codebase.
+2. Modified Main.py
+    - Previously the routing was handled in api/.
+    - I believe the routing itslef should be handled directly within Main.py.
+3. Using a .ini file, instead of a .env file.
+    - This allows us to create a more structured configuration file.
+    - This was the approach used by the development team the worked with FastAPI at my placement.
+    - The .ini file shouldn't be pushed to github.
+    - The .ini.example file can be pushed, and should be used as a skeleton file to create your own .ini file.
+4. Modified the config.py file in core/
+    - To use the .ini file as the configuration file.
+
+# After making these modifications, the backend is back to running.
