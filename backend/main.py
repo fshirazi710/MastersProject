@@ -4,7 +4,7 @@ from app.routers.secret_holder_router import router as secret_holder_router
 from app.routers.election_router import router as election_router
 from app.routers.health_router import router as health_router
 from starlette.middleware.cors import CORSMiddleware
-from app.constants import CORS_ALLOWED_ORIGINS
+from app.core.config import CORS_ALLOWED_ORIGINS
 
 app = FastAPI()
 
