@@ -1,10 +1,23 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from app.models.secret_holder import JoinSessionRequest
 from typing import List
 import random
 
 router = APIRouter()
+
+class JoinSessionRequest(BaseModel):
+    sessionId: int
+    depositAmount: float
+
+class SecretHolderPosition(BaseModel):
+    id: int
+    title: str
+    description: str
+    requiredDeposit: float
+    currentHolders: int
+    requiredHolders: int
+    startDate: str
+    endDate: str
 
 @router.get("/secret-holder-positions")
 async def get_available_positions():
