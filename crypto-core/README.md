@@ -15,7 +15,18 @@ The system is designed for clients to share a secret among multiple agents (secr
 
 ## Usage
 Here is a step-by-step guide on how to set up a system:
-1. Deploy the smart contract in `contracts/` to a blockchain. In the contract, the constants can be tuned to any desired parameters. It may require external smart contract development tools like *hardhat* or *foundry* to deploy the contract. Once deployed, keep a note of the deployed contract address.
+1. Deploying the smart contract in `contracts/` to a blockchain. 
+   - In the contract, the constants can be tuned to any desired parameters. It may require external smart contract development tools like *hardhat* or *foundry* to deploy the contract. Once deployed, keep a note of the deployed contract address.
+   - Setup:
+     1. Go to Remix Ethereum IDE [a link](https://remix.ethereum.org/).
+     2. Either upload the `TimeLockEnc.sol` file into the file explorer, or connect to Github and use the repository.
+     3. Go the **Solidity Compiler** (left panel) and select the version 0.8.0 compiler.
+     4. Click the **Compile TimeLockEnc.sol** button
+     5. Once compiled, Navigate to the **Deploy and Run Transactions** (left panel) and ensure that the Environment is set to the default **Remix VM (Camcun)**
+     6. Ensure the compiled contract appears in the Contract dropdown, then click deploy.
+     7. Interact with the various methods in the **Deployed Contracts** section
+     8. TBC ...
+
 2. Set up multiple agents running the `agent-script` Rust code. The number of agents should be equal to the `MAX_COMMITTEE_SIZE` set in the smart contract. To run the agent code, create a `.env` file in the `agent-script` directory specifying the following environment variables:
     - `ADDRESS_SK`: the secret key of the agent's address.
     - `ADDRESS_PK`: the agent's address. Make sure there are some crypto assets in this address to pay transaction fees and additional fees or deposits defined in the smart contract.
