@@ -18,7 +18,7 @@ Here is a step-by-step guide on how to set up a system:
 1. Deploying the smart contract in `contracts/` to a blockchain. 
    - In the contract, the constants can be tuned to any desired parameters. It may require external smart contract development tools like *hardhat* or *foundry* to deploy the contract. Once deployed, keep a note of the deployed contract address.
    - Setup:
-     1. Go to Remix Ethereum IDE [a link](https://remix.ethereum.org/).
+     1. Go to Remix Ethereum IDE [here](https://remix.ethereum.org/).
      2. Either upload the `TimeLockEnc.sol` file into the file explorer, or connect to Github and use the repository.
      3. Go the **Solidity Compiler** (left panel) and select the version 0.8.0 compiler.
      4. Click the **Compile TimeLockEnc.sol** button
