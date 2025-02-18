@@ -56,7 +56,7 @@
             <span class="stat-label">Participants</span>
           </div>
           <div class="stat">
-            <span class="stat-value">{{ vote.optionCount }}</span>
+            <span class="stat-value">{{ vote.options.length }}</span>
             <span class="stat-label">Options</span>
           </div>
         </div>

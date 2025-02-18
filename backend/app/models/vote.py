@@ -7,3 +7,4 @@ class voteData(BaseModel):
     startDate: str
     endDate: str
     options: List[str]
+    participantCount: int

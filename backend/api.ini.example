@@ -1,6 +1,6 @@
 [API]
-API_STR = /api/version_number
-PROJECT_NAME = My Project
+API_STR = /api/v1
+PROJECT_NAME = YOUR_PROJECT_NAME
 
 [CORS]
 CORS_ALLOWED_ORIGINS = http://localhost:3000
@@ -9,9 +9,11 @@ CORS_ALLOWED_ORIGINS = http://localhost:3000
 DATABASE_URL = postgresql://user:password@localhost/dbname
 
 [BLOCKCHAIN]
-WEB3_PROVIDER_URL = http://localhost:3000
-CONTRACT_ADDRESS = 
-PRIVATE_KEY = 
+WEB3_PROVIDER_URL = https://eth-sepolia.g.alchemy.com/v2/your-api-key-here
+CONTRACT_ADDRESS = 0xYourContractAddressHere
+WALLET_ADDRESS = 0xYourWalletAddressHere
+CONTRACT_ABI = [{"inputs":[{"internalType":"string","name":"title","type":"string"},{"internalType":"string","name":"description","type":"string"},{"internalType":"uint256","name":"startDate","type":"uint256"},{"internalType":"uint256","name":"endDate","type":"uint256"},{"internalType":"string","name":"status","type":"string"},{"internalType":"uint256","name":"participantCount","type":"uint256"},{"internalType":"string[]","name":"options","type":"string[]"}],"name":"createVote","outputs
+PRIVATE_KEY = YOUR_PRIVATE_KEY_HERE
 
 [SECURITY]
 SECRET_KEY = your-secret-key-here
