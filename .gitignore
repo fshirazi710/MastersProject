@@ -28,6 +28,9 @@ dist/
 *.swo
 *~
 
+# Smart contract build files
+artifacts/
+
 # Environment variables
 .env
 .env.*
