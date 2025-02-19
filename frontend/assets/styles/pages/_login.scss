@@ -1,0 +1,48 @@
+@use '../variables' as *;
+@use '../components/cards' as *;
+@use '../components/forms' as *;
+
+.login {
+    width: 100%;
+    max-width: 780px;
+    margin: 0 auto;
+    padding: $spacing-lg;
+  
+    h1 {
+      margin-bottom: $spacing-lg;
+      color: $text-color;
+    }
+}
+
+.form-container {
+    @extend .card;
+    margin-top: $spacing-md;
+}
+
+.form-group {
+    margin-bottom: $spacing-lg;
+  
+    label {
+      display: block;
+      margin-bottom: $spacing-sm;
+      font-weight: 500;
+    }
+}
+
+.form-actions {
+  margin-top: $spacing-lg;
+}
+
+.form-footer {
+  margin-top: $spacing-md;
+  text-align: center;
+  
+  a {
+    color: $primary-color;
+    text-decoration: none;
+    
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}

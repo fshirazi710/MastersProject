@@ -3,6 +3,7 @@ from app.routers.vote_router import router as vote_router
 from app.routers.secret_holder_router import router as secret_holder_router
 from app.routers.election_router import router as election_router
 from app.routers.health_router import router as health_router
+from app.routers.authentication_router import router as authentication_router
 from starlette.middleware.cors import CORSMiddleware
 from app.core.config import CORS_ALLOWED_ORIGINS
 
@@ -22,3 +23,4 @@ app.include_router(vote_router)
 app.include_router(secret_holder_router)
 app.include_router(election_router)
 app.include_router(health_router)
+app.include_router(authentication_router)
