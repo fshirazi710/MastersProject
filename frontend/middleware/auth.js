@@ -4,6 +4,6 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
 
     // If no token, redirect to login
     if (!token) {
-        return navigateTo('/login'); // Redirect to login page if no token
+        return navigateTo('/'); // Redirect to index page if no token
     }
 });
