@@ -32,3 +32,7 @@ DATABASE_URL = config["DATABASE"].get("DATABASE_URL", "")
 # Security
 SECRET_KEY = config["SECURITY"].get("SECRET_KEY", "")
 ACCESS_TOKEN_EXPIRE_MINUTES = config["SECURITY"].get("ACCESS_TOKEN_EXPIRE_MINUTES", "")
+
+# JWT Configuration
+JWT_SECRET_KEY = config["JWT"].get("JWT_SECRET_KEY", "")
+ALGORITHM = config["JWT"].get("ALGORITHM", "")

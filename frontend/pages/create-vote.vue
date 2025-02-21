@@ -147,6 +147,11 @@ import axios from 'axios'
 
 const router = useRouter();
 
+// This line sets the middleware for authentication
+definePageMeta({
+  middleware: 'auth'
+})
+
 // Initialize form data with reactive reference
 const voteData = ref({
   title: '',

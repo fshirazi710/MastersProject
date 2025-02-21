@@ -158,6 +158,11 @@ import { useRoute } from 'vue-router'
 const route = useRoute()
 const selectedOption = ref(null)
 
+// This line sets the middleware for authentication
+definePageMeta({
+  middleware: 'auth'
+})
+
 // Mock vote data - TODO: Replace with API call
 const vote = ref({
   id: route.params.id,

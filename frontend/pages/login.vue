@@ -42,30 +42,33 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
+import {store} from '../authentication.js'
+
 
 const router = useRouter()
 const loginData = ref({
     email: '',
     password: ''
 })
+
 const handleSubmit = async () => {
-    try {
-        const salt = await bcrypt.genSalt(10)
-        const hashedPassword = await bcrypt.hash(loginData.value.password, salt)
+  try {
+    const loginPayload = { ...loginData.value };
 
-        const loginPayload = {
-            ...loginData.value,
-            password: hashedPassword,
-        }
+    const response = await axios.post("http://127.0.0.1:8000/login", loginPayload, {
+      withCredentials: true, // Ensure cookies are sent
+    });
 
-        axios.post("http://127.0.0.1:8000/login", loginPayload)
-        .then(response => {
-            alert(response.data.message)
-            router.push('/login')
-        })
-    } catch (error) {
-        alert(error.response?.data?.message || 'Failed to log user in')
-    }
+    // Store the JWT in local storage
+    localStorage.setItem('token', response.data.token); // Assuming the token is returned in the response
+
+    store.checkLoginStatus();  // Call the method to check login status
+
+    alert(response.data.message);
+    router.push('/active-votes'); // Redirect to a protected route
+  } catch (error) {
+    alert(error.response?.data?.detail || 'Failed to log user in');
+  }
 }
 </script>
 

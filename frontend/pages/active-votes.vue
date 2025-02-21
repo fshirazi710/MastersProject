@@ -98,6 +98,11 @@ const filteredVotes = computed(() => {
 // Reactive reference for votes
 const votes = ref([])
 
+// This line sets the middleware for authentication
+definePageMeta({
+  middleware: 'auth'
+})
+
 // Fetch votes from the FastAPI backend
 const getVotes = () => {
   axios.get("http://127.0.0.1:8000/all-votes")
