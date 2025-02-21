@@ -1,5 +1,5 @@
 <template>
-  <div class="vote-details">
+  <div class="vote-details" v-if="vote">
     <!-- Vote header with title, description and status -->
     <div class="vote-header">
       <div class="vote-status" :class="vote.status">
@@ -62,17 +62,17 @@
       <!-- Voting form with radio options -->
       <form @submit.prevent="handleVote" class="voting-form">
         <div class="options-list">
-          <label v-for="option in vote.options" :key="option.id" class="option-item">
+          <label v-for="(option, index) in vote.options" :key="index" class="option-item">
             <input
               type="radio"
-              :id="option.id"
+              :id="'option-' + index"
               v-model="selectedOption"
-              :value="option.id"
+              :value="option"
               name="vote-option"
               required
             >
             <div class="option-content">
-              {{ option.text }}
+              {{ option }}
             </div>
           </label>
         </div>
@@ -148,11 +148,15 @@
       </div>
     </div>
   </div>
+  <div v-else>
+    <p>Loading vote details...</p>
+  </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import axios from 'axios'
 
 // Get route params for vote ID
 const route = useRoute()
@@ -163,36 +167,40 @@ definePageMeta({
   middleware: 'auth'
 })
 
-// Mock vote data - TODO: Replace with API call
-const vote = ref({
-  id: route.params.id,
-  title: 'Community Governance Proposal',
-  description: 'Vote on the new community guidelines and governance structure.',
-  status: 'active',
-  startDate: '2024-03-20T10:00:00',
-  endDate: '2024-03-27T10:00:00',
-  secretHolderCount: 5,
-  requiredKeys: 3,
-  releasedKeys: 0,
-  options: [
-    { id: 1, text: 'Approve New Guidelines' },
-    { id: 2, text: 'Reject and Revise' },
-    { id: 3, text: 'Maintain Current System' }
-  ],
-  secretHolders: [
-    { 
-      id: 1, 
-      address: '0x1234...5678', 
-      status: 'active',
-      hasReleasedKey: false 
-    },
-    { 
-      id: 2, 
-      address: '0x8765...4321', 
-      status: 'active',
-      hasReleasedKey: false 
+const vote = ref({}) // Initialize vote as an empty object
+
+const fetchVoteData = async () => {
+  try {
+    const response = await axios.get(`http://127.0.0.1:8000/vote/${route.params.id}`)
+    console.log(response)
+    vote.value = {
+      ...response.data.data,
+      secretHolderCount: 5, // Fixed value
+      requiredKeys: 3,      // Fixed value
+      releasedKeys: 0,      // Fixed value
+      secretHolders: [      // Fixed value
+        { 
+          id: 1, 
+          address: '0x1234...5678', 
+          status: 'active',
+          hasReleasedKey: false 
+        },
+        { 
+          id: 2, 
+          address: '0x8765...4321', 
+          status: 'active',
+          hasReleasedKey: false 
+        }
+      ]
     }
-  ]
+  } catch (error) {
+    console.error("Failed to fetch vote data:", error)
+  }
+}
+
+// Hook to execute the fetchVoteData function when the component is mounted
+onMounted(() => {
+  fetchVoteData()
 })
 
 // Compute total votes for percentage calculations

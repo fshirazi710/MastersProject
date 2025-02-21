@@ -47,6 +47,29 @@ async def get_all_votes():
     return {"data": votes}
 
 
+# Endpoint to retrieve a specific vote by its ID
+@router.get("/vote/{vote_id}")
+async def get_vote(vote_id: int):
+    # Get the vote data from the smart contract using the provided vote_id
+    vote_data = contract.functions.getVote(vote_id).call()
+    return {
+        "data": {
+            "id": vote_data[0],
+            "title": vote_data[1],
+            "description": vote_data[2],
+            "startDate": datetime.fromtimestamp(vote_data[3]).strftime(
+                "%Y-%m-%dT%H:%M"
+            ),  # Convert Unix timestamps to formatted datetime strings
+            "endDate": datetime.fromtimestamp(vote_data[4]).strftime(
+                "%Y-%m-%dT%H:%M"
+            ),  # Convert Unix timestamps to formatted datetime strings
+            "status": vote_data[5],
+            "participantCount": vote_data[6],
+            "options": vote_data[7],
+        }
+    }
+
+
 # Endpoint to retrieve the status of votes (currently just returns a success message)
 @router.get("/vote-status")
 async def get_vote_status():
