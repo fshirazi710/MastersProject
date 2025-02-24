@@ -51,9 +51,23 @@ Here is a step-by-step guide on how to set up a system:
         6. Run `cargo run`, you should see a **logs** folder appear above the `src` folder (it is plausable that if the network is congested that it could take a while for the transaction to be processed)
         7. To check if the transaction was sucessful, copy your wallet address and paste it into etherscan ([link-here](https://etherscan.io/))
 
-3. To send a timed release transaction, run the `client-script` Rust code. Start by creating a `.env` file in the `client-script` directory specifying the same environment variables:
-    - `CLIENT_SK`: the secret key of the client's address.
-    - `CLIENT_ADDRESS`: the client's address. Make sure there are some crypto assets in this address to pay transaction fees and additional fees or deposits defined in the smart contract.
-    - `CONTRACT_ADDRESS`: the address of the deployed smart contract.
-    - `API_URL`: an RPC URL of the blockchain.
-Then modify the `client-script/src/bin/main.rs` file to specify the secret and the time to reveal the secret. Run the code to send a timed release transaction.
+3. Set up multiple clients running the `agent-script` Rust code. 
+    - To send a timed release transaction, run the `client-script` Rust code. Start by creating a `.env` file in the `client-script` directory specifying the same environment variables:
+        - `CLIENT_SK`: the secret key of the client's address.
+        - `CLIENT_ADDRESS`: the client's address. Make sure there are some crypto assets in this address to pay transaction fees and additional fees or deposits defined in the smart contract.
+        - `CONTRACT_ADDRESS`: the address of the deployed smart contract.
+        - `API_URL`: an RPC URL of the blockchain.
+    - (**warning, still in progress of development**)
+    - To compile and run the Rust code: documentation [here](https://doc.rust-lang.org/book/ch01-01-installation.html)
+        1. Download the Cargo rust compiler [here](https://www.rust-lang.org/tools/install).
+        2. Check the installation by typing `rustc --version`, you should see the version number and commit date. (If any issues you may need to update Environment variables)
+        3. navigate to the **client-script** folder and run `cargo build`. You should get a ton of warnings but it should build completely, with a **target** folder appearing under **src** folder.
+        4. To get all the variables for the env file:
+            - `CLIENT_SK` : copy the secret key of your MetaMask wallet account.
+            - `CLIENT_ADDRESS` : copy the public account number of your MetaMask wallet account.
+            - `CONTRACT_ADDRESS` : copy the contract address from the **Deployed Contracts** section in the RemixIDE deployment tab.
+            - `API_URL` : make an app on alchemy.com ([link_here](https://www.alchemy.com/)), ensuring that the Chain is **Etherium** and the Network is **Sepolia**. Then copy the **Network URL** once you have created the app.
+        5. place the `.env` file in the **client-script** directory, ensuring its at the same level at the `Cargo.toml` file.
+        6. Then modify the `client-script/src/bin/main.rs` file to specify the secret and the time to reveal the secret.
+        7. Run `cargo run`, you should see a **logs** folder appear above the `src` folder (it is plausable that if the network is congested that it could take a while for the transaction to be processed)
+        8. To check if the transaction was sucessful, copy your wallet address and paste it into etherscan ([link-here](https://etherscan.io/))

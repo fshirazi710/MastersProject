@@ -10,7 +10,7 @@ keywords = ["jsonrpc", "web3", "ethereum", "rpc", "client"]
 authors = ["Tomasz Drwięga <tomasz@parity.io>"]
 readme = "README.md"
 edition = "2018"
-default-run = "cryptography"
+default-run = "main"
 
 [dependencies]
 arrayvec = "0.7.1"

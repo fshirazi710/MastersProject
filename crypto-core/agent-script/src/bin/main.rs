@@ -91,6 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             sleep(Duration::from_secs(5)).await;
         }
     }
+    info!("made it here."); //testing
     let index = get_index(&contract, agent_pk).await.unwrap(); // Your member index
 
     // Create event filter
@@ -249,6 +250,7 @@ async fn join_committee(web3: Arc<Mutex<Web3<Http>>>, contract: Address, agent_p
         let prvk = SecretKey::from_str(address_sk).unwrap();
         let signed = web3_released.accounts().sign_transaction(tx_object, &prvk).await.unwrap();
         result = web3_released.eth().send_raw_transaction(signed.raw_transaction).await.unwrap_or(H256::zero());
+        info!("Committee test: {:#x}", result); //testing
         sleep(Duration::from_secs(1)).await;
     }
     info!("Join committee tx succeeded with hash: {:#x}", result);
