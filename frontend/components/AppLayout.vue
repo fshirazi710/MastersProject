@@ -11,7 +11,7 @@
           <NuxtLink to="/" class="nav-link">Home</NuxtLink>
           <NuxtLink v-if="!store.loggedIn" to="/login" class="nav-link">Login</NuxtLink>
           <NuxtLink v-if="store.loggedIn" to="/create-vote" class="nav-link">Create Vote</NuxtLink>
-          <NuxtLink v-if="store.loggedIn" to="/active-votes" class="nav-link">Active Votes</NuxtLink>
+          <NuxtLink to="/all-votes" class="nav-link">All Votes</NuxtLink>
           <NuxtLink v-if="store.loggedIn" to="/become-holder" class="nav-link">Become a Holder</NuxtLink>
           <NuxtLink v-if="store.loggedIn" @click="handleLogout" class="nav-link">Logout</NuxtLink>
         </div>

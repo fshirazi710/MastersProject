@@ -1,6 +1,6 @@
 <template>
-  <div class="active-votes">
-    <h1>Active Votes</h1>
+  <div class="all-votes">
+    <h1>All Votes</h1>
     
     <!-- Search and filter controls -->
     <div class="filters">
@@ -17,8 +17,8 @@
       <div class="filter-options">
         <select v-model="statusFilter" class="filter-select">
           <option value="all">All Votes</option>
+          <option value="join">Join</option>
           <option value="active">Active</option>
-          <option value="upcoming">Upcoming</option>
           <option value="ended">Ended</option>
         </select>
       </div>
@@ -31,52 +31,57 @@
     </div>
 
     <!-- Grid of vote cards -->
-    <div class="votes-grid" v-else>
-      <!-- Individual vote card -->
-      <div v-for="vote in filteredVotes" :key="vote.id" class="vote-card">
-        <!-- Status badge (active/upcoming/ended) -->
-        <div class="vote-status" :class="vote.status">
-          {{ vote.status }}
+    <div v-else>
+      <!-- Conditionally render sections based on statusFilter -->
+      <div v-for="status in ['join', 'active', 'ended']">
+        <div v-if="statusFilter === 'all' || statusFilter === status">
+          <h2>{{ capitalizeWords(status) }} Votes</h2>
+          <div v-if="filteredVotes.filter(vote => vote.status === status).length === 0">
+            <p>No votes found in this category.</p>
+          </div>
+          <div class="votes-grid">
+            <div v-for="vote in filteredVotes.filter(vote => vote.status === status)" :key="vote.id" class="vote-card">
+            <!-- Status badge (join/active/ended) -->
+            <div class="vote-status" :class="vote.status">
+              {{ vote.status }}
+            </div>
+            
+            <!-- Vote title and description -->
+            <h2>{{ vote.title }}</h2>
+            <p class="description">{{ vote.description }}</p>
+            
+            <!-- Vote timing information -->
+            <div class="vote-meta">
+              <div class="meta-item">
+                <span class="label">Start:</span>
+                {{ formatDate(vote.startDate) }}
+              </div>
+              <div class="meta-item">
+                <span class="label">End:</span>
+                {{ formatDate(vote.endDate) }}
+              </div>
+            </div>
+            
+            <!-- Vote statistics -->
+            <div class="vote-stats">
+              <div class="stat">
+                <span class="stat-value">{{ vote.participantCount }}</span>
+                <span class="stat-label">Participants</span>
+              </div>
+              <div class="stat">
+                <span class="stat-value">{{ vote.options.length }}</span>
+                <span class="stat-label">Options</span>
+              </div>
+            </div>
+            
+            <!-- View details link -->
+            <NuxtLink :to="`/vote/${vote.id}`" class="btn primary">
+              View Details
+            </NuxtLink>
+          </div>
+          </div>
         </div>
-        
-        <!-- Vote title and description -->
-        <h2>{{ vote.title }}</h2>
-        <p class="description">{{ vote.description }}</p>
-        
-        <!-- Vote timing information -->
-        <div class="vote-meta">
-          <div class="meta-item">
-            <span class="label">Start:</span>
-            {{ formatDate(vote.startDate) }}
-          </div>
-          <div class="meta-item">
-            <span class="label">End:</span>
-            {{ formatDate(vote.endDate) }}
-          </div>
-        </div>
-        
-        <!-- Vote statistics -->
-        <div class="vote-stats">
-          <div class="stat">
-            <span class="stat-value">{{ vote.participantCount }}</span>
-            <span class="stat-label">Participants</span>
-          </div>
-          <div class="stat">
-            <span class="stat-value">{{ vote.options.length }}</span>
-            <span class="stat-label">Options</span>
-          </div>
-        </div>
-        
-        <!-- View details link -->
-        <NuxtLink :to="`/vote/${vote.id}`" class="btn primary">
-          View Details
-        </NuxtLink>
       </div>
-    </div>
-
-    <!-- Placeholder when no votes are found -->
-    <div v-if="filteredVotes.length === 0 && !loading" class="no-results">
-      <p>No votes found matching your criteria</p>
     </div>
   </div>
 </template>
@@ -95,20 +100,17 @@ const filteredVotes = computed(() => {
   return votes.value.filter(vote => {
     // Match by title or description text
     const matchesSearch = vote.title.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-                         vote.description.toLowerCase().includes(searchQuery.value.toLowerCase())
-    // Match by status (all or specific status)
-    const matchesStatus = statusFilter.value === 'all' || vote.status === statusFilter.value
-    return matchesSearch && matchesStatus
-  })
+                         vote.description.toLowerCase().includes(searchQuery.value.toLowerCase());
+    
+    // Match by status
+    const matchesStatus = statusFilter.value === 'all' || vote.status === statusFilter.value;
+
+    return matchesSearch && matchesStatus;
+  });
 })
 
 // Reactive reference for votes
 const votes = ref([])
-
-// This line sets the middleware for authentication
-definePageMeta({
-  middleware: 'auth'
-})
 
 // Fetch votes from the FastAPI backend
 const getVotes = () => {
@@ -140,11 +142,15 @@ const formatDate = (dateString) => {
     minute: '2-digit'
   })
 }
+
+const capitalizeWords = (str) => {
+  return str.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+}
 </script>
 
 <style lang="scss" scoped>
 // Local styles for active votes page
-.active-votes {
+.all-votes {
   // Add spacing below filters
   .filters {
     margin-bottom: $spacing-lg;

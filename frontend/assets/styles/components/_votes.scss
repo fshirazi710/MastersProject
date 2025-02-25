@@ -1,8 +1,8 @@
 @use '../variables' as *;
 @use '../mixins' as *;
 
-// Main container for the active votes page
-.active-votes {
+// Main container for the all votes page
+.all-votes {
   max-width: $desktop;
   margin: 0 auto;
   padding: $spacing-lg;
