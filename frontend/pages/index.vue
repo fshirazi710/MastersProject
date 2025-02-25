@@ -6,7 +6,8 @@
       <p class="subtitle">Secure time-locked message delivery on the blockchain</p>
       <!-- Call to action buttons with navigation -->
       <div class="cta-buttons">
-        <NuxtLink to="/create-vote" class="btn primary">Create Vote</NuxtLink>
+        <NuxtLink v-if="!store.loggedIn" to="/login" class="btn primary">Login</NuxtLink>
+        <NuxtLink v-else to="/create-vote" class="btn primary">Create Vote</NuxtLink>
         <NuxtLink to="/faq" class="btn secondary">Learn More</NuxtLink>
       </div>
     </section>
@@ -45,6 +46,8 @@
 </template>
 
 <script setup>
+import { store } from '../authentication.js'; // Import the store
+
 // Import navigateTo from Nuxt
 const { navigateTo } = useRouter()
 

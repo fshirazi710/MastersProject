@@ -1,5 +1,10 @@
 <template>
-  <div class="vote-details">
+  <div v-if="loading" class="loading">
+    <div class="spinner"></div>
+    <p>Loading Vote Details...</p>
+  </div>
+
+  <div class="vote-details" v-else-if="vote">
     <!-- Vote header with title, description and status -->
     <div class="vote-header">
       <div class="vote-status" :class="vote.status">
@@ -62,17 +67,17 @@
       <!-- Voting form with radio options -->
       <form @submit.prevent="handleVote" class="voting-form">
         <div class="options-list">
-          <label v-for="option in vote.options" :key="option.id" class="option-item">
+          <label v-for="(option, index) in vote.options" :key="index" class="option-item">
             <input
               type="radio"
-              :id="option.id"
+              :id="'option-' + index"
               v-model="selectedOption"
-              :value="option.id"
+              :value="option"
               name="vote-option"
               required
             >
             <div class="option-content">
-              {{ option.text }}
+              {{ option }}
             </div>
           </label>
         </div>
@@ -151,43 +156,60 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import axios from 'axios'
 
 // Get route params for vote ID
 const route = useRoute()
 const selectedOption = ref(null)
+const loading = ref(true)
+const vote = ref({})
 
-// Mock vote data - TODO: Replace with API call
-const vote = ref({
-  id: route.params.id,
-  title: 'Community Governance Proposal',
-  description: 'Vote on the new community guidelines and governance structure.',
-  status: 'active',
-  startDate: '2024-03-20T10:00:00',
-  endDate: '2024-03-27T10:00:00',
-  secretHolderCount: 5,
-  requiredKeys: 3,
-  releasedKeys: 0,
-  options: [
-    { id: 1, text: 'Approve New Guidelines' },
-    { id: 2, text: 'Reject and Revise' },
-    { id: 3, text: 'Maintain Current System' }
-  ],
-  secretHolders: [
-    { 
-      id: 1, 
-      address: '0x1234...5678', 
+
+// This line sets the middleware for authentication
+definePageMeta({
+  middleware: 'auth'
+})
+
+
+const fetchVoteData = () => {
+    loading.value = true
+    axios.get(`http://127.0.0.1:8000/vote/${route.params.id}`)
+    .then(response => {
+      vote.value = {
+      ...response.data.data,
+      secretHolderCount: 5, // Fixed value
+      requiredKeys: 3,      // Fixed value
+      releasedKeys: 0,      // Fixed value
       status: 'active',
-      hasReleasedKey: false 
-    },
-    { 
-      id: 2, 
-      address: '0x8765...4321', 
-      status: 'active',
-      hasReleasedKey: false 
-    }
-  ]
+      secretHolders: [      // Fixed value
+        { 
+          id: 1, 
+          address: '0x1234...5678', 
+          status: 'active',
+          hasReleasedKey: false 
+        },
+        { 
+          id: 2, 
+          address: '0x8765...4321', 
+          status: 'active',
+          hasReleasedKey: false 
+        }
+      ],
+      }
+    })
+    .catch(error => {
+      console.error("Failed to fetch vote data:", error)
+    })
+    .finally(() => {
+      loading.value = false
+    })
+}
+
+// Hook to execute the fetchVoteData function when the component is mounted
+onMounted(() => {
+  fetchVoteData()
 })
 
 // Compute total votes for percentage calculations
@@ -243,4 +265,26 @@ const handleVote = () => {
 
 <style lang="scss" scoped>
 // All styles moved to _vote-details.scss
+.loading {
+  text-align: center;
+  font-size: 1.2em;
+  color: #666;
+
+  // Spinner styles
+  .spinner {
+    border: 8px solid #f3f3f3; /* Light grey */
+    border-top: 8px solid #3498db; /* Blue */
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto; /* Center the spinner */
+  }
+}
+
+// Spinner animation
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
 </style> 

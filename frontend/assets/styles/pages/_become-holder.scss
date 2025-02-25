@@ -1,0 +1,80 @@
+@use '../variables' as *;
+@use '../components/cards' as *;
+
+.become-holder {
+  max-width: $desktop;
+  margin: 0 auto;
+  padding: $spacing-lg;
+}
+
+.sessions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: $spacing-lg;
+  margin-top: $spacing-lg;
+}
+
+.session-card {
+  @extend .card;
+  
+  h3 {
+    margin: 0 0 $spacing-sm;
+    font-size: 1.25rem;
+  }
+}
+
+.session-meta {
+  margin: $spacing-md 0;
+  
+  .meta-item {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: $spacing-sm;
+    
+    .label {
+      color: #666;
+    }
+    
+    .value {
+      font-weight: 500;
+    }
+  }
+}
+
+.info-card {
+  @extend .card;
+  margin-bottom: $spacing-lg;
+}
+
+.responsibilities {
+  margin-top: $spacing-md;
+  padding-left: $spacing-lg;
+  
+  li {
+    margin-bottom: $spacing-sm;
+    color: #666;
+  }
+}
+
+.helper-text {
+  font-size: 0.875rem;
+  color: #666;
+  margin-top: 0.25rem;
+}
+
+.status-message {
+  margin-top: $spacing-lg;
+  padding: $spacing-md;
+  border-radius: 4px;
+  text-align: center;
+  
+  &.success {
+    background-color: #e6f4ea;
+    color: #1e4620;
+  }
+  
+  &.error {
+    background-color: #fce8e6;
+    color: #c5221f;
+  }
+} 
