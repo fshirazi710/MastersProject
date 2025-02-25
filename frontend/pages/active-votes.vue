@@ -24,8 +24,14 @@
       </div>
     </div>
 
+    <!-- Loading indicator -->
+    <div v-if="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Loading Votes...</p>
+    </div>
+
     <!-- Grid of vote cards -->
-    <div class="votes-grid">
+    <div class="votes-grid" v-else>
       <!-- Individual vote card -->
       <div v-for="vote in filteredVotes" :key="vote.id" class="vote-card">
         <!-- Status badge (active/upcoming/ended) -->
@@ -56,7 +62,7 @@
             <span class="stat-label">Participants</span>
           </div>
           <div class="stat">
-            <span class="stat-value">{{ vote.optionCount }}</span>
+            <span class="stat-value">{{ vote.options.length }}</span>
             <span class="stat-label">Options</span>
           </div>
         </div>
@@ -69,19 +75,20 @@
     </div>
 
     <!-- Placeholder when no votes are found -->
-    <div v-if="filteredVotes.length === 0" class="no-results">
+    <div v-if="filteredVotes.length === 0 && !loading" class="no-results">
       <p>No votes found matching your criteria</p>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 
 // Search and filter state
 const searchQuery = ref('')
 const statusFilter = ref('all')
+const loading = ref(true)
 
 // Computed property for filtered votes
 const filteredVotes = computed(() => {
@@ -98,14 +105,23 @@ const filteredVotes = computed(() => {
 // Reactive reference for votes
 const votes = ref([])
 
+// This line sets the middleware for authentication
+definePageMeta({
+  middleware: 'auth'
+})
+
 // Fetch votes from the FastAPI backend
 const getVotes = () => {
+  loading.value = true
   axios.get("http://127.0.0.1:8000/all-votes")
     .then(response => {
       votes.value = response.data.data
     })
     .catch(error => {
       console.error("Failed to fetch votes:", error)
+    })
+    .finally(() => {
+      loading.value = false
     })
 }
 
@@ -138,5 +154,35 @@ const formatDate = (dateString) => {
   .search-input {
     width: 100%;
   }
+
+  // Styles for loading indicator
+  .loading {
+    text-align: center;
+    font-size: 1.2em;
+    color: #666;
+  }
+}
+
+.loading {
+  text-align: center;
+  font-size: 1.2em;
+  color: #666;
+
+  // Spinner styles
+  .spinner {
+    border: 8px solid #f3f3f3; /* Light grey */
+    border-top: 8px solid #3498db; /* Blue */
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto; /* Center the spinner */
+  }
+}
+
+// Spinner animation
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 </style> 

@@ -84,6 +84,11 @@ const isSubmitting = ref(null) // Holds the session ID being processed
 const statusMessage = ref('')
 const statusType = ref('')
 
+// This line sets the middleware for authentication
+definePageMeta({
+  middleware: 'auth'
+})
+
 // Fetch available sessions that need secret holders
 const fetchAvailableSessions = async () => {
   try {

@@ -1,32 +1,38 @@
-from pydantic_settings import BaseSettings
-from typing import List
-import os
+import configparser
 from pathlib import Path
+import logging
 
-class Settings(BaseSettings):
-    # API Config
-    API_V1_STR: str = "/api/v1"
-    PROJECT_NAME: str = "Timed Release Crypto System"
-    
-    # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:3000"]
-    
-    # Database
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", 
-        "postgresql://user:password@localhost/dbname"
-    )
-    
-    # Blockchain
-    WEB3_PROVIDER_URL: str = os.getenv("WEB3_PROVIDER_URL", "http://localhost:8545")
-    CONTRACT_ADDRESS: str = os.getenv("CONTRACT_ADDRESS", "")
-    PRIVATE_KEY: str = os.getenv("PRIVATE_KEY", "")
-    
-    # Security
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-here")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    
-    class Config:
-        env_file = ".env"
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-settings = Settings() 
+# Define the path to the app.ini file
+CONFIG_PATH = Path(__file__).parent.parent.parent / "api.ini"
+
+# Load the configuration file
+config = configparser.ConfigParser()
+config.read(CONFIG_PATH)
+
+# API Config
+API_STR = config["API"].get("API_STR", "")
+PROJECT_NAME = config["API"].get("PROJECT_NAME", "")
+
+# CORS
+CORS_ALLOWED_ORIGINS = config["CORS"].get("CORS_ALLOWED_ORIGINS", "*")
+
+# Blockchain
+WEB3_PROVIDER_URL = config["BLOCKCHAIN"].get("WEB3_PROVIDER_URL", "")
+CONTRACT_ADDRESS = config["BLOCKCHAIN"].get("CONTRACT_ADDRESS", "")
+WALLET_ADDRESS = config["BLOCKCHAIN"].get("WALLET_ADDRESS", "")
+CONTRACT_ABI = config["BLOCKCHAIN"].get("CONTRACT_ABI", "")
+PRIVATE_KEY = config["BLOCKCHAIN"].get("PRIVATE_KEY", "")
+
+# Database
+DATABASE_URL = config["DATABASE"].get("DATABASE_URL", "")
+
+# Security
+SECRET_KEY = config["SECURITY"].get("SECRET_KEY", "")
+ACCESS_TOKEN_EXPIRE_MINUTES = config["SECURITY"].get("ACCESS_TOKEN_EXPIRE_MINUTES", "")
+
+# JWT Configuration
+JWT_SECRET_KEY = config["JWT"].get("JWT_SECRET_KEY", "")
+ALGORITHM = config["JWT"].get("ALGORITHM", "")

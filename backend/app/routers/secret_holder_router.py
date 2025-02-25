@@ -5,6 +5,10 @@ import random
 
 router = APIRouter()
 
+class JoinSessionRequest(BaseModel):
+    sessionId: int
+    depositAmount: float
+
 class SecretHolderPosition(BaseModel):
     id: int
     title: str
@@ -14,10 +18,6 @@ class SecretHolderPosition(BaseModel):
     requiredHolders: int
     startDate: str
     endDate: str
-
-class JoinSessionRequest(BaseModel):
-    sessionId: int
-    depositAmount: float
 
 @router.get("/secret-holder-positions")
 async def get_available_positions():
