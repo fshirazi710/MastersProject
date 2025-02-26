@@ -68,29 +68,37 @@ async fn send_time_lock_message(web3: &Web3<Http>, contract: &Contract<Http>, co
     // prepare params (cryptography)
     let t = get_threshold(n);
     let agents: HashMap<u64, Agent> = get_agent_list(&contract).await;
-    let indexes: Vec<u64> = agents.keys().cloned().collect();
-    let pks = indexes.iter().map(|i| agents.get(i).unwrap().pk).collect();
-    let r = cryptography::gen_r();
-    let g1r = cryptography::get_g1r(&r).to_affine().to_compressed().to_vec();
-    let g2r = cryptography::get_g2r(&r).to_affine().to_compressed().to_vec();
-    let (k, alphas) = cryptography::get_k_and_alphas(&r, &indexes, &pks, t);
-    let ciphertext = cryptography::encrypt(&message.as_bytes(), &k.to_bytes(), b"000000000001");
-
-    let decryption_time_param = Param{name: "decryptionTime".to_string(), kind: ParamType::Uint(256), internal_type: None};
-    let g1r_param = Param{name: "g1r".to_string(), kind: ParamType::Bytes, internal_type: None};
-    let g2r_param = Param{name: "g2r".to_string(), kind: ParamType::Bytes, internal_type: None};
-    let alphas_param = Param{name: "alphas".to_string(), kind: ParamType::Array(Box::new(ParamType::Bytes)), internal_type: None};
-    let func = ethabi::Function{name: "sendTimeLockTransaction".to_string(), inputs: vec![decryption_time_param, g1r_param, g2r_param, alphas_param], outputs: vec![], state_mutability: ethabi::StateMutability::NonPayable, constant: None};
-
-    let alphas_token: Vec<Token> = alphas.iter().map(|alpha| Token::Bytes(alpha.to_bytes().to_vec())).collect();
-    let data = make_data(&func, &vec![Token::Uint(Uint::from(decryption_time)), Token::Bytes(g1r), Token::Bytes(g2r), Token::Array(alphas_token)]);
     
-    let tx_object = TransactionParameters{to: Some(*contract_address), data: Bytes::from(data), value: U256::exp10(16)*3, gas: U256::from(8000000), gas_price: Some(U256::from(web3.eth().gas_price().await.unwrap()*15/10)), ..Default::default()};
-    let prvk = SecretKey::from_str(sk).unwrap();
-    let signed = web3.accounts().sign_transaction(tx_object, &prvk).await.unwrap();
-    let result = web3.eth().send_raw_transaction(signed.raw_transaction).await.unwrap();
-    println!("Tx succeeded with hash: {:#x}", result);
-    println!("Time Lock message: {}, key: {}, ciphertext: {:?}, decryption time: {}", message, k, ciphertext, decryption_time);
+    //check to see if there are any agents
+    if agents.is_empty() {
+        println!("No agents retrieved from the smart contract. Aborting transaction.");
+    }
+    else {
+        
+        let indexes: Vec<u64> = agents.keys().cloned().collect();
+        let pks: Vec<G1Projective> = indexes.iter().map(|i| agents.get(i).unwrap().pk).collect();
+        let r = cryptography::gen_r();
+        let g1r = cryptography::get_g1r(&r).to_affine().to_compressed().to_vec();
+        let g2r = cryptography::get_g2r(&r).to_affine().to_compressed().to_vec();
+        let (k, alphas) = cryptography::get_k_and_alphas(&r, &indexes, &pks, t);
+        let ciphertext = cryptography::encrypt(&message.as_bytes(), &k.to_bytes(), b"000000000001");
+
+        let decryption_time_param = Param{name: "decryptionTime".to_string(), kind: ParamType::Uint(256), internal_type: None};
+        let g1r_param = Param{name: "g1r".to_string(), kind: ParamType::Bytes, internal_type: None};
+        let g2r_param = Param{name: "g2r".to_string(), kind: ParamType::Bytes, internal_type: None};
+        let alphas_param = Param{name: "alphas".to_string(), kind: ParamType::Array(Box::new(ParamType::Bytes)), internal_type: None};
+        let func = ethabi::Function{name: "sendTimeLockTransaction".to_string(), inputs: vec![decryption_time_param, g1r_param, g2r_param, alphas_param], outputs: vec![], state_mutability: ethabi::StateMutability::NonPayable, constant: None};
+
+        let alphas_token: Vec<Token> = alphas.iter().map(|alpha| Token::Bytes(alpha.to_bytes().to_vec())).collect();
+        let data = make_data(&func, &vec![Token::Uint(Uint::from(decryption_time)), Token::Bytes(g1r), Token::Bytes(g2r), Token::Array(alphas_token)]);
+        
+        let tx_object = TransactionParameters{to: Some(*contract_address), data: Bytes::from(data), value: U256::exp10(16)*3, gas: U256::from(8000000), gas_price: Some(U256::from(web3.eth().gas_price().await.unwrap()*15/10)), ..Default::default()};
+        let prvk = SecretKey::from_str(sk).unwrap();
+        let signed = web3.accounts().sign_transaction(tx_object, &prvk).await.unwrap();
+        let result = web3.eth().send_raw_transaction(signed.raw_transaction).await.unwrap();
+        println!("Tx succeeded with hash: {:#x}", result);
+        println!("Time Lock message: {}, key: {}, ciphertext: {:?}, decryption time: {}", message, k, ciphertext, decryption_time);
+    }
 }
 
 // get 10 digit timestamp (in seconds)

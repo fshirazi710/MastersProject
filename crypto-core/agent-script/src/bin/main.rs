@@ -84,14 +84,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     if !in_committee{
-        let deposit_ether_value = 1;
+        let deposit_ether_value = 0.001; // had to change to 0 because of insufficient funds
         join_committee(Arc::clone(&web3), contract_address, &agent_pk, address_sk, deposit_ether_value).await;
         info!("Joining committee.");
         while get_index(&contract, agent_pk).await.is_none(){
             sleep(Duration::from_secs(5)).await;
         }
     }
-    info!("made it here."); //testing
     let index = get_index(&contract, agent_pk).await.unwrap(); // Your member index
 
     // Create event filter
@@ -237,20 +236,53 @@ fn get_time() -> u64{
     return since_the_epoch.as_secs();
 }
 // value unit is eth
-async fn join_committee(web3: Arc<Mutex<Web3<Http>>>, contract: Address, agent_pk: &G1Projective, address_sk: &str, value: u64){
+async fn join_committee(web3: Arc<Mutex<Web3<Http>>>, contract: Address, agent_pk: &G1Projective, address_sk: &str, value: f64){
     let mut result = H256::zero();
-    while result == H256::zero(){
-        let public_key = Param{name: "publicKey".to_string(), kind: ParamType::Bytes, internal_type: None};
-        let func = ethabi::Function{name: "joinCommittee".to_string(), inputs: vec![public_key], outputs: vec![], state_mutability: ethabi::StateMutability::NonPayable, constant: None};
+    while result == H256::zero() {
+        let public_key = Param{
+            name: "publicKey".to_string(),
+            kind: ParamType::Bytes,
+            internal_type: None
+        };
+        let func = ethabi::Function{
+            name: "joinCommittee".to_string(),
+            inputs: vec![public_key],
+            outputs: vec![],
+            state_mutability: ethabi::StateMutability::NonPayable,
+            constant: None
+        };
         
         let pk_data = Token::Bytes(ethabi::Bytes::from(agent_pk.to_affine().to_compressed()));
         let data = make_data(&func, &vec![pk_data]);
         let web3_released = web3.lock().await;
-        let tx_object = TransactionParameters{to: Some(contract), data: Bytes::from(data), value: U256::exp10(18)*value, gas: U256::from(8000000), gas_price: Some(U256::from(web3_released.eth().gas_price().await.unwrap()*15/10)), ..Default::default()};
+
+        // Get current gas price
+        let gas_price = web3_released.eth().gas_price().await.unwrap();
+        
+        // Convert ETH to Wei (1 ETH = 10^18 Wei)
+        let wei_multiplier = U256::exp10(18);
+        let required_value = {
+            let wei_float = value * 1_000_000_000_000_000_000_f64; // 10^18
+            U256::from((wei_float as u64))
+        };
+        let gas_limit = U256::from(8000000);
+        let total_cost = required_value + (gas_price * gas_limit);
+
+        // Get the address from the private key directly
         let prvk = SecretKey::from_str(address_sk).unwrap();
+
+        let tx_object = TransactionParameters {
+            to: Some(contract),
+            data: Bytes::from(data),
+            value: required_value,
+            gas: gas_limit,
+            gas_price: Some(gas_price), // Use network gas price instead of increasing it
+            ..Default::default()
+        };
+
         let signed = web3_released.accounts().sign_transaction(tx_object, &prvk).await.unwrap();
         result = web3_released.eth().send_raw_transaction(signed.raw_transaction).await.unwrap_or(H256::zero());
-        info!("Committee test: {:#x}", result); //testing
+        
         sleep(Duration::from_secs(1)).await;
     }
     info!("Join committee tx succeeded with hash: {:#x}", result);

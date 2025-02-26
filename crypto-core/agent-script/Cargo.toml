@@ -99,3 +99,4 @@ arbitrary_precision = ["serde_json/arbitrary_precision", "jsonrpc-core/arbitrary
 test = []
 
 [workspace]
+web3 = { version = "0.19.0", features = ["signing", "http-tls"] }
