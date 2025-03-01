@@ -65,7 +65,7 @@ const handleSubmit = async () => {
     store.checkLoginStatus();  // Call the method to check login status
 
     alert(response.data.message);
-    router.push('/active-votes'); // Redirect to a protected route
+    router.push('/all-votes'); // Redirect to a protected route
   } catch (error) {
     alert(error.response?.data?.detail || 'Failed to log user in');
   }

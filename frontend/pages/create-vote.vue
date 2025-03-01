@@ -26,17 +26,6 @@
         ></textarea>
       </div>
 
-      <div class="form-group">
-        <label for="description">Expected Number of Participants</label>
-        <input 
-            type="number" 
-            id="participantCount" 
-            v-model="voteData.participantCount" 
-            required 
-            class="form-input"
-          >
-      </div>
-
       <!-- Date selection row with two inputs -->
       <div class="form-row">
         <!-- Start date input -->
@@ -161,7 +150,6 @@ const voteData = ref({
   options: ['', ''],
   initiatorDeposit: 0.003,
   requiredDeposit: 0.001,
-  participantCount: ''
 })
 
 // Add a new empty option to the options array

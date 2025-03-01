@@ -76,7 +76,7 @@
             
             <!-- View details link -->
             <NuxtLink :to="`/vote/${vote.id}`" class="btn primary">
-              View Details
+              {{ vote.status === 'join' ? 'Signup To Vote' : vote.status === 'active' ? 'Cast Vote' : 'View Results' }}
             </NuxtLink>
           </div>
           </div>

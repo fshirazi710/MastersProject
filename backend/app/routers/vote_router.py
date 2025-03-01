@@ -1,6 +1,9 @@
 from datetime import datetime
-from fastapi import APIRouter
+from motor.motor_asyncio import AsyncIOMotorClient
+from fastapi import APIRouter, Depends
 from web3 import Web3
+from app.models.vote import votingToken
+from app.core.mongodb import get_mongodb
 from app.models.vote import voteData
 from app.core.config import (
     CONTRACT_ADDRESS,
@@ -9,9 +12,18 @@ from app.core.config import (
     PRIVATE_KEY,
     CONTRACT_ABI,
 )
+import random
+import string
+import logging
 
 # Create a router instance for handling vote-related API endpoints
 router = APIRouter()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 # Initialize Web3 connection and contract instance
 web3 = Web3(Web3.HTTPProvider(WEB3_PROVIDER_URL))
@@ -92,8 +104,8 @@ async def create_vote(data: voteData):
         data.description,
         int(start_date.timestamp()),
         int(end_date.timestamp()),
-        "active",
-        data.participantCount,
+        "join",
+        0,
         data.options,
     ).estimate_gas({"from": WALLET_ADDRESS})
 
@@ -103,8 +115,8 @@ async def create_vote(data: voteData):
         data.description,
         int(start_date.timestamp()),
         int(end_date.timestamp()),
-        "active",
-        data.participantCount,
+        "join",
+        0,
         data.options,
     ).build_transaction(
         {
@@ -126,3 +138,38 @@ async def create_vote(data: voteData):
 @router.post("/cast-vote")
 async def cast_vote():
     return {"message": "Vote Casted"}
+
+
+# Function to generate a unique alphanumeric token
+def generate_voting_token(length=8):
+    characters = string.ascii_letters + string.digits  # Combine letters and digits
+    return ''.join(random.choices(characters, k=length))  # Generate a random sequence
+
+
+# Endpoint for generating a unique sequence
+@router.post("/generate-token/{vote_id}")
+async def generate_token(vote_id: int, db: AsyncIOMotorClient = Depends(get_mongodb)):
+    # Retrieve all existing sequences from the database
+    while True:  # Loop until a unique sequence is found
+        token_object = votingToken(
+            vote_id=vote_id,
+            token=generate_voting_token(),
+        )
+        
+        # Check if the sequence already exists in the database
+        existing_sequence = await db.election_tokens.tokens.find_one({"voting_token": token_object.token})  # Use sequence.unique_sequence directly
+        if existing_sequence is None:  # If it doesn't exist, save it
+            await db.election_tokens.tokens.insert_one(token_object.dict())  # Save user to the database without _id
+            return {"token": token_object.token}  # Return the generated sequence
+
+
+# Endpoint for validating a voting token
+@router.get("/validate-token")
+async def validate_token(token: str, db: AsyncIOMotorClient = Depends(get_mongodb)):
+    # Check if the token exists in the database
+    existing_token = await db.election_tokens.tokens.find_one({"token": token})  # Query the database for the token
+
+    if existing_token:  # If the token exists
+        return {"valid": True}
+    else:
+        return {"valid": False}

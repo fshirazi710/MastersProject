@@ -56,35 +56,109 @@
       </div>
     </div>
 
-    <!-- Voting section - only shown for active votes -->
-    <div class="voting-section" v-if="vote.status === 'active'">
-      <h2>Cast Your Vote</h2>
+    <div class="voting-section" v-if="vote.status === 'join'">
+      <h2>Register To Vote</h2>
       <!-- Encryption notice to inform users -->
       <div class="encryption-notice">
         <i class="lock-icon">🔒</i>
-        <p>Your vote will be encrypted and remain secret until the voting period ends and all required keys are released.</p>
+        <p>This voting token is essential for casting your vote. If you lose it, you will not be able to participate in the voting process.</p>
       </div>
+      <div class="encryption-notice">
+        <i class="lock-icon">🔒</i>
+        <p>You can choose to be a secret holder, which means you are a part of making sure your vote remains secure.
+          If you choose to become a secret holder, you will need to release your specific key at the specified time.
+        </p>
+      </div>
+    
       <!-- Voting form with radio options -->
       <form @submit.prevent="handleVote" class="voting-form">
+        <h3>Would you like to be a secret holder?</h3>
         <div class="options-list">
-          <label v-for="(option, index) in vote.options" :key="index" class="option-item">
+          <label class="option-item">
             <input
               type="radio"
-              :id="'option-' + index"
-              v-model="selectedOption"
-              :value="option"
-              name="vote-option"
+              v-model="isSecretHolder"
+              value="yes"
+              name="secret-holder-option"
               required
             >
             <div class="option-content">
-              {{ option }}
+              Yes
+            </div>
+          </label>
+          <label class="option-item">
+            <input
+              type="radio"
+              v-model="isSecretHolder"
+              value="no"
+              name="secret-holder-option"
+              required
+            >
+            <div class="option-content">
+              No
             </div>
           </label>
         </div>
-        <button type="submit" class="btn primary" :disabled="!selectedOption">
-          Submit Encrypted Vote
+        <button @click="generateVotingToken" class="btn primary">
+          Generate Unique Voting Token
         </button>
+        <!-- New styled alert box for votingToken -->
+        <div v-if="votingToken" class="alert-box">
+          <strong>Voting Token:</strong> {{ votingToken }}
+        </div>
       </form>
+    </div>
+
+    <!-- Voting section - only shown for active votes -->
+    <div class="voting-section" v-if="vote.status === 'active'">
+      <h2>Cast Your Vote</h2>
+      <!-- Voting token input -->
+      <form v-if="!isTokenValid" @submit.prevent="validateVotingToken" class="token-form">
+        <div class="encryption-notice">
+          <i class="lock-icon">🔒</i>
+          <p>Once you enter a valid token, you will be allowed to cast your vote.</p>
+        </div>
+        <div class="form-group">
+          <label for="description">Enter Your Voting Token</label>
+          <input 
+            type="text" 
+            id="voting token" 
+            v-model="votingTokenInput" 
+            required 
+            class="form-input"
+          >
+        </div>
+        <button type="submit" class="btn primary token-button">Validate Token</button>
+      </form>
+
+      <div v-if="isTokenValid">
+        <!-- Encryption notice to inform users -->
+        <div class="encryption-notice">
+          <i class="lock-icon">🔒</i>
+          <p>Your vote will be encrypted and remain secret until the voting period ends and all required keys are released.</p>
+        </div>
+        <!-- Voting form with radio options -->
+        <form @submit.prevent="handleVote" class="voting-form">
+          <div class="options-list">
+            <label v-for="(option, index) in vote.options" :key="index" class="option-item">
+              <input
+                type="radio"
+                :id="'option-' + index"
+                v-model="selectedOption"
+                :value="option"
+                name="vote-option"
+                required
+              />
+              <div class="option-content">
+                {{ option }}
+              </div>
+            </label>
+          </div>
+          <button type="submit" class="btn primary" :disabled="!selectedOption">
+            Submit Encrypted Vote
+          </button>
+        </form>
+      </div>
     </div>
 
     <!-- Results section - only shown for ended votes -->
@@ -165,12 +239,10 @@ const route = useRoute()
 const selectedOption = ref(null)
 const loading = ref(true)
 const vote = ref({})
-
-
-// This line sets the middleware for authentication
-definePageMeta({
-  middleware: 'auth'
-})
+const votingToken = ref('')
+const isSecretHolder = ref('yes')
+const votingTokenInput = ref('')
+const isTokenValid = ref(false)
 
 
 const fetchVoteData = () => {
@@ -182,7 +254,6 @@ const fetchVoteData = () => {
       secretHolderCount: 5, // Fixed value
       requiredKeys: 3,      // Fixed value
       releasedKeys: 0,      // Fixed value
-      status: 'active',
       secretHolders: [      // Fixed value
         { 
           id: 1, 
@@ -261,6 +332,35 @@ const handleVote = () => {
   // TODO: Add success/error handling
   console.log('Voted for option:', selectedOption.value)
 }
+
+// Method to get special string
+const generateVotingToken = async () => {
+  try {
+    const response = await axios.post(`http://127.0.0.1:8000/generate-token/${route.params.id}`);
+    votingToken.value = response.data.token; // Set the special string from the response
+  } catch (error) {
+    console.error("Failed to generate voting token:", error);
+    votingToken.value = "Error generating token"; // Handle error
+  }
+}
+
+// Method to validate the voting token
+const validateVotingToken = async () => {
+  try {
+    const response = await axios.get(`http://127.0.0.1:8000/validate-token`, {
+      params: { token: votingTokenInput.value }
+    });
+    if (response.data.valid) {
+      isTokenValid.value = true; // Set token validity
+      alert(isTokenValid)
+    } else {
+      isTokenValid.value = false; // Reset token validity
+    }
+  } catch (error) {
+    console.error("Failed to validate voting token:", error);
+    alert('Error validating token. Please try again.'); // Alert for error
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -286,5 +386,21 @@ const handleVote = () => {
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+/* Add any additional styles for the join section if needed */
+.join-section {
+  margin-top: 20px;
+}
+
+.alert-box {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: #f0f8ff; /* Light blue background */
+  border: 1px solid #007bff; /* Blue border */
+  border-radius: 5px;
+  color: #333; /* Dark text color */
+  font-weight: bold;
+  text-align: center;
 }
 </style> 
