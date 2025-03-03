@@ -1,4 +1,5 @@
 <template>
+  <!-- Loading spinner and message shown while fetching vote data -->
   <div v-if="loading" class="loading">
     <div class="spinner"></div>
     <p>Loading Vote Details...</p>
@@ -56,176 +57,34 @@
       </div>
     </div>
 
-    <div class="voting-section" v-if="vote.status === 'join'">
-      <h2>Register To Vote</h2>
-      <!-- Encryption notice to inform users -->
-      <div class="encryption-notice">
-        <i class="lock-icon">🔒</i>
-        <p>This voting token is essential for casting your vote. If you lose it, you will not be able to participate in the voting process.</p>
-      </div>
-      <div class="encryption-notice">
-        <i class="lock-icon">🔒</i>
-        <p>You can choose to be a secret holder, which means you are a part of making sure your vote remains secure.
-          If you choose to become a secret holder, you will need to release your specific key at the specified time.
-        </p>
-      </div>
-    
-      <!-- Voting form with radio options -->
-      <form @submit.prevent="handleVote" class="voting-form">
-        <h3>Would you like to be a secret holder?</h3>
-        <div class="options-list">
-          <label class="option-item">
-            <input
-              type="radio"
-              v-model="isSecretHolder"
-              value="yes"
-              name="secret-holder-option"
-              required
-            >
-            <div class="option-content">
-              Yes
-            </div>
-          </label>
-          <label class="option-item">
-            <input
-              type="radio"
-              v-model="isSecretHolder"
-              value="no"
-              name="secret-holder-option"
-              required
-            >
-            <div class="option-content">
-              No
-            </div>
-          </label>
-        </div>
-        <button @click="generateVotingToken" class="btn primary">
-          Generate Unique Voting Token
-        </button>
-        <!-- New styled alert box for votingToken -->
-        <div v-if="votingToken" class="alert-box">
-          <strong>Voting Token:</strong> {{ votingToken }}
-        </div>
-      </form>
-    </div>
+    <!-- Registration section - only shown for join votes -->
+    <RegisterToVote 
+      v-if="vote.status === 'join'"
+      :vote-id="route.params.id"
+    />
 
     <!-- Voting section - only shown for active votes -->
-    <div class="voting-section" v-if="vote.status === 'active'">
-      <h2>Cast Your Vote</h2>
-      <!-- Voting token input -->
-      <form v-if="!isTokenValid" @submit.prevent="validateVotingToken" class="token-form">
-        <div class="encryption-notice">
-          <i class="lock-icon">🔒</i>
-          <p>Once you enter a valid token, you will be allowed to cast your vote.</p>
-        </div>
-        <div class="form-group">
-          <label for="description">Enter Your Voting Token</label>
-          <input 
-            type="text" 
-            id="voting token" 
-            v-model="votingTokenInput" 
-            required 
-            class="form-input"
-          >
-        </div>
-        <button type="submit" class="btn primary token-button">Validate Token</button>
-      </form>
-
-      <div v-if="isTokenValid">
-        <!-- Encryption notice to inform users -->
-        <div class="encryption-notice">
-          <i class="lock-icon">🔒</i>
-          <p>Your vote will be encrypted and remain secret until the voting period ends and all required keys are released.</p>
-        </div>
-        <!-- Voting form with radio options -->
-        <form @submit.prevent="handleVote" class="voting-form">
-          <div class="options-list">
-            <label v-for="(option, index) in vote.options" :key="index" class="option-item">
-              <input
-                type="radio"
-                :id="'option-' + index"
-                v-model="selectedOption"
-                :value="option"
-                name="vote-option"
-                required
-              />
-              <div class="option-content">
-                {{ option }}
-              </div>
-            </label>
-          </div>
-          <button type="submit" class="btn primary" :disabled="!selectedOption">
-            Submit Encrypted Vote
-          </button>
-        </form>
-      </div>
-    </div>
+    <CastYourVote 
+      v-if="vote.status === 'active'"
+      :vote-id="route.params.id"
+      :options="vote.options"
+    />
 
     <!-- Results section - only shown for ended votes -->
-    <div v-if="vote.status === 'ended'" class="results-section">
-      <h2>Results</h2>
-      <!-- Show pending state if not enough keys released -->
-      <div v-if="!isDecrypted" class="decryption-pending">
-        <div class="pending-message">
-          <i class="lock-icon">🔒</i>
-          <h3>Results are still encrypted</h3>
-          <p>Waiting for secret holders to release their keys...</p>
-          <!-- Progress bar for key release status -->
-          <div class="key-progress">
-            <div class="progress-bar">
-              <div 
-                class="progress" 
-                :style="{ width: `${(vote.releasedKeys / vote.requiredKeys) * 100}%` }"
-              ></div>
-            </div>
-            <span class="progress-text">
-              {{ vote.releasedKeys }}/{{ vote.requiredKeys }} keys released
-            </span>
-          </div>
-        </div>
-      </div>
-      <!-- Show results if decrypted -->
-      <div v-else class="results-grid">
-        <div v-for="option in vote.options" :key="option.id" class="result-item">
-          <div class="result-header">
-            <span class="option-text">{{ option.text }}</span>
-          </div>
-          <div class="progress-bar">
-            <div 
-              class="progress" 
-              :style="{ width: `${(option.votes / totalVotes) * 100}%` }"
-            ></div>
-          </div>
-          <div class="percentage">
-            {{ ((option.votes / totalVotes) * 100).toFixed(1) }}%
-          </div>
-        </div>
-      </div>
-    </div>
+    <VoteResults
+      v-if="vote.status === 'ended'"
+      :options="vote.options"
+      :released-keys="vote.releasedKeys"
+      :required-keys="vote.requiredKeys"
+    />
 
     <!-- Secret holders section -->
-    <div class="secret-holders-section">
-      <h2>Secret Holders</h2>
-      <p class="holders-description">
-        Secret holders maintain encrypted keys that will be used to reveal the vote results
-        after the voting period ends. A minimum of {{ vote.requiredKeys }} keys are needed
-        to decrypt the results.
-      </p>
-      <!-- Grid of secret holder cards -->
-      <div class="holders-grid">
-        <div v-for="holder in vote.secretHolders" :key="holder.id" class="holder-card">
-          <div class="holder-status" :class="holder.status"></div>
-          <div class="holder-address">{{ truncateAddress(holder.address) }}</div>
-          <div class="holder-info">
-            <span class="label">Status:</span>
-            <span>{{ holder.status }}</span>
-          </div>
-          <div v-if="vote.status === 'ended'" class="key-status">
-            {{ holder.hasReleasedKey ? 'Key Released' : 'Awaiting Key' }}
-          </div>
-        </div>
-      </div>
-    </div>
+    <SecretHolders
+      :secret-holders="vote.secretHolders"
+      :required-keys="vote.requiredKeys"
+      :vote-status="vote.status"
+    />
+
   </div>
 </template>
 
@@ -233,16 +92,15 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import axios from 'axios'
+import RegisterToVote from '~/components/vote/RegisterToVote.vue'
+import CastYourVote from '~/components/vote/CastYourVote.vue'
+import VoteResults from '~/components/vote/VoteResults.vue'
+import SecretHolders from '~/components/vote/SecretHolders.vue'
 
 // Get route params for vote ID
 const route = useRoute()
-const selectedOption = ref(null)
 const loading = ref(true)
 const vote = ref({})
-const votingToken = ref('')
-const isSecretHolder = ref('yes')
-const votingTokenInput = ref('')
-const isTokenValid = ref(false)
 
 
 const fetchVoteData = () => {
@@ -283,11 +141,6 @@ onMounted(() => {
   fetchVoteData()
 })
 
-// Compute total votes for percentage calculations
-const totalVotes = computed(() => {
-  return vote.value.options.reduce((sum, option) => sum + option.votes, 0)
-})
-
 // Compute time remaining until vote ends
 const timeRemaining = computed(() => {
   const end = new Date(vote.value.endDate)
@@ -303,11 +156,6 @@ const timeRemaining = computed(() => {
   return `${days}d ${hours}h ${minutes}m`
 })
 
-// Check if enough keys have been released to decrypt results
-const isDecrypted = computed(() => {
-  return vote.value.releasedKeys >= vote.value.requiredKeys
-})
-
 // Format date strings for display
 const formatDate = (dateString) => {
   return new Date(dateString).toLocaleDateString('en-US', {
@@ -317,49 +165,6 @@ const formatDate = (dateString) => {
     hour: '2-digit',
     minute: '2-digit'
   })
-}
-
-// Truncate blockchain addresses for display
-const truncateAddress = (address) => {
-  return `${address.slice(0, 6)}...${address.slice(-4)}`
-}
-
-// Handle vote submission
-const handleVote = () => {
-  // TODO: Add validation
-  // TODO: Add API integration
-  // TODO: Add encryption
-  // TODO: Add success/error handling
-  console.log('Voted for option:', selectedOption.value)
-}
-
-// Method to get special string
-const generateVotingToken = async () => {
-  try {
-    const response = await axios.post(`http://127.0.0.1:8000/generate-token/${route.params.id}`);
-    votingToken.value = response.data.token; // Set the special string from the response
-  } catch (error) {
-    console.error("Failed to generate voting token:", error);
-    votingToken.value = "Error generating token"; // Handle error
-  }
-}
-
-// Method to validate the voting token
-const validateVotingToken = async () => {
-  try {
-    const response = await axios.get(`http://127.0.0.1:8000/validate-token`, {
-      params: { token: votingTokenInput.value }
-    });
-    if (response.data.valid) {
-      isTokenValid.value = true; // Set token validity
-      alert(isTokenValid)
-    } else {
-      isTokenValid.value = false; // Reset token validity
-    }
-  } catch (error) {
-    console.error("Failed to validate voting token:", error);
-    alert('Error validating token. Please try again.'); // Alert for error
-  }
 }
 </script>
 
@@ -386,21 +191,5 @@ const validateVotingToken = async () => {
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
-}
-
-/* Add any additional styles for the join section if needed */
-.join-section {
-  margin-top: 20px;
-}
-
-.alert-box {
-  margin-top: 10px;
-  padding: 10px;
-  background-color: #f0f8ff; /* Light blue background */
-  border: 1px solid #007bff; /* Blue border */
-  border-radius: 5px;
-  color: #333; /* Dark text color */
-  font-weight: bold;
-  text-align: center;
 }
 </style> 
