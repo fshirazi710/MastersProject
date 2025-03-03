@@ -35,3 +35,14 @@ dist/
 # System files
 .DS_Store
 Thumbs.db
+
+# Backend
+backend/api.ini
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+
