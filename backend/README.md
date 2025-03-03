@@ -65,32 +65,48 @@ pip install -r requirements.txt
 ```
 
 ### Environment Variables
-Create a `.env` file:
+Create a `api.ini` file:
 ```
-# Database
-DATABASE_URL=postgresql://user:password@localhost/dbname
+[API]
+API_STR = /api/v1
+PROJECT_NAME = YOUR_PROJECT_NAME
 
-# Blockchain
-CONTRACT_ADDRESS=your_contract_address
-API_URL=your_blockchain_rpc_url
-PRIVATE_KEY=your_service_private_key
+[CORS]
+CORS_ALLOWED_ORIGINS = http://localhost:3000
 
-# Security
-SECRET_KEY=your_secret_key
+[DATABASE]
+DATABASE_URL = postgresql://user:password@localhost/dbname
+
+[BLOCKCHAIN]
+WEB3_PROVIDER_URL = https://eth-sepolia.g.alchemy.com/v2/your-api-key-here
+CONTRACT_ADDRESS = 0xYourContractAddressHere
+WALLET_ADDRESS = 0xYourWalletAddressHere
+CONTRACT_ABI = YOUR_CONTRACT_ABI
+PRIVATE_KEY = YOUR_PRIVATE_KEY_HERE
+
+[SECURITY]
+SECRET_KEY = your-secret-key-here
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+[JWT]
+JWT_SECRET_KEY = secret_key
+ALGORITHM = HS256
 ```
+
+### Database
+To view records stored in the database:
+1. Download and install MongoDB Compass from the official website
+2. You will need the MongoDB connection string (URI). This is typically in the format: 
+    - mongodb://<username>:<password>@<host>:<port>/<database>
+3. Connect with Compass:
+    - Open MongoDB Compass
+    - Paste the connection string in the "Connection String" field
+    - Click "Connect"
 
 ### Project Structure
 ```
 backend/
 ├── app/
-│   ├── api/
-│   │   ├── v1/
-│   │   │   ├── endpoints/
-│   │   │   │   ├── secret_holders.py    # From secret_holder_router.py
-│   │   │   │   ├── elections.py         # From vote_router.py
-│   │   │   │   └── health.py
-│   │   │   └── router.py
-│   │   └── deps.py
 │   ├── core/
 │   │   ├── config.py                    # Enhanced version of constants.py
 │   │   ├── security.py
@@ -102,7 +118,11 @@ backend/
 │   │   ├── election.py                  # Enhanced from vote.py
 │   │   ├── secret_holder.py
 │   │   └── vote.py
-│   ├── schemas/                         # Pydantic models
+│   ├── routers/                         # API route definitions for handling requests
+│   │   ├── election.py                  
+│   │   ├── secret_holder.py
+│   │   └── vote.py
+│   ├── schemas/                         
 │   │   ├── election.py
 │   │   ├── secret_holder.py
 │   │   └── vote.py
@@ -116,7 +136,10 @@ backend/
 │   ├── api/
 │   ├── services/
 │   └── conftest.py
-└── main.py
+├── main.py
+├── api.ini
+├── api.ini.example
+└── requirements.txt
 ```
 
 ### Running the Server
