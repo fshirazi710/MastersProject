@@ -1,6 +1,7 @@
 import configparser
 from pathlib import Path
 import logging
+import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -16,8 +17,12 @@ config.read(CONFIG_PATH)
 API_STR = config["API"].get("API_STR", "")
 PROJECT_NAME = config["API"].get("PROJECT_NAME", "")
 
-# CORS
-CORS_ALLOWED_ORIGINS = config["CORS"].get("CORS_ALLOWED_ORIGINS", "*")
+# CORS - Parse as JSON list
+try:
+    CORS_ALLOWED_ORIGINS = json.loads(config["CORS"].get("CORS_ALLOWED_ORIGINS", '["http://localhost:3000"]'))
+except json.JSONDecodeError:
+    logger.warning("Invalid CORS_ALLOWED_ORIGINS format, defaulting to localhost:3000")
+    CORS_ALLOWED_ORIGINS = ["http://localhost:3000"]
 
 # Blockchain
 WEB3_PROVIDER_URL = config["BLOCKCHAIN"].get("WEB3_PROVIDER_URL", "")

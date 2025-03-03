@@ -38,11 +38,15 @@ async def register(data: registerData, db: AsyncIOMotorClient = Depends(get_mong
                 status_code=400, detail="Email already registered"
             )  # Raise error if user exists
 
+        # Hash the password
+        salt = bcrypt.gensalt()
+        hashed_password = bcrypt.hashpw(data.password.encode('utf-8'), salt).decode('utf-8')
+
         # Create new user document
         user = User(
             name=data.name,
             email=data.email,
-            password=data.password,  # Note: In production, hash this password
+            password=hashed_password,
             role=data.role,
             created_at=datetime.utcnow().isoformat(),  # Set creation time
         )

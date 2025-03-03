@@ -1,6 +1,6 @@
 <template>
     <div class="register">
-        <h1>Register</h1>
+        <h1>Register as Vote Organiser</h1>
         
         <form @submit.prevent="handleSubmit" class="form-container">
           <!-- Name input -->
@@ -27,31 +27,6 @@
               class="form-input"
               placeholder="Enter your email"
             >
-          </div>
-  
-          <!-- Role Selection -->
-          <div class="form-group">
-            <label>Select Role</label>
-            <div class="role-options">
-              <div 
-                class="role-card"
-                :class="{ active: registerationData.role === 'secret-holder' }"
-                @click="registerationData.role = 'secret-holder'"
-              >
-                <div class="role-icon">🔐</div>
-                <h3>Secret Holder</h3>
-                <p>Participate in securing vote results and earn rewards</p>
-              </div>
-              <div 
-                class="role-card"
-                :class="{ active: registerationData.role === 'vote-organiser' }"
-                @click="registerationData.role = 'vote-organiser'"
-              >
-                <div class="role-icon">📊</div>
-                <h3>Vote Organiser</h3>
-                <p>Create and manage secure voting events</p>
-              </div>
-            </div>
           </div>
   
           <!-- Password input -->
@@ -89,7 +64,9 @@
   
           <!-- Submit button -->
           <div class="form-actions">
-            <button type="submit" class="btn primary">Register</button>
+            <button type="submit" class="btn primary" :disabled="isSubmitting">
+              {{ isSubmitting ? 'Registering...' : 'Register' }}
+            </button>
           </div>
   
           <!-- Login link -->
@@ -104,24 +81,22 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
-import bcrypt from 'bcryptjs'
+import { config } from '../config'
 
 const router = useRouter()
 const errorMessage = ref('')
+const isSubmitting = ref(false)
 
 const registerationData = ref({
     name: '',
     email: '',
     password: '',
     confirmPassword: '',
-    role: ''
+    role: 'vote-organiser' // Set default role
 })
 
 const validateForm = () => {
-    if (!registerationData.value.role) {
-        errorMessage.value = 'Please select a role'
-        return false
-    }
+    errorMessage.value = ''
     if (registerationData.value.password !== registerationData.value.confirmPassword) {
         errorMessage.value = 'Passwords do not match'
         return false
@@ -134,31 +109,51 @@ const validateForm = () => {
 }
 
 const handleSubmit = async () => {
-    if (!validateForm()) {
+    if (!validateForm() || isSubmitting.value) {
         return
     }
 
+    isSubmitting.value = true
+    errorMessage.value = ''
+
     try {
-        const salt = await bcrypt.genSalt(10)
-        const hashedPassword = await bcrypt.hash(registerationData.value.password, salt)
-
-        const registrationPayload = {
-            ...registerationData.value,
-            password: hashedPassword,
-            confirmPassword: undefined // Remove confirmPassword from payload
-        }
-
-        axios.post("http://127.0.0.1:8000/register", registrationPayload)
-        .then(response => {
+        // Don't hash password here - it will be hashed securely in the backend
+        const { confirmPassword, ...payload } = registerationData.value
+        
+        const response = await axios.post(`${config.api.baseURL}/register`, payload, {
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        
+        if (response.data.message) {
             alert(response.data.message)
             router.push('/login')
-        })
+        }
     } catch (error) {
-        alert(error.response?.data?.message || 'Failed to register user')
+        console.error('Registration error:', error)
+        errorMessage.value = error.response?.data?.detail || 'Failed to register user. Please try again.'
+    } finally {
+        isSubmitting.value = false
     }
 }
 </script>
   
 <style lang="scss" scoped>
 @use '@/assets/styles/pages/register';
+
+.error-message {
+    color: #dc3545;
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 4px;
+    background-color: rgba(220, 53, 69, 0.1);
+}
+
+.form-actions {
+    button:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+}
 </style> 
