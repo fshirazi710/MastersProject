@@ -54,6 +54,8 @@ async def get_all_votes():
                 "status": vote_data[5],
                 "participantCount": vote_data[6],
                 "options": vote_data[7],
+                "rewardPool": web3.from_wei(vote_data[8], 'ether'),
+                "requiredDeposit": web3.from_wei(vote_data[9], 'ether'),
             }
         )
     return {"data": votes}
@@ -78,6 +80,8 @@ async def get_vote(vote_id: int):
             "status": vote_data[5],
             "participantCount": vote_data[6],
             "options": vote_data[7],
+            "rewardPool": web3.from_wei(vote_data[8], 'ether'),
+            "requiredDeposit": web3.from_wei(vote_data[9], 'ether'),
         }
     }
 
@@ -107,6 +111,8 @@ async def create_vote(data: voteData):
         "join",
         0,
         data.options,
+        web3.to_wei(data.rewardPool, 'ether'),
+        web3.to_wei(data.requiredDeposit, 'ether'),
     ).estimate_gas({"from": WALLET_ADDRESS})
 
     # Build the transaction
@@ -118,6 +124,8 @@ async def create_vote(data: voteData):
         "join",
         0,
         data.options,
+        web3.to_wei(data.rewardPool, 'ether'),
+        web3.to_wei(data.requiredDeposit, 'ether'),
     ).build_transaction(
         {
             "chainId": 11155111,

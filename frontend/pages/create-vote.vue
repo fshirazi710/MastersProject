@@ -63,11 +63,11 @@
         
         <div class="form-row">
           <div class="form-group">
-            <label for="initiatorDeposit">Total Reward Pool (ETH)</label>
+            <label for="rewardPool">Total Reward Pool (ETH)</label>
             <input 
               type="number"
-              id="initiatorDeposit"
-              v-model="voteData.initiatorDeposit"
+              id="rewardPool"
+              v-model="voteData.rewardPool"
               required
               min="0.001"
               step="0.001"
@@ -148,7 +148,7 @@ const voteData = ref({
   startDate: '',
   endDate: '',
   options: ['', ''],
-  initiatorDeposit: 0.003,
+  rewardPool: 0.003,
   requiredDeposit: 0.001,
 })
 

@@ -42,6 +42,11 @@
             </div>
           </label>
         </div>
+        <div v-if="isSecretHolder === 'yes'" class="alert-box">
+          <strong>Reward Pool: {{ rewardPool }} ETH</strong>
+          <p></p>
+          <strong>Required Deposit: {{ requiredDeposit }} ETH</strong>
+        </div>
         <button @click="generateToken" class="btn primary">
           Generate Unique Voting Token
         </button>
@@ -66,6 +71,8 @@
   
   const isSecretHolder = ref('yes')
   const votingToken = ref('')
+  const rewardPool = ref(0.5) // Example value, replace with actual logic to fetch this
+  const requiredDeposit = ref(0.1) // Example value, replace with actual logic to fetch this
   
   // Method to generate voting token
   const generateToken = async () => {

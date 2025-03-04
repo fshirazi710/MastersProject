@@ -117,6 +117,7 @@ const getVotes = () => {
   loading.value = true
   axios.get("http://127.0.0.1:8000/all-votes")
     .then(response => {
+      console.log(response)
       votes.value = response.data.data
     })
     .catch(error => {
