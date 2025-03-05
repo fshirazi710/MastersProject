@@ -53,6 +53,45 @@
         </div>
       </div>
 
+      <!-- Secret holder configuration section -->
+      <div class="form-group">
+        <h3>Secret Holder Requirements</h3>
+        <div class="info-notice">
+          <i class="info-icon">ℹ️</i>
+          <p>Higher deposits may reduce participation but increase holder reliability</p>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="rewardPool">Total Reward Pool (ETH)</label>
+            <input 
+              type="number"
+              id="rewardPool"
+              v-model="voteData.rewardPool"
+              required
+              min="0.001"
+              step="0.001"
+              class="form-input"
+            >
+            <p class="helper-text">Total amount to reward secret holders</p>
+          </div>
+
+          <div class="form-group">
+            <label for="requiredDeposit">Required Holder Deposit (ETH)</label>
+            <input 
+              type="number"
+              id="requiredDeposit"
+              v-model="voteData.requiredDeposit"
+              required
+              min="0.001"
+              step="0.001"
+              class="form-input"
+            >
+            <p class="helper-text">Security deposit required from each holder</p>
+          </div>
+        </div>
+      </div>
+
       <!-- Dynamic voting options section -->
       <div class="form-group">
         <label>Options</label>
@@ -97,13 +136,20 @@ import axios from 'axios'
 
 const router = useRouter();
 
+// This line sets the middleware for authentication
+definePageMeta({
+  middleware: 'auth'
+})
+
 // Initialize form data with reactive reference
 const voteData = ref({
   title: '',
   description: '',
   startDate: '',
   endDate: '',
-  options: ['', ''] // Start with 2 empty options (minimum required)
+  options: ['', ''],
+  rewardPool: 0.003,
+  requiredDeposit: 0.001,
 })
 
 // Add a new empty option to the options array
@@ -122,16 +168,12 @@ const handleSubmit = () => {
       alert(response.data.message)
       router.push('/active-votes')
     })
-    console.log('Form submitted:', voteData.value)
+    .catch(error => {
+      alert(error.response?.data?.message || 'Failed to create vote')
+    })
 }
 </script>
 
 <style lang="scss" scoped>
-// Page container styles
-// Uses variables from _variables.scss
-.create-vote {
-  max-width: $desktop;
-  margin: 0 auto;
-  padding: $spacing-lg;
-}
+@use '@/assets/styles/pages/create-vote';
 </style> 

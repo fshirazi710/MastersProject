@@ -1,0 +1,107 @@
+@use '../variables' as *;
+@use '../components/cards' as *;
+@use '../components/forms' as *;
+
+.register {
+    width: 100%;
+    max-width: 780px;
+    margin: 0 auto;
+    padding: $spacing-lg;
+
+    h1 {
+        margin-bottom: $spacing-lg;
+        color: $text-color;
+    }
+}
+
+.form-container {
+    @extend .card;
+    margin-top: $spacing-md;
+}
+
+.form-group {
+    margin-bottom: $spacing-lg;
+  
+    label {
+      display: block;
+      margin-bottom: $spacing-sm;
+      font-weight: 500;
+    }
+}
+
+.role-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: $spacing-md;
+    margin-bottom: $spacing-md;
+}
+
+.role-card {
+    background: white;
+    border: 2px solid $border-color;
+    border-radius: 8px;
+    padding: $spacing-md;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: center;
+
+    &:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    &.active {
+        border-color: $primary-color;
+        background-color: rgba($primary-color, 0.05);
+    }
+
+    .role-icon {
+        font-size: 2rem;
+        margin-bottom: $spacing-sm;
+    }
+
+    h3 {
+        margin: $spacing-sm 0;
+        color: $text-color;
+        font-size: 1rem;
+    }
+
+    p {
+        font-size: 0.875rem;
+        color: $text-secondary;
+        margin: 0;
+    }
+}
+
+.error-message {
+    color: #ff4444;
+    margin-bottom: $spacing-md;
+    padding: $spacing-sm;
+    background-color: #ffe5e5;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.form-actions {
+    margin-top: $spacing-lg;
+}
+
+.form-footer {
+    margin-top: $spacing-md;
+    text-align: center;
+
+    a {
+        color: $primary-color;
+        text-decoration: none;
+        
+        &:hover {
+        text-decoration: underline;
+        }
+    }
+}
+
+.helper-text {
+    font-size: 0.875rem;
+    color: $text-secondary;
+    margin-top: 0.25rem;
+}

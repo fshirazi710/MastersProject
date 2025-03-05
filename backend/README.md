@@ -65,53 +65,90 @@ pip install -r requirements.txt
 ```
 
 ### Environment Variables
-Create a `.env` file:
+Create a `api.ini` file:
 ```
-# Database
-DATABASE_URL=postgresql://user:password@localhost/dbname
+[API]
+API_STR = /api/v1
+PROJECT_NAME = YOUR_PROJECT_NAME
 
-# Blockchain
-CONTRACT_ADDRESS=your_contract_address
-API_URL=your_blockchain_rpc_url
-PRIVATE_KEY=your_service_private_key
+[CORS]
+CORS_ALLOWED_ORIGINS = http://localhost:3000
 
-# Security
-SECRET_KEY=your_secret_key
+[DATABASE]
+DATABASE_URL = postgresql://user:password@localhost/dbname
+
+[BLOCKCHAIN]
+WEB3_PROVIDER_URL = https://eth-sepolia.g.alchemy.com/v2/your-api-key-here
+CONTRACT_ADDRESS = 0xYourContractAddressHere
+WALLET_ADDRESS = 0xYourWalletAddressHere
+CONTRACT_ABI = YOUR_CONTRACT_ABI
+PRIVATE_KEY = YOUR_PRIVATE_KEY_HERE
+
+[SECURITY]
+SECRET_KEY = your-secret-key-here
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+[JWT]
+JWT_SECRET_KEY = secret_key
+ALGORITHM = HS256
 ```
+
+### Database
+To view records stored in the database:
+1. Download and install MongoDB Compass from the official website
+2. You will need the MongoDB connection string (URI). This is typically in the format: 
+    - mongodb://<username>:<password>@<host>:<port>/<database>
+3. Connect with Compass:
+    - Open MongoDB Compass
+    - Paste the connection string in the "Connection String" field
+    - Click "Connect"
 
 ### Project Structure
 ```
 backend/
-├── src/
-│   ├── controllers/        # Request handlers
-│   │   ├── messages.py
-│   │   └── agents.py
-│   ├── routes/            # API route definitions
-│   │   ├── messages.py
-│   │   └── agents.py
-│   ├── services/          # Business logic
-│   │   ├── blockchain.py  # Web3 interactions
-│   │   ├── crypto.py      # Cryptographic operations
-│   │   └── database.py    # Database operations
-│   ├── models/            # Data models
-│   │   ├── message.py
-│   │   └── agent.py
-│   └── utils/             # Helper functions
-│       ├── web3_utils.py
-│       └── crypto_utils.py
-├── config/                # Configuration files
-│   ├── database.py
-│   └── settings.py
-└── tests/                # Unit tests
+├── app/
+│   ├── core/
+│   │   ├── config.py                    # Enhanced version of constants.py
+│   │   ├── security.py
+│   │   └── blockchain.py                # From services/blockchain.py
+│   ├── db/
+│   │   ├── session.py
+│   │   └── base.py
+│   ├── models/                          # Database models
+│   │   ├── election.py                  # Enhanced from vote.py
+│   │   ├── secret_holder.py
+│   │   └── vote.py
+│   ├── routers/                         # API route definitions for handling requests
+│   │   ├── election.py                  
+│   │   ├── secret_holder.py
+│   │   └── vote.py
+│   ├── schemas/                         
+│   │   ├── election.py
+│   │   ├── secret_holder.py
+│   │   └── vote.py
+│   └── services/
+│       ├── blockchain.py
+│       ├── crypto.py
+│       └── election.py
+├── alembic/
+│   └── versions/
+├── tests/
+│   ├── api/
+│   ├── services/
+│   └── conftest.py
+├── main.py
+├── api.ini
+├── api.ini.example
+└── requirements.txt
 ```
 
 ### Running the Server
 ```bash
 # Development
-uvicorn src.main:app --reload
+uvicorn main:app --reload
 
 # Production
-uvicorn src.main:app --host 0.0.0.0 --port 8000
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 ## Database Schema
@@ -206,3 +243,21 @@ The service includes:
 ## License
 
 [Add license information here]
+
+## Changes Made and Why:
+# Made a new branch just to make sure that I didn't remove anything vital from the changes Luke had made
+
+1. Removed api/ and its contents
+    - This was confusing to look at, as it seemed the code within was redundant when looking at the rest of the codebase.
+2. Modified Main.py
+    - Previously the routing was handled in api/.
+    - I believe the routing itslef should be handled directly within Main.py.
+3. Using a .ini file, instead of a .env file.
+    - This allows us to create a more structured configuration file.
+    - This was the approach used by the development team the worked with FastAPI at my placement.
+    - The .ini file shouldn't be pushed to github.
+    - The .ini.example file can be pushed, and should be used as a skeleton file to create your own .ini file.
+4. Modified the config.py file in core/
+    - To use the .ini file as the configuration file.
+
+# After making these modifications, the backend is back to running.
