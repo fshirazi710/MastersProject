@@ -183,8 +183,71 @@ CREATE TABLE agents (
 pytest
 
 # Run with coverage
-pytest --cov=src
+pytest --cov=app.services
+
+# Run tests with visualization (showing print statements)
+pytest -v -s
+
+# Run specific test files with visualization
+pytest tests/test_crypto.py -v -s
+pytest tests/test_blockchain.py -v -s
 ```
+
+### Test Visualization
+
+The test suite includes detailed print statements that help visualize the cryptographic and blockchain operations. To see these visualizations, run the tests with the `-s` flag, which prevents pytest from capturing stdout.
+
+#### Crypto Visualizations
+
+The crypto tests visualize:
+- **BLS12-381 Keypair Generation**: Shows the generated private and public keys
+- **Secret Sharing**: Displays the original secret, generated shares, and reconstructed secret
+- **Vote Encryption/Decryption**: Shows the original vote data, encryption key, ciphertext, nonce, and decrypted data
+- **Share Verification**: Demonstrates the verification of valid and invalid shares
+- **Hash to Scalar**: Shows the input data, resulting scalar, and confirms deterministic behavior
+
+Example output:
+```
+=== Secret Sharing and Reconstruction ===
+Original Secret: 3407277151969687427993513947276512868709236181037768246516745884605547301407
+
+Generated 10 shares with threshold 7:
+Share 1: (index=1, value=18915560937742515382476943012473562333820395148850261083649375633660862896216)
+Share 2: (index=2, value=15515710921721009832801701128661790120181528810606231936518355004584857234394)
+...
+
+Reconstructed Secret (using all 10 shares): 3407277151969687427993513947276512868709236181037768246516745884605547301407
+Reconstruction successful: True
+```
+
+#### Blockchain Visualizations
+
+The blockchain tests visualize:
+- **Join as Holder**: Shows the deposit amount, transaction details, and result
+- **Vote Submission**: Displays the vote data, encryption, share generation, and transaction result
+- **Share Verification**: Shows the verification process for submitted shares
+- **Share Status**: Displays the status of all shares for a vote
+- **Error Handling**: Demonstrates how errors are handled during transactions
+
+Example output:
+```
+=== Test: Vote Submission ===
+Vote Data: Test vote: This is a confidential ballot
+Decryption Time: 1234567890 (Unix timestamp)
+Number of Holders: 10
+
+Mocked Cryptographic Operations:
+Encrypted Vote: 656e63727970746564
+Nonce: 6e6f6e6365
+Generated Shares: [(1, 100), (2, 200)]
+
+Result:
+Success: True
+Transaction Hash: 0101010101010101010101010101010101010101010101010101010101010101
+Vote ID: 1
+```
+
+These visualizations help developers and testers understand the flow of data through the system and verify that cryptographic operations are working as expected.
 
 ## Integration with crypto-core
 
