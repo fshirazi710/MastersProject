@@ -46,3 +46,10 @@ __pycache__/
 *.pyd
 *.pyw
 
+# .Coverage
+.coverage
+
+# .pytest_cache
+.pytest_cache
+
+
