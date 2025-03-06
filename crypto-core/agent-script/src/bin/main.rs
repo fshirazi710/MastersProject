@@ -55,21 +55,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let JOIN_COMMITTEE = true;
 
     info!("Initializing...");
-    let agent_pk = cryptography::import_pk(&std::env::var("AGENT_PK").expect("AGENT_PK must be set."));
-    let agent_sk = cryptography::import_sk(&std::env::var("AGENT_SK").expect("AGENT_SK must be set."));
+    let agent_pk = cryptography::import_pk(&std::env::var("AGENT_PK").expect("AGENT_PK must be set.")); // public key
+    let agent_sk = cryptography::import_sk(&std::env::var("AGENT_SK").expect("AGENT_SK must be set.")); // secret key
     if !(agent_sk*G1Projective::generator() == agent_pk){
         error!("Agent public key and secret key do not match!");
     }
     let address_sk = &std::env::var("ADDRESS_SK").expect("ADDRESS_SK must be set.");
     let address_pk = &std::env::var("ADDRESS_PK").expect("ADDRESS_PK must be set.");
     let contract_address: Address = std::env::var("CONTRACT_ADDRESS").expect("CONTRACT_ADDRESS must be set.").parse()?;
-    let n = 3;
-    let t = 2;
+    let n = 3; // number of holders I think
+    let t = 2; // threshold
     let url = std::env::var("API_URL").expect("API_URL must be set.");
     // Create web3 instance
     let web3 = Arc::new(Mutex::new(Web3::new(web3::transports::Http::new(&url)?)));
     let f = File::open("./contract_abi")?;
-    let ethabi_contract = ethabi::Contract::load(f)?;
+    let ethabi_contract = ethabi::Contract::load(f)?; // load list of secret holders
     let contract = Contract::new(web3.lock().await.eth(), contract_address, ethabi_contract);
     let mut tasks: Arc<Mutex<HashMap<u64, Task>>> = Arc::new(Mutex::new(HashMap::new()));
     info!("Populating agents list.");
@@ -78,22 +78,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Join committee if myself not in agents list
     let mut in_committee = false;
     for (_, agent) in &agents{
-        if agent.pk == agent_pk{
+        if agent.pk == agent_pk{ // if my private key us equal to a public key in the list
             in_committee = true;
             break;
         }
     }
     if !in_committee{
-        let deposit_ether_value = 1;
-        join_committee(Arc::clone(&web3), contract_address, &agent_pk, address_sk, deposit_ether_value).await;
+        let deposit_ether_value = 1; // how much to deposit in order to get on the committee
+        join_committee(Arc::clone(&web3), contract_address, &agent_pk, address_sk, deposit_ether_value).await; //function call, function is defined below
         info!("Joining committee.");
-        while get_index(&contract, agent_pk).await.is_none(){
+        while get_index(&contract, agent_pk).await.is_none(){ // wait for index assignment
             sleep(Duration::from_secs(5)).await;
         }
     }
     let index = get_index(&contract, agent_pk).await.unwrap(); // Your member index
 
-    // Create event filter
+    // Create event filter - what kinds of events to pay attention to
     let event1 = "transactionReceived(uint256,uint256,bytes,bytes,bytes[])";
     let event2 = "shareRecieved(uint256,uint256,bytes)";
     let event3 = "memberJoined(address,uint256,bytes)";
@@ -146,14 +146,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     alphas_bytes.push(Scalar::from_bytes(&bytes).unwrap());
                 }
                 let mut shares: HashMap<u64, Share> = HashMap::new();
-                shares.insert(index, Share{x: index, y: cryptography::node_get_share(&agent_sk, &g1r_point)});
+                shares.insert(index, Share{x: index, y: cryptography::node_get_share(&agent_sk, &g1r_point)}); // dont know what happens here
                 // push task
                 let task = Task{id, decryption_time, g1r: g1r_point, g2r: g2r_point, alphas: alphas_bytes, shares, submitted: false};
                 let mut released_tasks = tasks.lock().await;
                 released_tasks.insert(id, task);
                 info!{"Task {} added to tasks list.", id};
             }
-            else if tx_log.topics[0] == event_topics[1] {
+            else if tx_log.topics[0] == event_topics[1] { // contract recieved share submission, this verifies if that share (submitted by someone else) is authentic
                 // share received
                 let data = ethabi::decode(&[ParamType::Uint(256), ParamType::Uint(256), ParamType::Bytes], raw_data).unwrap();
                 info!("Share received event detected. Share data: {:?}", data);
@@ -238,18 +238,26 @@ fn get_time() -> u64{
 // value unit is eth
 async fn join_committee(web3: Arc<Mutex<Web3<Http>>>, contract: Address, agent_pk: &G1Projective, address_sk: &str, value: u64){
     let mut result = H256::zero();
-    while result == H256::zero(){
+    while result == H256::zero(){ // spam the contract until it accepts the agent to the committie
+
         let public_key = Param{name: "publicKey".to_string(), kind: ParamType::Bytes, internal_type: None};
+        // call joinCommittee function on the smart contract
         let func = ethabi::Function{name: "joinCommittee".to_string(), inputs: vec![public_key], outputs: vec![], state_mutability: ethabi::StateMutability::NonPayable, constant: None};
-        
+        // Convert the agent's public key to a compressed format and create a Token with the bytes data.
         let pk_data = Token::Bytes(ethabi::Bytes::from(agent_pk.to_affine().to_compressed()));
-        let data = make_data(&func, &vec![pk_data]);
+        // Create the data for the function call using the function and its parameters.
+        let data = make_data(&func, &vec![pk_data]); // allows passing the function as a parameter (I think)
+        // Lock the Web3 instance to ensure exclusive access and await the result.
         let web3_released = web3.lock().await;
+        // Create a transaction object with the necessary parameters, including the contract's address, data, value, and gas limit.
         let tx_object = TransactionParameters{to: Some(contract), data: Bytes::from(data), value: U256::exp10(18)*value, gas: U256::from(8000000), gas_price: Some(U256::from(web3_released.eth().gas_price().await.unwrap()*15/10)), ..Default::default()};
+         // Convert the address's secret key from a string to a SecretKey object.
         let prvk = SecretKey::from_str(address_sk).unwrap();
+        // Sign the transaction using the Web3 instance's accounts method and the agent's private key.
         let signed = web3_released.accounts().sign_transaction(tx_object, &prvk).await.unwrap();
+        // Send the signed transaction and update the result with the transaction hash.
         result = web3_released.eth().send_raw_transaction(signed.raw_transaction).await.unwrap_or(H256::zero());
-        sleep(Duration::from_secs(1)).await;
+        sleep(Duration::from_secs(1)).await; // wait so that its just spam, not DOS attack
     }
     info!("Join committee tx succeeded with hash: {:#x}", result);
 }

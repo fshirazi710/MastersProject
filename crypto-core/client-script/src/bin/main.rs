@@ -49,16 +49,18 @@ struct Agent{
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
+    // read values from the enviornment
     let sk = &std::env::var("CLIENT_SK").expect("CLIENT_SK must be set.");
     let contract_address: Address = std::env::var("CONTRACT_ADDRESS").expect("CONTRACT_ADDRESS must be set.").parse()?;
     let url = std::env::var("API_URL").expect("API_URL must be set.");
     let web3 = Web3::new(web3::transports::Http::new(&url)?);
+    // load contract info from file
     let f = File::open("./contract_abi")?;
     let ethabi_contract = ethabi::Contract::load(f)?;
     let contract = Contract::new(web3.eth(), contract_address, ethabi_contract);
 
-    let message = "Test one hour message 10";
-    let decryption_time = get_time()+3600; //decrypt in two minutes
+    let message = "Test one hour message 10"; // idk what 10 means here
+    let decryption_time = get_time()+3600; //decrypt in two minutes - this says two but adds one (60x60)
     let n = 3;
     send_time_lock_message(&web3, &contract, &contract_address, sk, message, decryption_time, n).await;
     Ok(())
@@ -67,9 +69,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn send_time_lock_message(web3: &Web3<Http>, contract: &Contract<Http>, contract_address: &Address, sk: &str, message: &str, decryption_time: u64, n: u64){
     // prepare params (cryptography)
     let t = get_threshold(n);
-    let agents: HashMap<u64, Agent> = get_agent_list(&contract).await;
+    let agents: HashMap<u64, Agent> = get_agent_list(&contract).await; // gets list of holders from contract
     let indexes: Vec<u64> = agents.keys().cloned().collect();
     let pks = indexes.iter().map(|i| agents.get(i).unwrap().pk).collect();
+    // cant figure out what all the r g1r g2r and alphas stand for
     let r = cryptography::gen_r();
     let g1r = cryptography::get_g1r(&r).to_affine().to_compressed().to_vec();
     let g2r = cryptography::get_g2r(&r).to_affine().to_compressed().to_vec();
@@ -133,7 +136,7 @@ fn make_data(func: &Function, data: &Vec<Token>) -> Bytes{
     let input = func.encode_input(&data[..]).unwrap();
     return Bytes::from(input);
 }
-
+// threshold is always set to just above half (idk if thats the requirement of the cryptography or not)
 fn get_threshold(n: u64) -> u64{
     (((n as f32)*0.51).ceil()) as u64
 }

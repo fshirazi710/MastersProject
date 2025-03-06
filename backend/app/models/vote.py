@@ -7,4 +7,9 @@ class voteData(BaseModel):
     startDate: str
     endDate: str
     options: List[str]
-    participantCount: int
+    rewardPool: float
+    requiredDeposit: float
+
+class votingToken(BaseModel):
+    vote_id: int
+    token: str

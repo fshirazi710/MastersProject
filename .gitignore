@@ -36,6 +36,9 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Backend
+backend/api.ini
+
 # Python
 __pycache__/
 *.pyc
@@ -43,5 +46,10 @@ __pycache__/
 *.pyd
 *.pyw
 
-# Backend
-backend/api.ini
+# .Coverage
+.coverage
+
+# .pytest_cache
+.pytest_cache
+
+

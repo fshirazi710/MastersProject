@@ -12,8 +12,9 @@ contract TimeLockEncryption {
     mapping(uint256 => DisputedShare[]) public disputedShares;
     uint256 public committeeSize = 0;
     uint256 public indexCount = 1;
-    uint256 public GAS_ESTIMATION = 0.007 ether;
+    uint256 public GAS_ESTIMATION = 0.007 ether; // this should be constant or dynamically set basted on ETH prices and fees
 
+    // these should not be constant but set upon vote creation
     uint256 public constant DEPOSIT_AMOUNT = 1 ether;
     uint256 public constant MAX_COMMITTEE_SIZE = 3;
     uint256 public constant THRESHOLD = 2;
@@ -67,7 +68,7 @@ contract TimeLockEncryption {
     constructor() {
         owner = msg.sender;
     }
-
+    // destroys the contract aka the vote, perhaps this should return money to everyone, not just send it all to the owner?
     function destroy(address payable recipient) external onlyOwner {
         selfdestruct(recipient);
     }
@@ -84,7 +85,8 @@ contract TimeLockEncryption {
         ++committeeSize;
         ++indexCount;
     }
-
+    // we should change it so if someone exits before the start of the vote they get their deposit back
+    // and if they exit after they do not and their deposit will fuel rewards for others
     function exitCommittee() public onlyCommittee {
         bool allowExit = true;
         
@@ -105,32 +107,35 @@ contract TimeLockEncryption {
     function returnDeposit(address member) internal {
         payable(member).transfer(DEPOSIT_AMOUNT);
     }
-
+    // this efectively starts the vote, sets the decryption time and the secret params (g1r g2r and alphas)
+    // can only happen if committee is full. Perhaps the values of reward, threshold gas etc should be set here
     function sendTimeLockTransaction(uint256 decryptionTime, bytes memory g1r, bytes memory g2r, bytes[] memory alphas) public payable CommitteeInPlace(){
         require(decryptionTime > block.timestamp, "Decryption time must be in the future");
         require(msg.value >= (FIXED_REWARD + GAS_ESTIMATION) * THRESHOLD, "Not enough fee");
 
         uint256 transactionID = transactionCounter;
         transactions.push(TimeLockTransaction(transactionID, decryptionTime, 0));
+        // emit event that agents are listening to
         emit transactionReceived(transactionID, decryptionTime, g1r, g2r, alphas);
         transactionCounter++;
     }
 
     function submitShare(uint256 transactionID, bytes memory secretShare) public onlyCommittee {
-        require(block.timestamp >= transactions[transactionID].decryptionTime, "Decryption time not reached");
+        require(block.timestamp >= transactions[transactionID].decryptionTime, "Decryption time not reached"); // perhaps in this case the sender should be penalied
 
+        // emit event for agents
         emit shareRecieved(publicKeys[msg.sender].index, transactionID, secretShare);
         if (!shareSubmitted[transactionID][msg.sender]) {
             // The member has never submitted a share for this transaction before.
             shareSubmitted[transactionID][msg.sender] = true;
             transactions[transactionID].sharesReceived++;
-            if (transactions[transactionID].sharesReceived <= THRESHOLD) {
+            if (transactions[transactionID].sharesReceived <= THRESHOLD) { // this only rewards the first T holders who submit, we may wanna change this
                 uncollectedRewards[msg.sender].push(RewardRecord(block.timestamp, (FIXED_REWARD + GAS_ESTIMATION)));
             }
         }
     }
 
-    function disputeShare(uint256 transactionID, uint256 member_index) public onlyCommittee {
+    function disputeShare(uint256 transactionID, uint256 member_index) public onlyCommittee { // an agent calims a share was invalid
         require(transactionID < transactions.length, "Invalid transaction ID");
         require(committee[member_index] != address(0), "Disputed member is not in the committee");
 
@@ -144,20 +149,21 @@ contract TimeLockEncryption {
 
         disputedShares[transactionID].push(DisputedShare(msg.sender, committee[member_index]));
 
-        uint256 disputeCount = 0;
+        uint256 disputeCount = 0; // count number of disputed shares this memeber submitted
         for (uint256 i = 0; i < disputedShares[transactionID].length; i++) {
             if (disputedShares[transactionID][i].member == committee[member_index]) {
                 disputeCount++;
             }
         }
 
-        if (disputeCount >= THRESHOLD) {
+        if (disputeCount >= THRESHOLD) { // if more than T holders disputed this holders shares penalize the holder
             // punish malicious agent
             removeFromCommittee(committee[member_index]);
 
             // reward honest agents
             for (uint256 i = 0; i < disputedShares[transactionID].length; i++) {
                 if (disputedShares[transactionID][i].member == committee[member_index]) {
+                    // perhaps instead of a fixed reward for honesty distribute the malicious agents deposit to the disputers
                     uncollectedRewards[disputedShares[transactionID][i].reporter].push(RewardRecord(block.timestamp, (FIXED_REWARD + GAS_ESTIMATION)));
                 }
             }

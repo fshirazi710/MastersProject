@@ -26,17 +26,6 @@
         ></textarea>
       </div>
 
-      <div class="form-group">
-        <label for="description">Expected Number of Participants</label>
-        <input 
-            type="number" 
-            id="participantCount" 
-            v-model="voteData.participantCount" 
-            required 
-            class="form-input"
-          >
-      </div>
-
       <!-- Date selection row with two inputs -->
       <div class="form-row">
         <!-- Start date input -->
@@ -74,11 +63,11 @@
         
         <div class="form-row">
           <div class="form-group">
-            <label for="initiatorDeposit">Total Reward Pool (ETH)</label>
+            <label for="rewardPool">Total Reward Pool (ETH)</label>
             <input 
               type="number"
-              id="initiatorDeposit"
-              v-model="voteData.initiatorDeposit"
+              id="rewardPool"
+              v-model="voteData.rewardPool"
               required
               min="0.001"
               step="0.001"
@@ -159,9 +148,8 @@ const voteData = ref({
   startDate: '',
   endDate: '',
   options: ['', ''],
-  initiatorDeposit: 0.003,
+  rewardPool: 0.003,
   requiredDeposit: 0.001,
-  participantCount: ''
 })
 
 // Add a new empty option to the options array

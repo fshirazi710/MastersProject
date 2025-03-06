@@ -27,7 +27,7 @@ async def shutdown_db_client():
 # Allow requests from the frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[CORS_ALLOWED_ORIGINS],
+    allow_origins=CORS_ALLOWED_ORIGINS,  # Use origins from config
     allow_credentials=True,
     allow_methods=["*"],  # Allow all HTTP methods (GET, POST, etc...)
     allow_headers=["*"],  # Allow all headers

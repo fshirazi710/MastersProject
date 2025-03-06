@@ -1,6 +1,8 @@
 import configparser
 from pathlib import Path
 import logging
+import json
+from pydantic_settings import BaseSettings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -12,27 +14,49 @@ CONFIG_PATH = Path(__file__).parent.parent.parent / "api.ini"
 config = configparser.ConfigParser()
 config.read(CONFIG_PATH)
 
-# API Config
-API_STR = config["API"].get("API_STR", "")
-PROJECT_NAME = config["API"].get("PROJECT_NAME", "")
+class Settings(BaseSettings):
+    # API Config
+    API_STR: str = config["API"].get("API_STR", "")
+    PROJECT_NAME: str = config["API"].get("PROJECT_NAME", "")
 
-# CORS
-CORS_ALLOWED_ORIGINS = config["CORS"].get("CORS_ALLOWED_ORIGINS", "*")
+    # CORS
+    CORS_ALLOWED_ORIGINS: list = json.loads(config["CORS"].get("CORS_ALLOWED_ORIGINS", '["http://localhost:3000"]'))
 
-# Blockchain
-WEB3_PROVIDER_URL = config["BLOCKCHAIN"].get("WEB3_PROVIDER_URL", "")
-CONTRACT_ADDRESS = config["BLOCKCHAIN"].get("CONTRACT_ADDRESS", "")
-WALLET_ADDRESS = config["BLOCKCHAIN"].get("WALLET_ADDRESS", "")
-CONTRACT_ABI = config["BLOCKCHAIN"].get("CONTRACT_ABI", "")
-PRIVATE_KEY = config["BLOCKCHAIN"].get("PRIVATE_KEY", "")
+    # Blockchain
+    WEB3_PROVIDER_URL: str = config["BLOCKCHAIN"].get("WEB3_PROVIDER_URL", "")
+    CONTRACT_ADDRESS: str = config["BLOCKCHAIN"].get("CONTRACT_ADDRESS", "")
+    WALLET_ADDRESS: str = config["BLOCKCHAIN"].get("WALLET_ADDRESS", "")
+    CONTRACT_ABI: list = json.loads(config["BLOCKCHAIN"].get("Contract ABI", "[]"))
+    PRIVATE_KEY: str = config["BLOCKCHAIN"].get("PRIVATE_KEY", "")
 
-# Database
-DATABASE_URL = config["DATABASE"].get("DATABASE_URL", "")
+    # Database
+    DATABASE_URL: str = config["DATABASE"].get("DATABASE_URL", "")
 
-# Security
-SECRET_KEY = config["SECURITY"].get("SECRET_KEY", "")
-ACCESS_TOKEN_EXPIRE_MINUTES = config["SECURITY"].get("ACCESS_TOKEN_EXPIRE_MINUTES", "")
+    # Security
+    SECRET_KEY: str = config["SECURITY"].get("SECRET_KEY", "")
+    ACCESS_TOKEN_EXPIRE_MINUTES: str = config["SECURITY"].get("ACCESS_TOKEN_EXPIRE_MINUTES", "")
 
-# JWT Configuration
-JWT_SECRET_KEY = config["JWT"].get("JWT_SECRET_KEY", "")
-ALGORITHM = config["JWT"].get("ALGORITHM", "")
+    # JWT Configuration
+    JWT_SECRET_KEY: str = config["JWT"].get("JWT_SECRET_KEY", "")
+    ALGORITHM: str = config["JWT"].get("ALGORITHM", "")
+
+    class Config:
+        case_sensitive = True
+
+# Create settings instance
+settings = Settings()
+
+# Keep the individual variables for backward compatibility
+API_STR = settings.API_STR
+PROJECT_NAME = settings.PROJECT_NAME
+CORS_ALLOWED_ORIGINS = settings.CORS_ALLOWED_ORIGINS
+WEB3_PROVIDER_URL = settings.WEB3_PROVIDER_URL
+CONTRACT_ADDRESS = settings.CONTRACT_ADDRESS
+WALLET_ADDRESS = settings.WALLET_ADDRESS
+CONTRACT_ABI = settings.CONTRACT_ABI
+PRIVATE_KEY = settings.PRIVATE_KEY
+DATABASE_URL = settings.DATABASE_URL
+SECRET_KEY = settings.SECRET_KEY
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+JWT_SECRET_KEY = settings.JWT_SECRET_KEY
+ALGORITHM = settings.ALGORITHM
