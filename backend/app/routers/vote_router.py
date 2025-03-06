@@ -33,32 +33,36 @@ contract = web3.eth.contract(address=CONTRACT_ADDRESS, abi=CONTRACT_ABI)
 # Endpoint to retrieve all votes
 @router.get("/all-votes")
 async def get_all_votes():
-    # Get total number of votes from the smart contract
-    vote_count = contract.functions.voteCount().call()
-    votes = []
+    try:
+        # Get total number of votes from the smart contract
+        vote_count = contract.functions.voteCount().call()
+        votes = []
 
-    # Iterate through each vote and retrieve its data
-    for vote_id in range(vote_count):
-        vote_data = contract.functions.getVote(vote_id).call()
-        votes.append(
-            {
-                "id": vote_data[0],
-                "title": vote_data[1],
-                "description": vote_data[2],
-                "startDate": datetime.fromtimestamp(vote_data[3]).strftime(
-                    "%Y-%m-%dT%H:%M"
-                ),  # Convert Unix timestamps to formatted datetime strings
-                "endDate": datetime.fromtimestamp(vote_data[4]).strftime(
-                    "%Y-%m-%dT%H:%M"
-                ),  # Convert Unix timestamps to formatted datetime strings
-                "status": vote_data[5],
-                "participantCount": vote_data[6],
-                "options": vote_data[7],
-                "rewardPool": web3.from_wei(vote_data[8], 'ether'),
-                "requiredDeposit": web3.from_wei(vote_data[9], 'ether'),
-            }
-        )
-    return {"data": votes}
+        # Iterate through each vote and retrieve its data
+        for vote_id in range(vote_count):
+            vote_data = contract.functions.getVote(vote_id).call()
+            votes.append(
+                {
+                    "id": vote_data[0],
+                    "title": vote_data[1],
+                    "description": vote_data[2],
+                    "startDate": datetime.fromtimestamp(vote_data[3]).strftime(
+                        "%Y-%m-%dT%H:%M"
+                    ),  # Convert Unix timestamps to formatted datetime strings
+                    "endDate": datetime.fromtimestamp(vote_data[4]).strftime(
+                        "%Y-%m-%dT%H:%M"
+                    ),  # Convert Unix timestamps to formatted datetime strings
+                    "status": vote_data[5],
+                    "participantCount": vote_data[6],
+                    "options": vote_data[7],
+                    "rewardPool": web3.from_wei(vote_data[10], 'ether') if len(vote_data) > 10 else 0,
+                    "requiredDeposit": web3.from_wei(vote_data[9], 'ether') if len(vote_data) > 9 else 0,
+                }
+            )
+        return {"data": votes}
+    except Exception as e:
+        logger.error(f"Error in get_all_votes: {str(e)}")
+        return {"data": [], "error": str(e)}
 
 
 # Endpoint to retrieve a specific vote by its ID
