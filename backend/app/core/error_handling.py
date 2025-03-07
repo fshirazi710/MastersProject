@@ -31,6 +31,21 @@ def handle_blockchain_error(operation: str, error: Exception) -> HTTPException:
     logger.error(error_message)
     return HTTPException(status_code=500, detail=error_message)
 
+def handle_database_error(operation: str, error: Exception) -> HTTPException:
+    """
+    Handle database-related errors consistently.
+    
+    Args:
+        operation: Description of the operation that failed
+        error: The exception that was raised
+        
+    Returns:
+        HTTPException with appropriate status code and detail
+    """
+    error_message = f"Failed to {operation}: {str(error)}"
+    logger.error(error_message)
+    return HTTPException(status_code=500, detail=error_message)
+
 def handle_validation_error(message: str) -> HTTPException:
     """
     Handle validation errors consistently.

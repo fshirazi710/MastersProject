@@ -108,38 +108,93 @@ To view records stored in the database:
 backend/
 ├── app/
 │   ├── core/
-│   │   ├── config.py                    # Enhanced version of constants.py
-│   │   ├── security.py
-│   │   └── blockchain.py                # From services/blockchain.py
+│   │   ├── config.py                    # Application configuration
+│   │   ├── dependencies.py              # Dependency injection
+│   │   ├── error_handling.py            # Standardized error handling
+│   │   ├── security.py                  # Authentication and authorization
+│   │   └── mongodb.py                   # Database connection
 │   ├── db/
-│   │   ├── session.py
-│   │   └── base.py
-│   ├── models/                          # Database models
-│   │   ├── election.py                  # Enhanced from vote.py
-│   │   ├── secret_holder.py
-│   │   └── vote.py
-│   ├── routers/                         # API route definitions for handling requests
-│   │   ├── election.py                  
-│   │   ├── secret_holder.py
-│   │   └── vote.py
-│   ├── schemas/                         
-│   │   ├── election.py
-│   │   ├── secret_holder.py
-│   │   └── vote.py
+│   │   ├── session.py                   # Database session management
+│   │   └── base.py                      # Base model class
+│   ├── models/                          # Database models (SQLAlchemy)
+│   │   ├── user_model.py                # User database model
+│   │   ├── vote_model.py                # Vote and token database models
+│   │   └── holder_model.py              # Secret holder and share database models
+│   ├── routers/                         # API route definitions
+│   │   ├── auth_router.py               # Authentication endpoints
+│   │   ├── vote_router.py               # Vote management endpoints
+│   │   ├── holder_router.py             # Secret holder endpoints
+│   │   └── share_router.py              # Share management endpoints
+│   ├── schemas/                         # API request/response schemas (Pydantic)
+│   │   ├── auth.py                      # Authentication schemas
+│   │   ├── vote.py                      # Vote schemas
+│   │   ├── holder.py                    # Secret holder schemas
+│   │   ├── share.py                     # Share schemas
+│   │   └── responses.py                 # Standard response schemas
 │   └── services/
-│       ├── blockchain.py
-│       ├── crypto.py
-│       └── election.py
-├── alembic/
-│   └── versions/
+│       ├── blockchain.py                # Blockchain interaction service
+│       └── crypto.py                    # Cryptographic operations service
 ├── tests/
-│   ├── api/
-│   ├── services/
-│   └── conftest.py
-├── main.py
-├── api.ini
-├── api.ini.example
-└── requirements.txt
+│   ├── services/                        # Service tests
+│   ├── routers/                         # Router tests
+│   └── conftest.py                      # Test fixtures
+├── main.py                              # Application entry point
+├── api.ini                              # Configuration file
+└── requirements.txt                     # Dependencies
+```
+
+## Models vs. Schemas
+
+The application uses a clear separation between database models and API schemas:
+
+### Database Models (`app/models/`)
+
+Database models represent the structure of data as it's stored in the database:
+
+- Use **SQLAlchemy** for ORM functionality
+- Define database tables and relationships
+- Include database-specific constraints (unique, nullable, indexes)
+- Handle database operations
+- Not directly exposed to API clients
+
+Example:
+```python
+class User(BaseModel):
+    """Database model for users."""
+    __tablename__ = "users"
+
+    name = Column(String(100), nullable=False)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password = Column(String(255), nullable=False)
+    role = Column(Enum(UserRole), default=UserRole.VOTER, nullable=False)
+```
+
+### API Schemas (`app/schemas/`)
+
+API schemas define the structure of data for API requests and responses:
+
+- Use **Pydantic** for validation and serialization
+- Define validation rules for incoming data
+- Specify the format of outgoing data
+- Include documentation (descriptions, examples)
+- Directly exposed to API clients through OpenAPI/Swagger
+
+Example:
+```python
+class RegisterRequest(BaseModel):
+    """Schema for user registration request."""
+    name: str = Field(..., 
+                     description="User's full name",
+                     min_length=2, 
+                     max_length=100,
+                     example="John Doe")
+    email: EmailStr = Field(..., 
+                           description="User's email address",
+                           example="john.doe@example.com")
+    password: str = Field(..., 
+                         description="User's password",
+                         min_length=8,
+                         example="SecureP@ssw0rd")
 ```
 
 ### Running the Server
@@ -178,22 +233,63 @@ CREATE TABLE agents (
 ```
 
 ## Testing
+
+The application includes comprehensive tests for both services and routers. These tests ensure that the application works as expected and help catch regressions when making changes.
+
+### Test Structure
+
+The tests are organized into two main categories:
+
+1. **Service Tests**: Test the core business logic and service layer
+   - Located in `tests/services/`
+   - Test blockchain interactions, cryptographic operations, etc.
+   - Use mocks to isolate the service being tested
+
+2. **Router Tests**: Test the API endpoints and request/response handling
+   - Located in `tests/routers/`
+   - Test validation, error handling, and response formatting
+   - Use mocks for services and database
+
+### Running Tests
+
+You can run the tests using pytest. Here are some common commands:
+
 ```bash
-# Run tests
+# Run all tests
 pytest
 
-# Run with coverage
-pytest --cov=app.services
+# Run with verbose output
+pytest -v
 
-# Run tests with visualization (showing print statements)
+# Run with print statements visible
 pytest -v -s
 
-# Run specific test files with visualization
-pytest tests/test_crypto.py -v -s
-pytest tests/test_blockchain.py -v -s
+# Run specific test categories
+pytest tests/services/  # Run service tests only
+pytest tests/routers/   # Run router tests only
+
+# Run specific test files
+pytest tests/services/test_blockchain.py
+pytest tests/routers/test_auth_router.py
+
+# Run specific test classes or methods
+pytest tests/routers/test_vote_router.py::TestSubmitVote
+pytest tests/routers/test_vote_router.py::TestSubmitVote::test_submit_vote_success
+
+# Run with coverage report
+pytest --cov=app
+pytest --cov=app.services  # Coverage for services only
+pytest --cov=app.routers   # Coverage for routers only
 ```
 
-### Test Visualization
+### Test Fixtures
+
+The tests use fixtures defined in `tests/conftest.py` to set up the test environment:
+
+- `mock_blockchain_service`: Mocks the blockchain service for testing
+- `mock_crypto_service`: Mocks the cryptographic service for testing
+- `mock_db`: Mocks the database client for testing
+- `client`: Creates a FastAPI test client with mocked dependencies
 
 The test suite includes detailed print statements that help visualize the cryptographic and blockchain operations. To see these visualizations, run the tests with the `-s` flag, which prevents pytest from capturing stdout.
 

@@ -337,9 +337,11 @@ class BlockchainService:
                 
                 return {
                     "success": True,
-                    "vote_id": vote_id,
-                    "decrypted_data": decrypted_data,
-                    "decryption_time": current_time
+                    "data": {
+                        "vote_data": decrypted_data,
+                        "decryption_time": current_time,
+                        "shares_used": len(shares)
+                    }
                 }
             except ValueError as e:
                 # If reconstruction or decryption fails, try using the contract's decrypt function
@@ -371,10 +373,11 @@ class BlockchainService:
                 
                 return {
                     "success": True,
-                    "vote_id": vote_id,
-                    "decrypted_data": decrypted_data.decode('utf-8') if isinstance(decrypted_data, bytes) else decrypted_data,
-                    "decryption_time": current_time,
-                    "transaction_hash": tx_hash.hex()
+                    "data": {
+                        "vote_data": decrypted_data.decode('utf-8') if isinstance(decrypted_data, bytes) else decrypted_data,
+                        "decryption_time": current_time,
+                        "shares_used": len(shares)
+                    }
                 }
             
         except Exception as e:

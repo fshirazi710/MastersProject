@@ -6,8 +6,13 @@ from typing import Dict, Any
 
 from app.core.dependencies import get_blockchain_service
 from app.core.error_handling import handle_blockchain_error, handle_not_found_error
-from app.models.blockchain import ShareSubmitRequest, ShareVerificationRequest, ShareVerificationResponse
-from app.schemas.responses import StandardResponse, TransactionResponse
+from app.schemas import (
+    ShareSubmitRequest, 
+    ShareVerificationRequest, 
+    ShareVerificationResponse,
+    StandardResponse,
+    TransactionResponse
+)
 from app.services.blockchain import BlockchainService
 
 import logging
@@ -48,40 +53,34 @@ async def submit_share(request: ShareSubmitRequest, blockchain_service: Blockcha
         raise handle_blockchain_error("submit share", e)
 
 @router.post("/verify", response_model=StandardResponse[ShareVerificationResponse])
-async def verify_share(request: ShareVerificationRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    """
-    Verify if a share is valid.
-    
-    Args:
-        request: Share verification request with vote ID, holder address, and share
-        
-    Returns:
-        Verification result
-    """
+async def verify_share(
+    request: ShareVerificationRequest,
+    blockchain_service: BlockchainService = Depends(get_blockchain_service)
+):
+    """Verify a share submission."""
     try:
-        # Call the blockchain service to verify the share
+        # Convert share tuple to list
+        share_list = list(request.share)
         is_valid = await blockchain_service.verify_share_submission(
             vote_id=request.vote_id,
             holder_address=request.holder_address,
-            share=request.share
-        )
-        
-        response = ShareVerificationResponse(
-            valid=is_valid,
-            holder_address=request.holder_address,
-            vote_id=request.vote_id
+            share=share_list
         )
         
         return StandardResponse(
             success=True,
-            message=f"Share verification {'successful' if is_valid else 'failed'}",
-            data=response
+            message="Share verification successful" if is_valid else "Share verification failed",
+            data=ShareVerificationResponse(
+                valid=is_valid,
+                holder_address=request.holder_address,
+                vote_id=request.vote_id
+            )
         )
     except Exception as e:
         logger.error(f"Error verifying share: {str(e)}")
         raise handle_blockchain_error("verify share", e)
 
-@router.get("/votes/{vote_id}", response_model=StandardResponse[Dict[str, Any]])
+@router.get("/by-vote/{vote_id}", response_model=StandardResponse[Dict[str, Any]])
 async def get_submitted_shares(vote_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """
     Get all submitted shares for a vote.

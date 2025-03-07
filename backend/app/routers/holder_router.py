@@ -1,13 +1,19 @@
 """
-Secret holder router for managing secret holders in the system.
+Holder router for managing secret holders in the system.
 """
-from fastapi import APIRouter, HTTPException, Depends
-from typing import List
+from fastapi import APIRouter, Depends
+from typing import List, Dict, Any
 
 from app.core.dependencies import get_blockchain_service
 from app.core.error_handling import handle_blockchain_error, handle_validation_error
-from app.models.blockchain import JoinHolderRequest, HolderStatusResponse
-from app.schemas.responses import StandardResponse, TransactionResponse
+from app.schemas import (
+    JoinHolderRequest,
+    StandardResponse,
+    TransactionResponse,
+    HolderCountResponse,
+    HolderStatusResponse,
+    RequiredDepositResponse
+)
 from app.services.blockchain import BlockchainService
 
 import logging
@@ -15,9 +21,9 @@ import logging
 # Configure logging
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/holders", tags=["Secret Holders"])
+router = APIRouter(prefix="/holders", tags=["Holders"])
 
-@router.get("", response_model=StandardResponse[List[str]])
+@router.get("/", response_model=StandardResponse[List[Dict[str, Any]]])
 async def get_all_holders(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """
     Get all registered secret holders.
@@ -27,68 +33,62 @@ async def get_all_holders(blockchain_service: BlockchainService = Depends(get_bl
     """
     try:
         # Call the blockchain service to get all holders
-        holders = blockchain_service.contract.functions.getHolders().call()
+        holders = await blockchain_service.contract.functions.getHolders().call()
         return StandardResponse(
             success=True,
-            message="Successfully retrieved holders",
+            message="Successfully retrieved all holders",
             data=holders
         )
     except Exception as e:
-        logger.error(f"Error getting holders: {str(e)}")
-        raise handle_blockchain_error("get holders", e)
+        logger.error(f"Error getting all holders: {str(e)}")
+        raise handle_blockchain_error("get all holders", e)
 
-@router.get("/count", response_model=StandardResponse[dict])
+@router.get("/count", response_model=StandardResponse[HolderCountResponse])
 async def get_holder_count(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """
     Get the number of registered secret holders.
     
     Returns:
-        Count of holders
+        Number of holders
     """
     try:
-        # Call the blockchain service to get the number of holders
-        count = blockchain_service.contract.functions.getNumHolders().call()
+        # Call the blockchain service to get the holder count
+        count = await blockchain_service.contract.functions.holderCount().call()
         return StandardResponse(
             success=True,
             message="Successfully retrieved holder count",
-            data={"count": count}
+            data=HolderCountResponse(count=count)
         )
     except Exception as e:
         logger.error(f"Error getting holder count: {str(e)}")
         raise handle_blockchain_error("get holder count", e)
 
-@router.get("/{address}", response_model=StandardResponse[HolderStatusResponse])
-async def check_holder_status(address: str, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+@router.get("/status/{address}", response_model=StandardResponse[HolderStatusResponse])
+async def check_holder_status(
+    address: str,
+    blockchain_service: BlockchainService = Depends(get_blockchain_service)
+):
     """
     Check if an address is a registered secret holder.
     
     Args:
-        address: Ethereum address to check
+        address: Address to check
         
     Returns:
-        Holder status and public key if available
+        Holder status information
     """
     try:
-        # Call the blockchain service to check if the address is a holder
-        is_holder = blockchain_service.contract.functions.isHolder(address).call()
-        
-        response = {"is_holder": is_holder, "public_key": None}
-        
-        # If the address is a holder, get the public key
-        if is_holder:
-            public_key = blockchain_service.contract.functions.getHolderPublicKey(address).call()
-            response["public_key"] = [int(public_key[0]), int(public_key[1])]
-            
+        is_holder = await blockchain_service.contract.functions.isHolder(address).call()
         return StandardResponse(
             success=True,
-            message=f"Address {address} is {'a' if is_holder else 'not a'} holder",
-            data=response
+            message=f"Address {address} is {'a holder' if is_holder else 'not a holder'}",
+            data=HolderStatusResponse(is_holder=is_holder)
         )
     except Exception as e:
         logger.error(f"Error checking holder status: {str(e)}")
         raise handle_blockchain_error("check holder status", e)
 
-@router.get("/deposit", response_model=StandardResponse[dict])
+@router.get("/deposit", response_model=StandardResponse[RequiredDepositResponse])
 async def get_required_deposit(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """
     Get the required deposit amount to become a secret holder.
@@ -97,47 +97,53 @@ async def get_required_deposit(blockchain_service: BlockchainService = Depends(g
         Required deposit amount in ETH
     """
     try:
-        # Get the required deposit
-        deposit_wei = blockchain_service.contract.functions.requiredDeposit().call()
-        deposit = blockchain_service.w3.from_wei(deposit_wei, 'ether')
+        deposit = await blockchain_service.contract.functions.requiredDeposit().call()
         return StandardResponse(
             success=True,
             message="Successfully retrieved required deposit",
-            data={"deposit_amount": float(deposit)}
+            data=RequiredDepositResponse(deposit=deposit)
         )
     except Exception as e:
         logger.error(f"Error getting required deposit: {str(e)}")
         raise handle_blockchain_error("get required deposit", e)
 
-@router.post("/join", response_model=TransactionResponse)
-async def join_as_holder(request: JoinHolderRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+@router.post("/join", response_model=StandardResponse[TransactionResponse])
+async def join_as_holder(
+    request: JoinHolderRequest,
+    blockchain_service: BlockchainService = Depends(get_blockchain_service)
+):
     """
     Join as a secret holder by staking a deposit.
     
     Args:
-        request: Join holder request with deposit amount and public key
+        request: Join request with public key and deposit amount
         
     Returns:
         Transaction response with transaction hash
     """
     try:
-        # Validate the public key
-        if len(request.public_key) != 2:
-            raise handle_validation_error("Public key must have exactly 2 components [x, y]")
+        # Validate public key format
+        if not isinstance(request.public_key, list) or len(request.public_key) != 2:
+            raise handle_validation_error("Public key must be a list with exactly two components")
             
-        # Call the blockchain service to join as a holder
-        result = await blockchain_service.join_as_holder(request.deposit_amount)
+        # Call the blockchain service to join as holder
+        result = await blockchain_service.join_as_holder(
+            public_key=request.public_key,
+            deposit_amount=request.deposit_amount
+        )
         
         if not result.get("success", False):
-            raise HTTPException(status_code=500, detail=result.get("error", "Failed to join as holder"))
+            raise handle_blockchain_error("join as holder", Exception(result.get("error", "Unknown error")))
             
-        return TransactionResponse(
+        return StandardResponse(
             success=True,
             message="Successfully joined as a secret holder",
-            transaction_hash=result["transaction_hash"]
+            data=TransactionResponse(
+                transaction_hash=result["transaction_hash"],
+                holder_address=result["holder_address"],
+                public_key=result["public_key"]
+            )
         )
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Error joining as holder: {str(e)}")
         raise handle_blockchain_error("join as holder", e) 
