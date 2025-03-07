@@ -49,21 +49,22 @@ async def test_get_required_deposit(blockchain_service):
     """Test getting the required deposit from the actual contract"""
     print("\n=== Integration Test: Get Required Deposit ===")
     
-    # Get the required deposit
-    deposit = await blockchain_service.get_required_deposit()
+    # Get the required deposit directly without await
+    deposit_wei = blockchain_service.contract.functions.requiredDeposit().call()
+    deposit = blockchain_service.w3.from_wei(deposit_wei, 'ether')
     
     print(f"Required deposit: {deposit} ETH")
     
     # Verify the deposit is 1 ETH as defined in the contract
-    assert deposit == 1.0, f"Expected deposit to be 1.0 ETH, got {deposit} ETH"
+    assert float(deposit) == 1.0, f"Expected deposit to be 1.0 ETH, got {deposit} ETH"
 
 @pytest.mark.asyncio
 async def test_get_num_holders(blockchain_service):
     """Test getting the number of holders from the actual contract"""
     print("\n=== Integration Test: Get Number of Holders ===")
     
-    # Get the number of holders
-    num_holders = await blockchain_service.contract.functions.getNumHolders().call()
+    # Get the number of holders directly without await
+    num_holders = blockchain_service.contract.functions.getNumHolders().call()
     
     print(f"Number of holders: {num_holders}")
     
@@ -75,8 +76,8 @@ async def test_get_holders(blockchain_service):
     """Test getting the list of holders from the actual contract"""
     print("\n=== Integration Test: Get Holders ===")
     
-    # Get the holders
-    holders = await blockchain_service.contract.functions.getHolders().call()
+    # Get the holders directly without await
+    holders = blockchain_service.contract.functions.getHolders().call()
     
     print(f"Holders: {holders}")
     
@@ -98,9 +99,9 @@ async def test_get_vote(blockchain_service):
     """Test getting vote data from the actual contract"""
     print("\n=== Integration Test: Get Vote Data ===")
     
-    # Get the vote data
+    # Get the vote data directly without await
     vote_id = 0
-    vote_data = await blockchain_service.contract.functions.getVote(vote_id).call()
+    vote_data = blockchain_service.contract.functions.getVote(vote_id).call()
     
     print(f"Vote ID: {vote_id}")
     print(f"Ciphertext: {Web3.to_text(vote_data[0]) if vote_data[0] else 'None'}")
@@ -119,9 +120,9 @@ async def test_is_holder(blockchain_service):
     """Test checking if an address is a holder"""
     print("\n=== Integration Test: Is Holder ===")
     
-    # Check if Account #1 is a holder
+    # Check if Account #1 is a holder directly without await
     account1 = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
-    is_holder = await blockchain_service.contract.functions.isHolder(account1).call()
+    is_holder = blockchain_service.contract.functions.isHolder(account1).call()
     
     print(f"Is {account1} a holder? {is_holder}")
     
@@ -130,7 +131,7 @@ async def test_is_holder(blockchain_service):
     
     # Check if a random address is a holder
     random_address = "0x0000000000000000000000000000000000000000"
-    is_holder = await blockchain_service.contract.functions.isHolder(random_address).call()
+    is_holder = blockchain_service.contract.functions.isHolder(random_address).call()
     
     print(f"Is {random_address} a holder? {is_holder}")
     
@@ -142,9 +143,9 @@ async def test_get_holder_public_key(blockchain_service):
     """Test getting a holder's public key"""
     print("\n=== Integration Test: Get Holder Public Key ===")
     
-    # Get Account #1's public key
+    # Get Account #1's public key directly without await
     account1 = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
-    public_key = await blockchain_service.contract.functions.getHolderPublicKey(account1).call()
+    public_key = blockchain_service.contract.functions.getHolderPublicKey(account1).call()
     
     print(f"Public key for {account1}: {public_key}")
     

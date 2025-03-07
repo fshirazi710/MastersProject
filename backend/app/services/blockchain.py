@@ -282,3 +282,104 @@ class BlockchainService:
         except Exception as e:
             logger.error(f"Failed to get share status: {str(e)}")
             raise
+
+    def decrypt_vote(self, vote_id: int) -> dict:
+        """
+        Decrypt a vote using submitted shares.
+        
+        Args:
+            vote_id: The ID of the vote to decrypt
+            
+        Returns:
+            Dictionary with decryption result
+        """
+        try:
+            # Get the vote data
+            vote_data = self.contract.functions.getVote(vote_id).call()
+            ciphertext = vote_data[0]
+            nonce = vote_data[1]
+            decryption_time = vote_data[2]
+            g2r = vote_data[3]
+            
+            # Check if decryption time has passed
+            current_time = self.w3.eth.get_block('latest').timestamp
+            if current_time < decryption_time:
+                return {
+                    "success": False,
+                    "error": f"Vote cannot be decrypted yet. Decryption time: {decryption_time}, current time: {current_time}"
+                }
+            
+            # Get all submitted shares
+            submitters, shares = self.contract.functions.getSubmittedShares(vote_id).call()
+            
+            if len(shares) < 1:
+                return {
+                    "success": False,
+                    "error": "No shares have been submitted for this vote"
+                }
+            
+            # Format shares for reconstruction
+            formatted_shares = [(int(share[0]), int(share[1])) for share in shares]
+            
+            # Reconstruct the secret key using the crypto service
+            try:
+                secret_key = self.crypto_service.reconstruct_secret(formatted_shares)
+                
+                # Convert the secret key to bytes
+                secret_key_bytes = secret_key.to_bytes(32, 'big')
+                
+                # Decrypt the vote data
+                decrypted_data = self.crypto_service.decrypt_vote(ciphertext, secret_key_bytes, nonce)
+                
+                # Convert to string if it's bytes
+                if isinstance(decrypted_data, bytes):
+                    decrypted_data = decrypted_data.decode('utf-8')
+                
+                return {
+                    "success": True,
+                    "vote_id": vote_id,
+                    "decrypted_data": decrypted_data,
+                    "decryption_time": current_time
+                }
+            except ValueError as e:
+                # If reconstruction or decryption fails, try using the contract's decrypt function
+                logger.info(f"Local decryption failed: {str(e)}. Trying contract decryption...")
+                
+                # Call the contract's decrypt function
+                tx = self.contract.functions.decrypt(vote_id).build_transaction({
+                    'from': self.account.address,
+                    'gas': 3000000,
+                    'gasPrice': self.w3.eth.gas_price,
+                    'nonce': self.w3.eth.get_transaction_count(self.account.address),
+                })
+                
+                # Sign and send the transaction
+                signed_tx = self.w3.eth.account.sign_transaction(tx, private_key=settings.PRIVATE_KEY)
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+                
+                # Wait for the transaction to be mined
+                tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+                
+                if tx_receipt.status == 0:
+                    return {
+                        "success": False,
+                        "error": "Transaction failed"
+                    }
+                
+                # Get the decrypted data from the contract
+                decrypted_data = self.contract.functions.getDecryptedVote(vote_id).call()
+                
+                return {
+                    "success": True,
+                    "vote_id": vote_id,
+                    "decrypted_data": decrypted_data.decode('utf-8') if isinstance(decrypted_data, bytes) else decrypted_data,
+                    "decryption_time": current_time,
+                    "transaction_hash": tx_hash.hex()
+                }
+            
+        except Exception as e:
+            logger.error(f"Failed to decrypt vote: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
