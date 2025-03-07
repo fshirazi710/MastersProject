@@ -53,3 +53,10 @@ __pycache__/
 .pytest_cache
 
 
+# Ignore node_modules
+node_modules/
+
+# Ignore package-lock.json
+package-lock.json
+
+

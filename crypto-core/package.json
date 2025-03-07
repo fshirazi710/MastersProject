@@ -1,0 +1,21 @@
+{
+  "name": "timed-release-crypto-core",
+  "version": "1.0.0",
+  "description": "Core cryptographic components for the Timed Release Crypto System",
+  "main": "index.js",
+  "scripts": {
+    "compile": "node compile.js",
+    "deploy": "node deploy.js",
+    "test": "mocha",
+    "test-contract": "node test-contract.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.3",
+    "solc": "^0.8.19",
+    "web3": "^1.9.0"
+  },
+  "devDependencies": {
+    "chai": "^4.3.7",
+    "mocha": "^10.2.0"
+  }
+} 

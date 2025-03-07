@@ -13,6 +13,70 @@ The system is designed for clients to share a secret among multiple agents (secr
 
 - `tamarin-crypto-model/` is not part of the system implementation but a formal model of the system's cryptographic protocol in Tamarin Prover.
 
+## Smart Contracts
+
+The `contracts` directory contains the Solidity smart contracts for the Timed Release Crypto System:
+
+- `TimedReleaseVoting.sol`: The main contract that handles vote submission, secret holder registration, and share management.
+- `TimeLockEnc.sol`: An earlier implementation of time-locked encryption.
+- `Vote.sol`: A simple voting contract.
+
+### Compiling Contracts
+
+To compile the contracts:
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Compile the contract:
+   ```bash
+   npm run compile
+   ```
+
+This will generate the ABI and bytecode in the `build/contracts` directory.
+
+### Deploying Contracts
+
+To deploy the contract to a test network:
+
+1. Create a `.env` file based on `.env.example`:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit the `.env` file with your provider URL and private key.
+
+3. Deploy the contract:
+   ```bash
+   npm run deploy
+   ```
+
+The deployment script will:
+- Connect to the specified network
+- Deploy the contract
+- Save the deployment information to `build/deployment.json`
+
+### Contract Interface
+
+The `TimedReleaseVoting` contract provides the following functions:
+
+#### Holder Management
+- `joinAsHolder(uint256[2] memory publicKey)`: Register as a secret holder by staking a deposit
+- `exitAsHolder()`: Exit as a secret holder and withdraw deposit
+- `getNumHolders()`: Get the number of registered holders
+- `getHolders()`: Get all registered holders
+- `getHolderPublicKey(address holderAddress)`: Get the public key of a holder
+- `isHolder(address holderAddress)`: Check if an address is a registered holder
+- `requiredDeposit()`: Get the required deposit amount
+
+#### Vote Management
+- `submitVote(bytes calldata ciphertext, bytes calldata nonce, uint256 decryptionTime, uint256[2] calldata g2r)`: Submit an encrypted vote
+- `submitShare(uint256 voteId, uint256 shareIndex, uint256 shareValue)`: Submit a share for a vote
+- `getVote(uint256 voteId)`: Get vote data
+- `getSubmittedShares(uint256 voteId)`: Get submitted shares for a vote
+
 ## Usage
 Here is a step-by-step guide on how to set up a system:
 1. Deploy the smart contract in `contracts/` to a blockchain. In the contract, the constants can be tuned to any desired parameters. It may require external smart contract development tools like *hardhat* or *foundry* to deploy the contract. Once deployed, keep a note of the deployed contract address.

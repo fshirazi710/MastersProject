@@ -307,20 +307,90 @@ The service includes:
 
 [Add license information here]
 
-## Changes Made and Why:
-# Made a new branch just to make sure that I didn't remove anything vital from the changes Luke had made
+## Local Development with Hardhat
 
-1. Removed api/ and its contents
-    - This was confusing to look at, as it seemed the code within was redundant when looking at the rest of the codebase.
-2. Modified Main.py
-    - Previously the routing was handled in api/.
-    - I believe the routing itslef should be handled directly within Main.py.
-3. Using a .ini file, instead of a .env file.
-    - This allows us to create a more structured configuration file.
-    - This was the approach used by the development team the worked with FastAPI at my placement.
-    - The .ini file shouldn't be pushed to github.
-    - The .ini.example file can be pushed, and should be used as a skeleton file to create your own .ini file.
-4. Modified the config.py file in core/
-    - To use the .ini file as the configuration file.
+For local development, you can use Hardhat to run a local Ethereum node. This provides a convenient way to test the blockchain interactions without spending real ETH.
 
-# After making these modifications, the backend is back to running.
+### Setting up Hardhat
+
+1. Install Hardhat globally:
+   ```bash
+   npm install -g hardhat
+   ```
+
+2. Start the Hardhat node:
+   ```bash
+   npx hardhat node
+   ```
+   This will start a local Ethereum node with several pre-funded accounts.
+
+### Deploying the Contract
+
+1. Navigate to the crypto-core directory:
+   ```bash
+   cd ../crypto-core
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Create a `.env` file with the following content:
+   ```
+   # Web3 provider URL (Hardhat local node)
+   WEB3_PROVIDER_URL=http://127.0.0.1:8545
+
+   # Private key for deployment (without 0x prefix)
+   # This is Account #0 from Hardhat
+   PRIVATE_KEY=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+   ```
+
+4. Compile the contract:
+   ```bash
+   npm run compile
+   ```
+
+5. Deploy the contract:
+   ```bash
+   npm run deploy
+   ```
+   This will deploy the contract to the local Hardhat node and save the deployment information to `build/deployment.json`.
+
+6. Test the contract interaction:
+   ```bash
+   npm run test-contract
+   ```
+   This will test the contract by registering holders, submitting a vote, and retrieving vote data.
+
+### Configuring the Backend
+
+1. Update the `api.ini` file with the following settings:
+   ```ini
+   [BLOCKCHAIN]
+   WEB3_PROVIDER_URL = http://127.0.0.1:8545
+   CONTRACT_ADDRESS = 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
+   WALLET_ADDRESS = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+   PRIVATE_KEY = ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+   ```
+   Replace the `CONTRACT_ADDRESS` with the address from your deployment.
+
+2. Start the backend server:
+   ```bash
+   uvicorn main:app --reload
+   ```
+
+### Test Accounts
+
+Hardhat provides several pre-funded accounts for testing. Here are the first few:
+
+| Account | Address | Private Key |
+|---------|---------|-------------|
+| Account #0 | 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 | 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 |
+| Account #1 | 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 | 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d |
+| Account #2 | 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC | 0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a |
+| Account #3 | 0x90F79bf6EB2c4f870365E785982E1f101E93b906 | 0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6 |
+
+Each account has 10,000 ETH for testing purposes.
+
+## Testing

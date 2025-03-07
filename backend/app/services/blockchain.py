@@ -5,6 +5,7 @@ from app.core.config import settings
 from app.services.crypto import CryptoService
 import logging
 import json
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +32,19 @@ class BlockchainService:
         
     def _load_contract(self):
         """Load the smart contract interface"""
-        # TODO: Load ABI from crypto-core/contracts/build
-        abi = []  # This will come from the compiled contract
+        # Load ABI from the TimedReleaseVoting contract
+        abi_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
+                               "../crypto-core/build/contracts/TimedReleaseVoting.json")
+        
+        try:
+            with open(abi_path, 'r') as f:
+                contract_json = json.load(f)
+                abi = contract_json['abi']
+        except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+            logger.error(f"Failed to load contract ABI: {str(e)}")
+            # Fallback to empty ABI if file not found or invalid
+            abi = []
+            
         return self.w3.eth.contract(address=self.contract_address, abi=abi)
     
     async def join_as_holder(self, deposit_amount: float) -> dict:
