@@ -1,25 +1,42 @@
 # Timed-Release-Crypto
-This repository is the implementation of a smart contract based timed-release cryptography system. The system is presented in the paper: [Send Message to the Future? Blockchain-based Time Machines for Decentralized Reveal of Locked Information](https://arxiv.org/abs/2401.05947).
+
+This repository implements a smart contract-based timed-release cryptography system. The system is presented in the paper: [Send Message to the Future? Blockchain-based Time Machines for Decentralized Reveal of Locked Information](https://arxiv.org/abs/2401.05947).
 
 ## Basic Concepts
-The system is designed for clients to share a secret among multiple agents (secret holders), who are responsible for revealing the secret at a specific time. The clients and the secret holders communicate through a smart contract. To send a timed-release message, a client sends a transaction to the smart contract. The contract emits an event when it receives a message. The agents listen to the smart contract events. From that event, the agents can extract their shares of the secret and publish it to the smart contract at the client specified time.
 
-## File structure
-- `agent-script/` is the directory containing the code an agent should run in a Rust implementation. `agent-script/src/bin/main.rs` is the main entry of the code, where agents constantly listen to the smart contract events and respond to them.
+The system is designed for clients to share a secret among multiple agents (secret holders), who are responsible for revealing the secret at a specific time. The clients and the secret holders communicate through a smart contract. To send a timed-release message, a client sends a transaction to the smart contract. The contract emits an event when it receives a message. The agents listen to the smart contract events. From that event, the agents can extract their shares of the secret and publish it to the smart contract at the client-specified time.
 
-- `client-script/` is the directory containing the code that a client can use to send timed release message transactions in a Rust implementation. `client-script/src/bin/main.rs` is the main entry of the code.
+## Project Structure
 
-- `contracts/` is an implementation of the smart contract that needs to be published on a blockchain for the system to work.
+- `contracts/`: Contains the Solidity smart contracts for the Timed Release Crypto System.
+  - `TimedReleaseVoting.sol`: The main contract that handles vote submission, secret holder registration, and share management.
 
-- `tamarin-crypto-model/` is not part of the system implementation but a formal model of the system's cryptographic protocol in Tamarin Prover.
+- `CONTRACT_API.md`: Comprehensive documentation of the contract's functions and access points for backend integration.
 
-## Smart Contracts
+## Smart Contract Overview
 
-The `contracts` directory contains the Solidity smart contracts for the Timed Release Crypto System:
+The `TimedReleaseVoting` contract implements a timed-release cryptography system where:
 
-- `TimedReleaseVoting.sol`: The main contract that handles vote submission, secret holder registration, and share management.
-- `TimeLockEnc.sol`: An earlier implementation of time-locked encryption.
-- `Vote.sol`: A simple voting contract.
+1. Secret holders register by staking a deposit
+2. Clients submit encrypted votes with a specified decryption time
+3. Secret holders submit their shares after the decryption time
+4. Rewards are distributed to secret holders who submitted their shares
+5. Secret holders can exit and withdraw their deposit after fulfilling their obligations
+
+### Key Features
+
+- **Deposit System**: Secret holders must stake a deposit to participate
+- **Reward Mechanism**: Clients can set custom reward amounts for secret holders
+- **Automatic Distribution**: Rewards are distributed to secret holders who submit their shares
+- **Accountability**: Secret holders who fail to submit shares can be forced to exit and forfeit their deposit
+
+## Compiling and Deploying
+
+### Prerequisites
+
+- Node.js and npm
+- Web3 provider (like Infura, Alchemy, or a local node)
+- Ethereum wallet with funds for deployment
 
 ### Compiling Contracts
 
@@ -39,7 +56,7 @@ This will generate the ABI and bytecode in the `build/contracts` directory.
 
 ### Deploying Contracts
 
-To deploy the contract to a test network:
+To deploy the contract to a network:
 
 1. Create a `.env` file based on `.env.example`:
    ```bash
@@ -58,100 +75,39 @@ The deployment script will:
 - Deploy the contract
 - Save the deployment information to `build/deployment.json`
 
-### Contract Interface
+## Testing
 
-The `TimedReleaseVoting` contract provides the following functions:
+To test the TimedReleaseVoting contract:
 
-#### Holder Management
-- `joinAsHolder(uint256[2] memory publicKey)`: Register as a secret holder by staking a deposit
-- `exitAsHolder()`: Exit as a secret holder and withdraw deposit
-- `getNumHolders()`: Get the number of registered holders
-- `getHolders()`: Get all registered holders
-- `getHolderPublicKey(address holderAddress)`: Get the public key of a holder
-- `isHolder(address holderAddress)`: Check if an address is a registered holder
-- `requiredDeposit()`: Get the required deposit amount
-
-#### Vote Management
-- `submitVote(bytes calldata ciphertext, bytes calldata nonce, uint256 decryptionTime, uint256[2] calldata g2r)`: Submit an encrypted vote
-- `submitShare(uint256 voteId, uint256 shareIndex, uint256 shareValue)`: Submit a share for a vote
-- `getVote(uint256 voteId)`: Get vote data
-- `getSubmittedShares(uint256 voteId)`: Get submitted shares for a vote
-
-## Usage
-Here is a step-by-step guide on how to set up a system:
-1. Deploy the smart contract in `contracts/` to a blockchain. In the contract, the constants can be tuned to any desired parameters. It may require external smart contract development tools like *hardhat* or *foundry* to deploy the contract. Once deployed, keep a note of the deployed contract address.
-2. Set up multiple agents running the `agent-script` Rust code. The number of agents should be equal to the `MAX_COMMITTEE_SIZE` set in the smart contract. To run the agent code, create a `.env` file in the `agent-script` directory specifying the following environment variables:
-    - `ADDRESS_SK`: the secret key of the agent's address.
-    - `ADDRESS_PK`: the agent's address. Make sure there are some crypto assets in this address to pay transaction fees and additional fees or deposits defined in the smart contract.
-    - `CONTRACT_ADDRESS`: the address of the deployed smart contract.
-    - `API_URL`: an RPC URL of the blockchain.
-
-3. To send a timed release transaction, run the `client-script` Rust code. Start by creating a `.env` file in the `client-script` directory specifying the same environment variables:
-    - `CLIENT_SK`: the secret key of the client's address.
-    - `CLIENT_ADDRESS`: the client's address. Make sure there are some crypto assets in this address to pay transaction fees and additional fees or deposits defined in the smart contract.
-    - `CONTRACT_ADDRESS`: the address of the deployed smart contract.
-    - `API_URL`: an RPC URL of the blockchain.
-Then modify the `client-script/src/bin/main.rs` file to specify the secret and the time to reveal the secret. Run the code to send a timed release transaction.
-
-## Running Tests
-
-To test the TimedReleaseVoting contract, follow these steps:
-
-### Prerequisites
-
-1. Make sure you have Node.js and npm installed
-2. Install dependencies:
+1. Make sure you have compiled the contract
+2. Run the test script:
+   ```bash
+   node test-contract.js
    ```
-   npm install
-   ```
-3. Create a `.env` file based on `.env.example` with your configuration:
-   ```
-   cp .env.example .env
-   ```
-4. Edit the `.env` file to include:
-   - `PRIVATE_KEY`: Your Ethereum private key (without 0x prefix)
-   - `WEB3_PROVIDER_URL`: URL to your Ethereum node (e.g., Infura, Alchemy, or local node)
-
-### Deployment
-
-Before running tests, you need to deploy the contract:
-
-1. Compile the contract:
-   ```
-   node compile.js
-   ```
-2. Deploy the contract:
-   ```
-   node deploy.js
-   ```
-   This will create a `deployment.json` file in the `build` directory with the contract address.
-
-### Running Tests
-
-Run the tests with:
-
-```
-node test-contract.js
-```
 
 The test script will:
-1. Connect to the blockchain using your configured provider
-2. Load the deployed contract address from `build/deployment.json`
-3. Execute a series of tests against the contract
-4. Log the results to the console
+- Deploy the contract to a local network
+- Register secret holders
+- Submit votes
+- Submit shares
+- Distribute rewards
+- Test the exit functionality
 
-### Test Coverage
+## Integration
 
-The current tests cover:
-- Retrieving the required deposit amount
-- Joining as holders (with 3 different accounts)
-- Getting the number of holders
-- Getting all holder addresses
-- Submitting a vote with encrypted data
-- Retrieving vote data
+For detailed information on how to integrate with the contract, please refer to the [CONTRACT_API.md](./CONTRACT_API.md) file, which provides comprehensive documentation of all contract functions, events, and integration examples.
 
-### Troubleshooting
+## Security Considerations
 
-- If you see errors about missing environment variables, make sure your `.env` file is properly configured
-- If you see errors about deployment info not found, make sure you've run `deploy.js` first
-- For gas-related errors, try increasing the gas limit in the test file
+When using this system, consider the following security aspects:
+
+1. **Deposit Management**: Ensure your backend properly tracks deposit status for holders.
+2. **Timing**: Implement proper timing mechanisms to submit shares after decryption time.
+3. **Error Handling**: Handle contract errors gracefully, especially for transactions that may revert.
+4. **Gas Estimation**: Always estimate gas before sending transactions to avoid failures.
+5. **Event Monitoring**: Set up reliable event monitoring to catch all relevant contract events.
+6. **Backup Mechanisms**: Implement backup mechanisms for share submission in case of network issues.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
