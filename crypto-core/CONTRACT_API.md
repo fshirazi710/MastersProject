@@ -7,7 +7,7 @@ This document provides a comprehensive guide to the functions and access points 
 The TimedReleaseVoting contract implements a timed-release cryptography system where:
 
 1. Secret holders register by staking a deposit
-2. Clients submit encrypted votes with a specified decryption time
+2. Clients submit encrypted votes with a specified decryption time and threshold
 3. Secret holders submit their shares after the decryption time
 4. Rewards are distributed to secret holders who submitted their shares
 5. Secret holders can exit and withdraw their deposit after fulfilling their obligations
@@ -98,19 +98,22 @@ await contract.methods.exitAsHolder().send({
 
 ## Functions for Clients
 
-### `submitVote(bytes calldata ciphertext, bytes calldata nonce, uint256 decryptionTime, uint256[2] calldata g2r)`
+### `submitVote(bytes calldata ciphertext, bytes calldata nonce, uint256 decryptionTime, uint256[2] calldata g2r, uint256 threshold)`
 
-Allows a client to submit an encrypted vote with a specified decryption time.
+Allows a client to submit an encrypted vote with a specified decryption time and threshold.
 
 **Parameters:**
 - `ciphertext`: The encrypted vote data
 - `nonce`: The encryption nonce
 - `decryptionTime`: The time when the vote can be decrypted (Unix timestamp)
 - `g2r`: BLS12-381 G2 point for verification
+- `threshold`: Minimum number of shares needed to reconstruct the secret
 
 **Requirements:**
 - Must have at least `MIN_HOLDERS` registered holders
 - Decryption time must be in the future
+- Threshold must be at least 2
+- Threshold cannot exceed the number of holders
 
 **Example:**
 ```javascript
@@ -118,9 +121,10 @@ const ciphertext = web3.utils.asciiToHex('Encrypted vote data');
 const nonce = web3.utils.asciiToHex('Nonce');
 const decryptionTime = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
 const g2r = ['123456', '654321']; // Replace with actual G2 point
+const threshold = 3; // At least 3 shares needed for decryption
 const rewardAmount = web3.utils.toWei('0.3', 'ether'); // Custom reward amount
 
-await contract.methods.submitVote(ciphertext, nonce, decryptionTime, g2r).send({
+await contract.methods.submitVote(ciphertext, nonce, decryptionTime, g2r, threshold).send({
     from: clientAddress,
     value: rewardAmount, // Optional: custom reward amount
     gas: 500000
@@ -226,11 +230,13 @@ Returns the data for a vote.
 - `nonce`: The encryption nonce
 - `decryptionTime`: The time when the vote can be decrypted
 - `g2r`: The G2 point used for verification
+- `threshold`: The minimum number of shares needed for decryption
 
 **Example:**
 ```javascript
 const voteData = await contract.methods.getVote(voteId).call();
 console.log(`Decryption time: ${new Date(voteData.decryptionTime * 1000).toLocaleString()}`);
+console.log(`Threshold: ${voteData.threshold}`);
 ```
 
 ### `getSubmittedShares(uint256 voteId)`
@@ -299,7 +305,7 @@ Emitted when a new holder joins.
 
 Emitted when a holder exits.
 
-### `VoteSubmitted(uint256 indexed voteId, uint256 decryptionTime)`
+### `VoteSubmitted(uint256 indexed voteId, uint256 decryptionTime, uint256 threshold)`
 
 Emitted when a new vote is submitted.
 
@@ -325,10 +331,11 @@ const ciphertext = web3.utils.asciiToHex('Encrypted vote data');
 const nonce = web3.utils.asciiToHex('Nonce');
 const decryptionTime = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
 const g2r = ['123456', '654321']; // Replace with actual G2 point
+const threshold = 3; // At least 3 shares needed for decryption
 const rewardAmount = web3.utils.toWei('0.3', 'ether'); // Custom reward amount
 
 // 2. Submit vote
-const receipt = await contract.methods.submitVote(ciphertext, nonce, decryptionTime, g2r).send({
+const receipt = await contract.methods.submitVote(ciphertext, nonce, decryptionTime, g2r, threshold).send({
     from: clientAddress,
     value: rewardAmount,
     gas: 500000
@@ -358,7 +365,9 @@ contract.events.VoteSubmitted({}, (error, event) => {
     
     const voteId = event.returnValues.voteId;
     const decryptionTime = event.returnValues.decryptionTime;
+    const threshold = event.returnValues.threshold;
     console.log(`New vote ${voteId} with decryption time ${new Date(decryptionTime * 1000).toLocaleString()}`);
+    console.log(`Threshold: ${threshold} shares needed for decryption`);
     
     // Schedule share submission after decryption time
     const submitTime = decryptionTime * 1000 - Date.now() + 60000; // 1 minute after decryption time
@@ -407,6 +416,7 @@ async function claimRewards() {
 4. **Gas Estimation**: Always estimate gas before sending transactions to avoid failures.
 5. **Event Monitoring**: Set up reliable event monitoring to catch all relevant contract events.
 6. **Backup Mechanisms**: Implement backup mechanisms for share submission in case of network issues.
+7. **Threshold Security**: Ensure the threshold is set appropriately for your security needs. A higher threshold means more shares are needed for decryption, increasing security but also increasing the risk that decryption might fail if not enough holders submit their shares.
 
 ## Troubleshooting
 
@@ -415,4 +425,6 @@ async function claimRewards() {
 3. **"Decryption time not reached" Error**: Trying to submit a share before the decryption time.
 4. **"Must submit shares for all past votes" Error**: Holder trying to exit without submitting shares for all past votes.
 5. **"No rewards to claim" Error**: Holder trying to claim rewards when they have none.
-6. **"Cannot exit with pending future votes" Error**: Holder trying to exit when they have future votes to participate in. 
+6. **"Cannot exit with pending future votes" Error**: Holder trying to exit when they have future votes to participate in.
+7. **"Threshold must be at least 2" Error**: Trying to set a threshold less than 2, which is the minimum required for Shamir's Secret Sharing.
+8. **"Threshold cannot exceed number of holders" Error**: Trying to set a threshold higher than the number of available holders. 

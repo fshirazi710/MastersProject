@@ -25,6 +25,8 @@ class TransactionResponse(BaseModel):
     success: bool = Field(..., description="Whether the transaction was successful")
     message: str = Field(..., description="Human-readable message about the transaction")
     transaction_hash: Optional[str] = Field(None, description="Hash of the transaction")
+    vote_id: Optional[int] = Field(None, description="ID of the vote (for vote-related transactions)")
+    threshold: Optional[int] = Field(None, description="Threshold used for the vote (for vote submission)")
     
 class PaginatedResponse(BaseModel, Generic[T]):
     """Response format for paginated results."""

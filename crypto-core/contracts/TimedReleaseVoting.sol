@@ -29,6 +29,7 @@ contract TimedReleaseVoting {
         bool exists;
         uint256 reward;  // Reward amount for this vote
         bool rewardDistributed;  // Whether the reward has been distributed
+        uint256 threshold;  // Minimum number of shares needed for decryption
     }
     
     // Constants
@@ -46,7 +47,7 @@ contract TimedReleaseVoting {
     
     event HolderJoined(address indexed holderAddress, uint256[2] publicKey);
     event HolderExited(address indexed holderAddress);
-    event VoteSubmitted(uint256 indexed voteId, uint256 decryptionTime);
+    event VoteSubmitted(uint256 indexed voteId, uint256 decryptionTime, uint256 threshold);
     event ShareSubmitted(uint256 indexed voteId, address indexed holderAddress);
     event RewardDistributed(uint256 indexed voteId, uint256 totalReward, uint256 numRecipients);
     event RewardClaimed(address indexed holderAddress, uint256 amount);
@@ -129,15 +130,19 @@ contract TimedReleaseVoting {
      * @param nonce The encryption nonce
      * @param decryptionTime The time when the vote can be decrypted
      * @param g2r The G2 point used for share verification
+     * @param threshold The minimum number of shares needed for decryption
      */
     function submitVote(
         bytes calldata ciphertext,
         bytes calldata nonce,
         uint256 decryptionTime,
-        uint256[2] calldata g2r
+        uint256[2] calldata g2r,
+        uint256 threshold
     ) external payable {
         require(getNumHolders() >= MIN_HOLDERS, "Not enough holders");
         require(decryptionTime > block.timestamp, "Decryption time must be in the future");
+        require(threshold >= 2, "Threshold must be at least 2");
+        require(threshold <= getNumHolders(), "Threshold cannot exceed number of holders");
         
         uint256 voteId = voteCount++;
         
@@ -149,8 +154,9 @@ contract TimedReleaseVoting {
         votes[voteId].exists = true;
         votes[voteId].reward = msg.value > 0 ? msg.value : REWARD_PER_VOTE;
         votes[voteId].rewardDistributed = false;
+        votes[voteId].threshold = threshold;  // Store the threshold
         
-        emit VoteSubmitted(voteId, decryptionTime);
+        emit VoteSubmitted(voteId, decryptionTime, threshold);
     }
     
     /**
@@ -318,18 +324,21 @@ contract TimedReleaseVoting {
      * @return nonce The encryption nonce
      * @return decryptionTime The time when the vote can be decrypted
      * @return g2r The G2 point used for share verification
+     * @return threshold The minimum number of shares needed for decryption
      */
     function getVote(uint256 voteId) external view voteExists(voteId) returns (
         bytes memory ciphertext,
         bytes memory nonce,
         uint256 decryptionTime,
-        uint256[2] memory g2r
+        uint256[2] memory g2r,
+        uint256 threshold
     ) {
         return (
             votes[voteId].ciphertext,
             votes[voteId].nonce,
             votes[voteId].decryptionTime,
-            votes[voteId].g2r
+            votes[voteId].g2r,
+            votes[voteId].threshold
         );
     }
     

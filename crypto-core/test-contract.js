@@ -183,16 +183,18 @@ async function testContract() {
         const nonce = web3.utils.asciiToHex('Nonce');
         const decryptionTime = currentBlockTime + 3600; // 1 hour from current blockchain time
         const g2r = ['123456', '654321']; // Using strings instead of toBN
+        const threshold = 2; // Minimum threshold for Shamir's Secret Sharing
 
         await executeWithErrorHandling(
             'Submit vote',
-            () => contract.methods.submitVote(ciphertext, nonce, decryptionTime, g2r).send({
+            () => contract.methods.submitVote(ciphertext, nonce, decryptionTime, g2r, threshold).send({
                 from: account0.address,
                 gas: 500000
             })
         );
 
         console.log(`Vote submitted with decryption time: ${new Date(decryptionTime * 1000).toLocaleString()}`);
+        console.log(`Threshold set to: ${threshold} shares needed for decryption`);
 
         // Get vote data
         const voteId = 0;
@@ -206,6 +208,7 @@ async function testContract() {
         console.log(`Nonce: ${web3.utils.hexToAscii(voteData.nonce)}`);
         console.log(`Decryption time: ${new Date(parseInt(voteData.decryptionTime) * 1000).toLocaleString()}`);
         console.log(`G2R: [${voteData.g2r[0]}, ${voteData.g2r[1]}]`);
+        console.log(`Threshold: ${voteData.threshold} shares needed for decryption`);
         
         // Advance blockchain time past decryption time for testing share submission
         await executeWithErrorHandling(
@@ -272,19 +275,24 @@ async function testContract() {
 
         // Submit a vote with a reward
         const rewardAmount = web3.utils.toWei('0.3', 'ether'); // 0.3 ETH reward
+        const threshold2 = 2; // Threshold for the second vote
+        
         await executeWithErrorHandling(
             'Submit vote with reward',
             () => contract.methods.submitVote(
                 web3.utils.asciiToHex('Encrypted vote with reward'),
                 web3.utils.asciiToHex('Nonce2'),
                 updatedBlockTime + 3600, // 1 hour from current blockchain time
-                ['111222', '333444']
+                ['111222', '333444'],
+                threshold2
             ).send({
                 from: account0.address,
                 value: rewardAmount,
                 gas: 500000
             })
         );
+        
+        console.log(`Vote with reward submitted. Threshold set to: ${threshold2} shares needed for decryption`);
 
         // Advance time to reach decryption time
         await executeWithErrorHandling(

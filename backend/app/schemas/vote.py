@@ -19,6 +19,18 @@ class VoteSubmitRequest(BaseModel):
         description="Unix timestamp when the vote can be decrypted",
         examples=[1714521600]  # Example: April 1, 2024
     )
+    reward_amount: float = Field(
+        0.1,
+        description="Amount of ETH to reward secret holders",
+        ge=0,
+        examples=[0.1, 0.5, 1.0]
+    )
+    threshold: Optional[int] = Field(
+        None,
+        description="Minimum number of shares needed to reconstruct the secret (default: 2/3 of holders)",
+        ge=2,
+        examples=[3, 5]
+    )
     
     @field_validator('decryption_time')
     @classmethod
@@ -139,6 +151,12 @@ class DecryptVoteRequest(BaseModel):
         ge=0,
         examples=[1]
     )
+    threshold: Optional[int] = Field(
+        None,
+        description="Custom threshold to use for decryption (overrides the one stored in the contract)",
+        ge=2,
+        examples=[3, 5]
+    )
 
 class DecryptVoteResponse(BaseModel):
     """Schema for decrypted vote data."""
@@ -160,6 +178,11 @@ class DecryptVoteResponse(BaseModel):
     shares_used: int = Field(
         ...,
         description="Number of shares used for decryption",
+        examples=[3]
+    )
+    threshold: int = Field(
+        ...,
+        description="Threshold used for decryption",
         examples=[3]
     )
 

@@ -7,6 +7,7 @@ from app.core.error_handling import handle_blockchain_error
 import logging
 import json
 import os
+import secrets
 
 logger = logging.getLogger(__name__)
 
@@ -119,40 +120,64 @@ class BlockchainService:
             # Encrypt vote
             ciphertext, nonce = self.crypto_service.encrypt_vote(vote_data, key)
             
-            # Generate G2 point for verification
-            g2r = self.crypto_service.scalar_to_g2_point(int.from_bytes(key, 'big'))
+            # Generate shares for the key
+            secret = int.from_bytes(key, 'big')
+            shares = self.crypto_service.generate_shares(secret, num_holders, threshold)
             
-            # Convert reward to Wei
-            reward_wei = self.w3.to_wei(reward_amount, 'ether')
+            # Calculate g2r for verification
+            r = secrets.randbelow(self.crypto_service.curve_order)
+            g2r = self.crypto_service.scalar_to_g2_point(r)
             
-            # Build transaction
-            transaction = self.contract.functions.submitVote(
+            # Convert g2r to contract format
+            g2r_contract = [int(g2r[0].n), int(g2r[1].n)]
+            
+            # Estimate gas for the transaction
+            gas_estimate = await self.contract.functions.submitVote(
                 ciphertext,
                 nonce,
                 decryption_time,
-                [g2r[0].n, g2r[1].n]  # Convert FQ to integers
-            ).build_transaction({
+                g2r_contract,
+                threshold  # Pass threshold to the contract
+            ).estimate_gas({
                 'from': self.account.address,
-                'value': reward_wei,  # Include reward amount
-                'nonce': self.w3.eth.get_transaction_count(self.account.address),
+                'value': self.w3.to_wei(reward_amount, 'ether')
             })
             
-            # Sign and send transaction
+            # Build the transaction
+            transaction = await self.contract.functions.submitVote(
+                ciphertext,
+                nonce,
+                decryption_time,
+                g2r_contract,
+                threshold  # Pass threshold to the contract
+            ).build_transaction({
+                'from': self.account.address,
+                'value': self.w3.to_wei(reward_amount, 'ether'),
+                'gas': gas_estimate,
+                'gasPrice': self.w3.to_wei('50', 'gwei'),
+                'nonce': await self.w3.eth.get_transaction_count(self.account.address)
+            })
+            
+            # Sign and send the transaction
             signed_txn = self.account.sign_transaction(transaction)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            tx_hash = await self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
             
-            # Wait for transaction receipt
-            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+            # Wait for transaction receipt to get the vote ID
+            receipt = await self.w3.eth.wait_for_transaction_receipt(tx_hash)
             
-            # Extract vote ID from event
+            # Get the vote ID from the event logs
             vote_id = None
             for log in receipt.logs:
                 try:
+                    # Try to decode the log as a VoteSubmitted event
                     event = self.contract.events.VoteSubmitted().process_log(log)
                     vote_id = event['args']['voteId']
                     break
                 except:
                     continue
+            
+            if vote_id is None:
+                vote_id = await self.contract.functions.voteCount().call() - 1
             
             # Store threshold in database for later use in decryption
             # This would require adding database storage for vote metadata
@@ -473,7 +498,7 @@ class BlockchainService:
         Args:
             vote_id: The ID of the vote to decrypt
             threshold: Minimum number of shares needed for decryption
-                      (default: None, which will use whatever threshold was set during vote submission)
+                      (default: None, which will use the threshold stored in the contract)
             
         Returns:
             Dictionary with decryption result
@@ -484,6 +509,17 @@ class BlockchainService:
             ciphertext = vote_data[0]
             nonce = vote_data[1]
             decryption_time = vote_data[2]
+            g2r = vote_data[3]
+            contract_threshold = vote_data[4]  # Get threshold from contract
+            
+            logger.info(f"Vote {vote_id} has threshold {contract_threshold} set in the contract")
+            
+            # Use provided threshold or fall back to contract threshold
+            if threshold is None:
+                threshold = contract_threshold
+                logger.info(f"Using contract threshold: {threshold}")
+            else:
+                logger.info(f"Using custom threshold: {threshold} (overriding contract threshold: {contract_threshold})")
             
             # Check if decryption time has passed
             current_time = (await self.w3.eth.get_block('latest'))['timestamp']
@@ -505,60 +541,42 @@ class BlockchainService:
             # Format shares for reconstruction
             formatted_shares = [(int(share[0]), int(share[1])) for share in shares]
             
-            # Check if we have enough shares for the threshold
-            # In a production system, you would retrieve the threshold from a database
-            # where it was stored during vote submission
-            if threshold is None:
-                # If no threshold specified, use the number of available shares
-                # but ensure at least 2 shares for Lagrange interpolation
-                threshold = max(2, len(formatted_shares))
-            
             if len(formatted_shares) < threshold:
                 return {
                     "success": False,
                     "error": f"Insufficient shares for decryption. Need {threshold}, have {len(formatted_shares)}"
                 }
             
-            # Use only the required number of shares (threshold)
-            # This is important for security - using exactly the threshold number of shares
-            # prevents potential attacks where additional shares could leak information
+            # Use exactly the required number of shares (threshold)
             shares_to_use = formatted_shares[:threshold]
             
             logger.info(f"Attempting to decrypt vote {vote_id} using {len(shares_to_use)} shares (threshold: {threshold})")
             
             # Reconstruct the secret key using the crypto service
             try:
-                secret_key = self.crypto_service.reconstruct_secret(shares_to_use)
+                secret = self.crypto_service.reconstruct_secret(shares_to_use)
+                key = secret.to_bytes(32, 'big')
                 
-                # Convert the secret key to bytes
-                secret_key_bytes = secret_key.to_bytes(32, 'big')
-                
-                # Decrypt the vote data
-                decrypted_data = self.crypto_service.decrypt_vote(ciphertext, secret_key_bytes, nonce)
-                
-                # Convert to string if it's bytes
-                if isinstance(decrypted_data, bytes):
-                    decrypted_data = decrypted_data.decode('utf-8')
+                # Decrypt the vote
+                decrypted_data = self.crypto_service.decrypt_vote(ciphertext, key, nonce)
                 
                 return {
                     "success": True,
                     "data": {
-                        "vote_data": decrypted_data,
-                        "decryption_time": current_time,
+                        "vote_data": decrypted_data.decode('utf-8'),
+                        "decryption_time": decryption_time,
                         "shares_used": len(shares_to_use),
-                        "total_shares_available": len(formatted_shares),
                         "threshold": threshold
                     }
                 }
-            except ValueError as e:
-                logger.error(f"Failed to reconstruct secret or decrypt vote: {str(e)}")
+            except Exception as e:
+                logger.error(f"Error reconstructing secret: {str(e)}")
                 return {
                     "success": False,
-                    "error": f"Failed to decrypt: {str(e)}"
+                    "error": f"Failed to reconstruct secret: {str(e)}"
                 }
-            
         except Exception as e:
-            logger.error(f"Failed to decrypt vote: {str(e)}")
+            logger.error(f"Error decrypting vote: {str(e)}")
             return {
                 "success": False,
                 "error": str(e)

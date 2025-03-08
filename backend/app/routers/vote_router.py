@@ -167,7 +167,9 @@ async def submit_vote(request: VoteSubmitRequest, blockchain_service: Blockchain
         # Call the blockchain service to submit the vote
         result = await blockchain_service.submit_vote(
             vote_data=request.vote_data.encode('utf-8'),
-            decryption_time=request.decryption_time
+            decryption_time=request.decryption_time,
+            reward_amount=request.reward_amount,
+            threshold=request.threshold
         )
         
         if not result.get("success", False):
@@ -176,7 +178,9 @@ async def submit_vote(request: VoteSubmitRequest, blockchain_service: Blockchain
         return TransactionResponse(
             success=True,
             message="Vote submitted successfully",
-            transaction_hash=result["transaction_hash"]
+            transaction_hash=result["transaction_hash"],
+            vote_id=result.get("vote_id"),
+            threshold=result.get("threshold")
         )
     except HTTPException:
         raise
@@ -366,6 +370,7 @@ async def get_share_status(
 @router.post("/{vote_id}/decrypt", response_model=StandardResponse[DecryptVoteResponse])
 async def decrypt_vote(
     vote_id: int,
+    request: Optional[DecryptVoteRequest] = None,
     blockchain_service: BlockchainService = Depends(get_blockchain_service)
 ):
     """
@@ -373,13 +378,15 @@ async def decrypt_vote(
     
     Args:
         vote_id: ID of the vote
+        request: Optional request with custom threshold
         
     Returns:
         Decrypted vote data
     """
     try:
         # Call the blockchain service to decrypt the vote
-        result = await blockchain_service.decrypt_vote(vote_id)
+        threshold = request.threshold if request and hasattr(request, 'threshold') else None
+        result = await blockchain_service.decrypt_vote(vote_id, threshold)
         
         if not result.get("success", False):
             raise handle_blockchain_error("decrypt vote", Exception(result.get("error", "Unknown error")))
@@ -391,7 +398,8 @@ async def decrypt_vote(
                 vote_id=vote_id,
                 vote_data=result["data"]["vote_data"],
                 decryption_time=result["data"]["decryption_time"],
-                shares_used=result["data"]["shares_used"]
+                shares_used=result["data"]["shares_used"],
+                threshold=result["data"]["threshold"]
             )
         )
     except HTTPException:
