@@ -140,9 +140,11 @@ async def test_get_vote(blockchain_service):
         print(f"Nonce: {Web3.to_text(vote_data[1]) if vote_data[1] else 'None'}")
         print(f"Decryption time: {vote_data[2]}")
         print(f"G2R: {vote_data[3]}")
+        print(f"Threshold: {vote_data[4]}")
         
         # Just verify that we got some data
         assert vote_data is not None, "Expected vote data to be returned"
+        assert len(vote_data) >= 5, "Expected vote data to include threshold"
     except Exception as e:
         print(f"Error: {str(e)}")
         # For now, we'll skip the test if there's an error (likely no votes yet)

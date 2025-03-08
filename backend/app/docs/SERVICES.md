@@ -37,9 +37,9 @@ blockchain_service = get_blockchain_service()
 
 | Method | Description | Parameters | Returns |
 |--------|-------------|------------|---------|
-| `submit_vote(vote_data, decryption_time, reward_amount, threshold)` | Submit encrypted vote | `vote_data`: Vote data (bytes)<br>`decryption_time`: Unix timestamp<br>`reward_amount`: ETH reward (default: 0.1)<br>`threshold`: Min shares needed | Dict with vote ID and status |
+| `submit_vote(vote_data, decryption_time, reward_amount, threshold)` | Submit encrypted vote | `vote_data`: Vote data (bytes)<br>`decryption_time`: Unix timestamp<br>`reward_amount`: ETH reward (default: 0.1)<br>`threshold`: Min shares needed (default: 2/3 of holders) | Dict with vote ID, transaction hash, and threshold |
 | `get_vote_data(vote_id)` | Get encrypted vote data | `vote_id`: Vote ID | Dict with vote data and metadata |
-| `decrypt_vote(vote_id, threshold)` | Decrypt a vote | `vote_id`: Vote ID<br>`threshold`: Min shares (optional) | Dict with decrypted data |
+| `decrypt_vote(vote_id, threshold)` | Decrypt a vote | `vote_id`: Vote ID<br>`threshold`: Min shares (optional, defaults to contract-stored threshold) | Dict with decrypted data |
 
 ### Share Management
 
@@ -83,8 +83,8 @@ crypto_service = get_crypto_service()
 
 | Method | Description | Parameters | Returns |
 |--------|-------------|------------|---------|
-| `generate_shares(secret, num_shares, threshold)` | Generate secret shares | `secret`: Secret to share<br>`num_shares`: Number of shares<br>`threshold`: Min shares needed | List of (index, share) tuples |
-| `reconstruct_secret(shares)` | Reconstruct secret from shares | `shares`: List of (index, share) tuples | Reconstructed secret |
+| `generate_shares(secret, num_shares, threshold)` | Generate secret shares | `secret`: Secret to share<br>`num_shares`: Number of shares<br>`threshold`: Min shares needed (must be ≥ 2 and ≤ num_shares) | List of (index, share) tuples |
+| `reconstruct_secret(shares)` | Reconstruct secret from shares | `shares`: List of (index, share) tuples (must have at least threshold shares) | Reconstructed secret |
 
 ### Encryption/Decryption
 
@@ -105,24 +105,29 @@ crypto_service = get_crypto_service()
 ### Vote Submission and Decryption Flow
 
 ```python
-# 1. Submit a vote
+# 1. Submit a vote with custom threshold
 result = await blockchain_service.submit_vote(
     vote_data,
     decryption_time,
     reward_amount=0.3,
-    threshold=2
+    threshold=3  # Explicitly set threshold to 3
 )
 vote_id = result['vote_id']
+threshold = result['threshold']
+print(f"Vote submitted with threshold: {threshold}")
 
 # 2. Submit shares (by holders)
 await blockchain_service.submit_share(vote_id, (1, 111222))
 await blockchain_service.submit_share(vote_id, (2, 333444))
+await blockchain_service.submit_share(vote_id, (3, 555666))
 
 # 3. Trigger reward distribution
 await blockchain_service.trigger_reward_distribution(vote_id)
 
-# 4. Decrypt the vote
+# 4. Decrypt the vote (using the same threshold)
 decrypted = await blockchain_service.decrypt_vote(vote_id)
+# OR with explicit threshold override
+# decrypted = await blockchain_service.decrypt_vote(vote_id, threshold=3)
 ```
 
 ### Holder Registration and Reward Claiming
@@ -141,6 +146,28 @@ if rewards > 0:
 exit_result = await blockchain_service.exit_as_holder()
 ```
 
+## Threshold Mechanism
+
+The threshold parameter is a critical security feature in the system:
+
+1. **Definition**: The threshold is the minimum number of secret shares needed to reconstruct the secret key and decrypt a vote.
+
+2. **Default Calculation**: If not specified, the threshold defaults to 2/3 of the total number of holders (rounded down), with a minimum of 2.
+
+3. **Storage**: The threshold is stored in the smart contract for each vote, ensuring transparency and immutability.
+
+4. **Usage Flow**:
+   - During vote submission, the threshold is set and stored in the contract
+   - During decryption, exactly the threshold number of shares are used
+   - If fewer than threshold shares are available, decryption fails
+   - If more than threshold shares are available, only the first threshold shares are used
+
+5. **Security Implications**:
+   - Higher threshold = More security but higher risk of decryption failure
+   - Lower threshold = Less security but higher chance of successful decryption
+   - Minimum threshold is 2 (required by Shamir's Secret Sharing)
+   - Maximum threshold is the number of holders
+
 ## Error Handling
 
 Both services use standardized error handling through the `app.core.error_handling` module.
@@ -148,7 +175,7 @@ Both services use standardized error handling through the `app.core.error_handli
 ```python
 # BlockchainService error handling
 try:
-    result = await blockchain_service.submit_vote(vote_data, decryption_time)
+    result = await blockchain_service.submit_vote(vote_data, decryption_time, threshold=3)
 except HTTPException as e:
     print(f"Error {e.status_code}: {e.detail}")
 
