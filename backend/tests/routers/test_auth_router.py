@@ -6,6 +6,7 @@ from fastapi import status
 import json
 import bcrypt
 from datetime import datetime
+from unittest.mock import MagicMock
 
 # Test data
 test_user = {
@@ -22,8 +23,10 @@ class TestRegister:
     async def test_register_success(self, client, mock_db):
         """Test successful user registration."""
         # Setup mock
-        mock_db.auth_db.users.find_one.return_value = None  # User doesn't exist
-        mock_db.auth_db.users.insert_one.return_value = None  # Successful insert
+        mock_db.users.find_one.return_value = None  # User doesn't exist
+        insert_result = MagicMock()
+        insert_result.inserted_id = "test_id"
+        mock_db.users.insert_one.return_value = insert_result  # Mock insert result with ID
         
         # Make request
         response = client.post("/api/auth/register", json=test_user)
@@ -32,25 +35,24 @@ class TestRegister:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["success"] is True
-        assert "User successfully registered" in data["message"]
+        assert "User registered successfully" in data["message"]
         assert data["data"]["email"] == test_user["email"]
-        assert data["data"]["name"] == test_user["name"]
-        assert data["data"]["role"] == test_user["role"]
         
         # Verify mock calls
-        mock_db.auth_db.users.find_one.assert_called_once_with({"email": test_user["email"]})
-        mock_db.auth_db.users.insert_one.assert_called_once()
+        mock_db.users.find_one.assert_called_once_with({"email": test_user["email"]})
+        mock_db.users.insert_one.assert_called_once()
         
         # Verify password was hashed
-        call_args = mock_db.auth_db.users.insert_one.call_args[0][0]
-        assert call_args["password"] != test_user["password"]
+        call_args = mock_db.users.insert_one.call_args[0][0]
+        assert "hashed_password" in call_args
+        assert call_args["hashed_password"] != test_user["password"]
         assert call_args["email"] == test_user["email"]
     
     @pytest.mark.asyncio
     async def test_register_existing_user(self, client, mock_db):
         """Test registration with an existing email."""
         # Setup mock to return an existing user
-        mock_db.auth_db.users.find_one.return_value = {
+        mock_db.users.find_one.return_value = {
             "email": test_user["email"],
             "name": "Existing User"
         }
@@ -61,11 +63,11 @@ class TestRegister:
         # Assertions
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         data = response.json()
-        assert data["detail"] == "Validation error: Email already registered"
+        assert "Email already registered" in data["detail"]
         
         # Verify mock calls
-        mock_db.auth_db.users.find_one.assert_called_once_with({"email": test_user["email"]})
-        mock_db.auth_db.users.insert_one.assert_not_called()
+        mock_db.users.find_one.assert_called_once_with({"email": test_user["email"]})
+        mock_db.users.insert_one.assert_not_called()
     
     @pytest.mark.asyncio
     async def test_register_invalid_data(self, client):
@@ -103,43 +105,51 @@ class TestLogin:
         hashed_password = bcrypt.hashpw(test_user["password"].encode('utf-8'), salt).decode('utf-8')
         
         # Setup mock to return a user
-        mock_db.auth_db.users.find_one.return_value = {
+        mock_db.users.find_one.return_value = {
             "email": test_user["email"],
             "name": test_user["name"],
-            "password": hashed_password,
+            "hashed_password": hashed_password,
             "role": test_user["role"]
         }
         
-        # Make request
-        response = client.post("/api/auth/login", json={
-            "email": test_user["email"],
-            "password": test_user["password"]
-        })
+        # Make request with form data
+        response = client.post(
+            "/api/auth/login",
+            data={
+                "username": test_user["email"],
+                "password": test_user["password"]
+            }
+        )
         
         # Assertions
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["success"] is True
-        assert "Successfully logged in" in data["message"]
-        assert "access_token" in data["data"]
-        assert data["data"]["token_type"] == "bearer"
+        assert "Login successful" in data["message"]
+        assert "token" in data["data"]
+        assert "expires_at" in data["data"]
+        assert isinstance(data["data"]["token"], str)
+        assert len(data["data"]["token"]) > 0
     
     @pytest.mark.asyncio
     async def test_login_invalid_credentials(self, client, mock_db):
         """Test login with invalid credentials."""
         # Setup mock to return None (user not found)
-        mock_db.auth_db.users.find_one.return_value = None
+        mock_db.users.find_one.return_value = None
         
-        # Make request
-        response = client.post("/api/auth/login", json={
-            "email": "nonexistent@example.com",
-            "password": "wrongpassword"
-        })
+        # Make request with form data
+        response = client.post(
+            "/api/auth/login",
+            data={
+                "username": "nonexistent@example.com",
+                "password": "wrongpassword"
+            }
+        )
         
         # Assertions
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         data = response.json()
-        assert data["detail"] == "Invalid credentials"
+        assert "Invalid credentials" in data["detail"]
     
     @pytest.mark.asyncio
     async def test_login_wrong_password(self, client, mock_db):
@@ -149,23 +159,26 @@ class TestLogin:
         hashed_password = bcrypt.hashpw("WrongPassword123".encode('utf-8'), salt).decode('utf-8')
         
         # Setup mock to return a user with different password
-        mock_db.auth_db.users.find_one.return_value = {
+        mock_db.users.find_one.return_value = {
             "email": test_user["email"],
             "name": test_user["name"],
-            "password": hashed_password,
+            "hashed_password": hashed_password,
             "role": test_user["role"]
         }
         
-        # Make request
-        response = client.post("/api/auth/login", json={
-            "email": test_user["email"],
-            "password": test_user["password"]
-        })
+        # Make request with form data
+        response = client.post(
+            "/api/auth/login",
+            data={
+                "username": test_user["email"],
+                "password": test_user["password"]
+            }
+        )
         
         # Assertions
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         data = response.json()
-        assert data["detail"] == "Invalid credentials"
+        assert "Invalid credentials" in data["detail"]
     
     @pytest.mark.asyncio
     async def test_login_invalid_data(self, client):

@@ -111,12 +111,12 @@ def mock_db():
     """Create a mock database client for testing."""
     client = MagicMock(spec=AsyncIOMotorClient)
     
-    # Mock common collections
-    client.auth_db = MagicMock()
-    client.auth_db.users = MagicMock()
-    client.auth_db.users.find_one = AsyncMock()
-    client.auth_db.users.insert_one = AsyncMock()
+    # Mock users collection directly
+    client.users = MagicMock()
+    client.users.find_one = AsyncMock()
+    client.users.insert_one = AsyncMock()
     
+    # Mock tokens collection
     client.election_tokens = MagicMock()
     client.election_tokens.tokens = MagicMock()
     client.election_tokens.tokens.find_one = AsyncMock()

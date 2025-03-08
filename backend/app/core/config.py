@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # Security
     SECRET_KEY: str = config["SECURITY"].get("SECRET_KEY", "")
-    ACCESS_TOKEN_EXPIRE_MINUTES: str = config["SECURITY"].get("ACCESS_TOKEN_EXPIRE_MINUTES", "")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(config["SECURITY"].get("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
     # JWT Configuration
     JWT_SECRET_KEY: str = config["JWT"].get("JWT_SECRET_KEY", "")

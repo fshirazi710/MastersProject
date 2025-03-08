@@ -101,6 +101,8 @@ async def register_user(
         # Create user document
         user = {
             "email": request.email,
+            "name": request.name,
+            "role": request.role,
             "hashed_password": hashed_password,
             "created_at": datetime.now(UTC).isoformat()
         }
@@ -143,17 +145,20 @@ async def login(
             
         # Create access token
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
+        token = create_access_token(
             data={"sub": user["email"]},
             expires_delta=access_token_expires
         )
+        
+        # Calculate expiration time
+        expires_at = (datetime.now(UTC) + access_token_expires).isoformat()
         
         return StandardResponse(
             success=True,
             message="Login successful",
             data=TokenResponse(
-                access_token=access_token,
-                token_type="bearer"
+                token=token,
+                expires_at=expires_at
             )
         )
     except HTTPException:
