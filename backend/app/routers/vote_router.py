@@ -34,7 +34,7 @@ import string
 # Configure logging
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/votes", tags=["Votes"])
+router = APIRouter(prefix="/votes", tags=["Votes"])
 
 @router.get("/", response_model=StandardResponse[List[VoteResponse]])
 async def get_all_votes(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
@@ -50,12 +50,14 @@ async def get_all_votes(blockchain_service: BlockchainService = Depends(get_bloc
         
         for i in range(vote_count):
             vote_data = await blockchain_service.contract.functions.getVote(i).call()
+            # Convert g2r integers to strings
+            g2r_values = [str(val) for val in vote_data[3]] if vote_data[3] else []
             votes.append(VoteResponse(
-                id=i,
+                vote_id=i,  # Use vote_id instead of id
                 ciphertext=vote_data[0].hex(),
                 nonce=vote_data[1].hex(),
                 decryption_time=vote_data[2],
-                g2r=vote_data[3]
+                g2r=g2r_values
             ))
         
         return StandardResponse(
@@ -66,6 +68,44 @@ async def get_all_votes(blockchain_service: BlockchainService = Depends(get_bloc
     except Exception as e:
         logger.error(f"Error getting votes: {str(e)}")
         raise handle_blockchain_error("get votes", e)
+
+@router.get("/summary", response_model=StandardResponse[VoteStatusResponse])
+async def get_vote_summary(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+    """
+    Get a summary of all votes.
+    
+    Returns:
+        Status information for all votes
+    """
+    try:
+        total_votes = await blockchain_service.contract.functions.voteCount().call()
+        active_votes = 0
+        closed_votes = 0
+        decrypted_votes = 0
+        
+        for i in range(total_votes):
+            vote_data = await blockchain_service.contract.functions.getVote(i).call()
+            status = vote_data[8] if len(vote_data) > 8 else None
+            if status == "active":
+                active_votes += 1
+            elif status == "closed":
+                closed_votes += 1
+            elif status == "decrypted":
+                decrypted_votes += 1
+        
+        return StandardResponse(
+            success=True,
+            message="Successfully retrieved vote summary",
+            data=VoteStatusResponse(
+                total_votes=total_votes,
+                active_votes=active_votes,
+                closed_votes=closed_votes,
+                decrypted_votes=decrypted_votes
+            )
+        )
+    except Exception as e:
+        logger.error(f"Error getting vote summary: {str(e)}")
+        raise handle_blockchain_error("get vote summary", e)
 
 @router.get("/{vote_id}", response_model=StandardResponse[Dict[str, Any]])
 async def get_vote_data(vote_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
@@ -109,45 +149,7 @@ async def get_vote_data(vote_id: int, blockchain_service: BlockchainService = De
         logger.error(f"Error getting vote data: {str(e)}")
         raise handle_blockchain_error("get vote data", e)
 
-@router.get("/status", response_model=StandardResponse[VoteStatusResponse])
-async def get_vote_status(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    """
-    Get the status of all votes.
-    
-    Returns:
-        Status information for all votes
-    """
-    try:
-        total_votes = await blockchain_service.contract.functions.voteCount().call()
-        active_votes = 0
-        closed_votes = 0
-        decrypted_votes = 0
-        
-        for i in range(total_votes):
-            vote_data = await blockchain_service.contract.functions.getVote(i).call()
-            status = vote_data[5] if len(vote_data) > 5 else None
-            if status == "active":
-                active_votes += 1
-            elif status == "closed":
-                closed_votes += 1
-            elif status == "decrypted":
-                decrypted_votes += 1
-        
-        return StandardResponse(
-            success=True,
-            message="Successfully retrieved vote status",
-            data=VoteStatusResponse(
-                total_votes=total_votes,
-                active_votes=active_votes,
-                closed_votes=closed_votes,
-                decrypted_votes=decrypted_votes
-            )
-        )
-    except Exception as e:
-        logger.error(f"Error getting vote status: {str(e)}")
-        raise handle_blockchain_error("get vote status", e)
-
-@router.post("", response_model=TransactionResponse)
+@router.post("", response_model=StandardResponse[TransactionResponse])
 async def submit_vote(request: VoteSubmitRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """
     Submit an encrypted vote to the blockchain.
@@ -166,21 +168,24 @@ async def submit_vote(request: VoteSubmitRequest, blockchain_service: Blockchain
             
         # Call the blockchain service to submit the vote
         result = await blockchain_service.submit_vote(
-            vote_data=request.vote_data.encode('utf-8'),
-            decryption_time=request.decryption_time,
-            reward_amount=request.reward_amount,
-            threshold=request.threshold
+            request.vote_data,
+            request.decryption_time,
+            request.reward_amount or 0.1,  # Default to 0.1 ETH if not provided
+            request.threshold
         )
         
         if not result.get("success", False):
             raise handle_blockchain_error("submit vote", Exception(result.get("error", "Unknown error")))
             
-        return TransactionResponse(
+        return StandardResponse(
             success=True,
-            message="Vote submitted successfully",
-            transaction_hash=result["transaction_hash"],
-            vote_id=result.get("vote_id"),
-            threshold=result.get("threshold")
+            message="Successfully submitted vote",
+            data=TransactionResponse(
+                success=True,
+                message="Successfully submitted vote",
+                transaction_hash=result["transaction_hash"],
+                vote_id=result.get("vote_id")
+            )
         )
     except HTTPException:
         raise
@@ -188,67 +193,67 @@ async def submit_vote(request: VoteSubmitRequest, blockchain_service: Blockchain
         logger.error(f"Error submitting vote: {str(e)}")
         raise handle_blockchain_error("submit vote", e)
 
-@router.post("/create", response_model=TransactionResponse)
+@router.post("/create", response_model=StandardResponse[TransactionResponse])
 async def create_vote(data: VoteCreateRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """
     Create a new vote on the blockchain.
     
     Args:
-        data: Vote creation data
+        data: Vote creation request with title, description, dates, options, and reward pool
         
     Returns:
         Transaction response with transaction hash
     """
     try:
-        # Convert datetime strings to Unix timestamps
-        start_date = datetime.strptime(data.start_date, "%Y-%m-%dT%H:%M:%S")
-        end_date = datetime.strptime(data.end_date, "%Y-%m-%dT%H:%M:%S")
-
-        # Get the next nonce for the transaction
-        nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS, "pending")
-
-        # Estimate gas needed for the transaction
-        estimated_gas = blockchain_service.contract.functions.createVote(
-            data.title,
-            data.description,
-            int(start_date.timestamp()),
-            int(end_date.timestamp()),
-            "join",
-            0,
-            data.options,
-            blockchain_service.w3.to_wei(data.reward_pool, 'ether'),
-            blockchain_service.w3.to_wei(data.required_deposit, 'ether'),
-        ).estimate_gas({"from": WALLET_ADDRESS})
-
-        # Build the transaction
-        transaction = blockchain_service.contract.functions.createVote(
-            data.title,
-            data.description,
-            int(start_date.timestamp()),
-            int(end_date.timestamp()),
-            "join",
-            0,
-            data.options,
-            blockchain_service.w3.to_wei(data.reward_pool, 'ether'),
-            blockchain_service.w3.to_wei(data.required_deposit, 'ether'),
-        ).build_transaction(
-            {
-                "chainId": 11155111,
-                "gas": estimated_gas,
-                "gasPrice": blockchain_service.w3.to_wei("40", "gwei"),
-                "nonce": nonce,
-            }
-        )
-
-        # Sign and send the transaction
-        signed_txn = blockchain_service.w3.eth.account.sign_transaction(transaction, private_key=PRIVATE_KEY)
-        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
+        # Validate dates
+        start_timestamp = int(datetime.fromisoformat(data.start_date).timestamp())
+        end_timestamp = int(datetime.fromisoformat(data.end_date).timestamp())
         
-        return TransactionResponse(
+        if end_timestamp <= start_timestamp:
+            raise handle_validation_error("End date must be after start date")
+            
+        if len(data.options) < 2:
+            raise handle_validation_error("At least two options are required")
+            
+        # Convert ETH to Wei
+        reward_pool_wei = blockchain_service.w3.to_wei(data.reward_pool, 'ether')
+        required_deposit_wei = blockchain_service.w3.to_wei(data.required_deposit, 'ether')
+        
+        # Get transaction count for nonce
+        nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
+        
+        # Create vote transaction
+        create_vote_tx = blockchain_service.contract.functions.createVote(
+            data.title,
+            data.description,
+            start_timestamp,
+            end_timestamp,
+            data.options,
+            reward_pool_wei,
+            required_deposit_wei
+        ).build_transaction({
+            'from': WALLET_ADDRESS,
+            'gas': 3000000,
+            'gasPrice': blockchain_service.w3.eth.gas_price,
+            'nonce': nonce,
+        })
+        
+        # Sign and send transaction
+        signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_vote_tx, PRIVATE_KEY)
+        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else blockchain_service.w3.to_hex(tx_hash)
+        
+        return StandardResponse(
             success=True,
-            message="Vote created successfully",
-            transaction_hash=tx_hash.hex()
+            message="Successfully created vote",
+            data=TransactionResponse(
+                success=True,
+                message="Successfully created vote",
+                transaction_hash=tx_hash_hex
+            )
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating vote: {str(e)}")
         raise handle_blockchain_error("create vote", e)
@@ -318,20 +323,27 @@ async def validate_token(token: str, db=Depends(get_db)):
     Validate a voting token.
     
     Args:
-        token: Token to validate
+        token: The token to validate
         
     Returns:
-        StandardResponse with validation result
+        Validation result
     """
     try:
-        # Check if the token exists
-        existing_token = await db.election_tokens.tokens.find_one({"token": token})
+        # Check if the token exists in the database
+        token_doc = await db.election_tokens.tokens.find_one({"token": token})
         
-        return StandardResponse(
-            success=True,
-            message=f"Token validation {'successful' if existing_token else 'failed'}",
-            data={"valid": existing_token is not None}
-        )
+        if token_doc:
+            return StandardResponse(
+                success=True,
+                message="Token is valid",
+                data={"valid": True, "vote_id": token_doc["vote_id"]}
+            )
+        else:
+            return StandardResponse(
+                success=True,
+                message="Token is invalid",
+                data={"valid": False}
+            )
     except Exception as e:
         logger.error(f"Error validating token: {str(e)}")
         raise handle_blockchain_error("validate token", e)
@@ -360,7 +372,7 @@ async def get_share_status(
                 total_holders=status["total_holders"],
                 submitted_shares=status["submitted_shares"],
                 missing_shares=status["missing_shares"],
-                holders=status["holder_status"]
+                holder_status=status["holder_status"]
             )
         )
     except Exception as e:

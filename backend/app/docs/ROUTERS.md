@@ -76,7 +76,248 @@ password: SecureP@ssw0rd
 
 ## Vote Router
 
-*Coming soon*
+Base path: `/api/votes`
+
+### Endpoints
+
+#### GET /
+Get all votes from the blockchain.
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Successfully retrieved 2 votes",
+    "data": [
+        {
+            "vote_id": 0,
+            "ciphertext": "0a1b2c3d4e5f",
+            "nonce": "f5e4d3c2b1a0",
+            "decryption_time": 1714521600,
+            "g2r": ["123456789", "987654321"]
+        },
+        {
+            "vote_id": 1,
+            "ciphertext": "aabbccddeeff",
+            "nonce": "ffeeddccbbaa",
+            "decryption_time": 1714525200,
+            "g2r": ["123456790", "987654322"]
+        }
+    ]
+}
+```
+
+#### GET /summary
+Get a summary of all votes including counts by status.
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Successfully retrieved vote summary",
+    "data": {
+        "total_votes": 5,
+        "active_votes": 2,
+        "closed_votes": 2,
+        "decrypted_votes": 1
+    }
+}
+```
+
+#### GET /{vote_id}
+Get detailed information about a specific vote.
+
+**Parameters:**
+- `vote_id`: ID of the vote to retrieve
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Successfully retrieved vote data for vote 1",
+    "data": {
+        "id": 1,
+        "ciphertext": "0a1b2c3d4e5f",
+        "nonce": "f5e4d3c2b1a0",
+        "decryption_time": 1714521600,
+        "g2r": ["123456789", "987654321"],
+        "title": "Presidential Election 2024",
+        "description": "Vote for the next president",
+        "start_date": "2024-03-01T12:00:00",
+        "end_date": "2024-03-15T12:00:00",
+        "status": "active",
+        "participant_count": 0,
+        "options": ["Candidate A", "Candidate B"],
+        "reward_pool": 1.0,
+        "required_deposit": 0.5
+    }
+}
+```
+
+#### POST /
+Submit an encrypted vote to the blockchain.
+
+**Request:**
+```json
+{
+    "vote_data": "This is a secret ballot",
+    "decryption_time": 1714521600,
+    "reward_amount": 0.1,
+    "threshold": 3
+}
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Successfully submitted vote",
+    "data": {
+        "success": true,
+        "message": "Successfully submitted vote",
+        "transaction_hash": "0x1234567890abcdef",
+        "vote_id": 1
+    }
+}
+```
+
+**Validation:**
+- `vote_data`: Non-empty string
+- `decryption_time`: Unix timestamp in the future
+- `reward_amount`: Optional positive float (default: 0.1 ETH)
+- `threshold`: Optional integer ≥ 2 (default: 2/3 of holders)
+
+#### POST /create
+Create a new vote with options and parameters.
+
+**Request:**
+```json
+{
+    "title": "Presidential Election 2024",
+    "description": "Vote for the next president",
+    "start_date": "2024-03-01T12:00:00",
+    "end_date": "2024-03-15T12:00:00",
+    "options": ["Candidate A", "Candidate B"],
+    "reward_pool": 1.0,
+    "required_deposit": 0.5
+}
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Successfully created vote",
+    "data": {
+        "success": true,
+        "message": "Successfully created vote",
+        "transaction_hash": "0x1234567890abcdef"
+    }
+}
+```
+
+**Validation:**
+- `title`: 3-100 characters
+- `description`: 10-1000 characters
+- `start_date`: ISO format date string
+- `end_date`: ISO format date string (must be after start_date)
+- `options`: List of at least 2 options
+- `reward_pool`: Positive float (ETH amount)
+- `required_deposit`: Positive float (ETH amount)
+
+#### POST /tokens/{vote_id}
+Generate a voting token for a specific vote.
+
+**Parameters:**
+- `vote_id`: ID of the vote
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Token generated successfully",
+    "data": {
+        "token": "A1B2C3D4",
+        "vote_id": 1
+    }
+}
+```
+
+#### GET /tokens/validate
+Validate a voting token.
+
+**Parameters:**
+- `token`: Token string to validate
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Token is valid",
+    "data": {
+        "valid": true,
+        "vote_id": 1
+    }
+}
+```
+
+#### GET /{vote_id}/shares
+Get the status of share submissions for a vote.
+
+**Parameters:**
+- `vote_id`: ID of the vote
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Successfully retrieved share status",
+    "data": {
+        "total_holders": 3,
+        "submitted_shares": 2,
+        "missing_shares": 1,
+        "holder_status": {
+            "0x123": {"submitted": true, "valid": true},
+            "0x456": {"submitted": true, "valid": false},
+            "0x789": {"submitted": false, "valid": false}
+        }
+    }
+}
+```
+
+#### POST /{vote_id}/decrypt
+Decrypt a vote using submitted shares.
+
+**Parameters:**
+- `vote_id`: ID of the vote
+
+**Request (Optional):**
+```json
+{
+    "threshold": 3
+}
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Vote decrypted successfully",
+    "data": {
+        "vote_id": 1,
+        "vote_data": "This is a secret ballot",
+        "decryption_time": 1714521600,
+        "shares_used": 3,
+        "threshold": 2
+    }
+}
+```
+
+### Error Responses
+
+- `400`: Validation error (e.g., decryption time in the past)
+- `422`: Invalid input data
+- `500`: Blockchain interaction error
 
 ## Holder Router
 
@@ -182,4 +423,4 @@ Join as a secret holder by providing public key and deposit.
 
 ## Share Router
 
-*Coming soon* 
+*Coming soon*

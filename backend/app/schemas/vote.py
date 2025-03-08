@@ -5,6 +5,7 @@ This module contains Pydantic models for vote-related requests and responses.
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from app.core.error_handling import handle_validation_error
 
 class VoteSubmitRequest(BaseModel):
     """Schema for submitting an encrypted vote."""
@@ -38,7 +39,7 @@ class VoteSubmitRequest(BaseModel):
         """Validate that the decryption time is in the future."""
         current_time = int(datetime.now().timestamp())
         if v <= current_time:
-            raise ValueError("Decryption time must be in the future")
+            raise handle_validation_error("Decryption time must be in the future")
         return v
 
 class VoteCreateRequest(BaseModel):
