@@ -10,6 +10,9 @@ import hashlib
 import os
 import time
 import struct
+import logging
+
+logger = logging.getLogger(__name__)
 
 class CryptoService:
     def __init__(self):
@@ -60,14 +63,14 @@ class CryptoService:
         Args:
             scalar: The scalar to convert
         Returns: A G1 point"""
-        return multiply(self.g1_generator, scalar)
+        return multiply(self.g1_generator, scalar % self.curve_order)
 
     def scalar_to_g2_point(self, scalar: int) -> Tuple[FQ, FQ]:
         """Convert a scalar to a G2 point.
         Args:
             scalar: The scalar to convert
         Returns: A G2 point"""
-        return multiply(self.g2_generator, scalar)
+        return multiply(self.g2_generator, scalar % self.curve_order)
 
     def generate_keypair(self) -> Tuple[int, Tuple[FQ, FQ]]:
         """Generate a BLS12-381 keypair.
@@ -121,8 +124,14 @@ class CryptoService:
                     denominator = (denominator * (xi - xj)) % self.curve_order
             
             # Compute Lagrange coefficient
-            lagrange_coeff = (numerator * pow(denominator, -1, self.curve_order)) % self.curve_order
-            secret = (secret + (yi * lagrange_coeff) % self.curve_order) % self.curve_order
+            try:
+                # Handle modular inverse calculation
+                denominator_inv = pow(denominator, -1, self.curve_order)
+                lagrange_coeff = (numerator * denominator_inv) % self.curve_order
+                secret = (secret + (yi * lagrange_coeff) % self.curve_order) % self.curve_order
+            except ValueError as e:
+                logger.error(f"Error in Lagrange interpolation: {e}")
+                raise ValueError(f"Failed to compute Lagrange coefficient: {e}")
             
         return secret
 
@@ -168,19 +177,28 @@ class CryptoService:
     def verify_share(self, share: Tuple[FQ, FQ], public_key: Tuple[FQ, FQ], g2r: Tuple[FQ, FQ]) -> bool:
         """Verify a share using BLS12-381 pairing.
         Args:
-            share: The share to verify
-            public_key: The public key of the share holder
+            share: The share to verify (G1 point)
+            public_key: The public key of the share holder (G1 point)
             g2r: The G2 point used for verification
         Returns: True if share is valid, False otherwise"""
         try:
-            # Convert points to the correct format for pairing
-            share_point = (FQ(share[0]), FQ(share[1]))
-            public_key_point = (FQ(public_key[0]), FQ(public_key[1]))
-            g2r_point = (FQ(g2r[0]), FQ(g2r[1]))
+            # Ensure points are in the correct format
+            if not isinstance(share[0], FQ) or not isinstance(share[1], FQ):
+                share = (FQ(share[0]), FQ(share[1]))
+                
+            if not isinstance(public_key[0], FQ) or not isinstance(public_key[1], FQ):
+                public_key = (FQ(public_key[0]), FQ(public_key[1]))
+                
+            if not isinstance(g2r[0], FQ) or not isinstance(g2r[1], FQ):
+                g2r = (FQ(g2r[0]), FQ(g2r[1]))
             
-            # Perform pairing check
-            return pairing(share_point, self.g2_generator) == pairing(public_key_point, g2r_point)
-        except (TypeError, ValueError):
+            # Perform pairing check: e(share, G2) = e(PK, g2r)
+            left_pairing = pairing(share, self.g2_generator)
+            right_pairing = pairing(public_key, g2r)
+            
+            return left_pairing == right_pairing
+        except Exception as e:
+            logger.error(f"Error in share verification: {e}")
             return False
 
     def hash_to_scalar(self, data: bytes) -> int:
