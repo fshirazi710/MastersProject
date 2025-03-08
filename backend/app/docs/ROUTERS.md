@@ -80,7 +80,105 @@ password: SecureP@ssw0rd
 
 ## Holder Router
 
-*Coming soon*
+Base path: `/api/holders`
+
+### Endpoints
+
+#### GET /
+Get all registered secret holders.
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Successfully retrieved holders",
+    "data": [
+        {
+            "address": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+            "public_key": [123456789, 987654321],
+            "active": true
+        }
+    ]
+}
+```
+
+#### GET /count
+Get the total number of registered holders.
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Successfully retrieved holder count",
+    "data": {
+        "count": 3
+    }
+}
+```
+
+#### GET /status/{address}
+Check if an address is a registered holder.
+
+**Parameters:**
+- `address`: Ethereum address to check
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Address is a holder",
+    "data": {
+        "is_holder": true
+    }
+}
+```
+
+#### GET /deposit
+Get the required deposit amount to become a holder.
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Successfully retrieved required deposit",
+    "data": {
+        "required_deposit": 1.0
+    }
+}
+```
+
+#### POST /join
+Join as a secret holder by providing public key and deposit.
+
+**Request:**
+```json
+{
+    "public_key": [123456789, 987654321],
+    "deposit_amount": 1.0
+}
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Successfully joined as holder",
+    "data": {
+        "success": true,
+        "message": "Successfully joined as holder",
+        "transaction_hash": "0x1234567890abcdef"
+    }
+}
+```
+
+**Validation:**
+- `public_key`: List of exactly 2 integers
+- `deposit_amount`: Positive float matching the required deposit amount
+
+### Error Responses
+
+- `422`: Invalid input data (e.g., invalid public key format)
+- `500`: Blockchain interaction error
 
 ## Share Router
 

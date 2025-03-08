@@ -12,7 +12,8 @@ from app.schemas import (
     TransactionResponse,
     HolderCountResponse,
     HolderStatusResponse,
-    RequiredDepositResponse
+    RequiredDepositResponse,
+    HolderResponse
 )
 from app.services.blockchain import BlockchainService
 
@@ -23,21 +24,30 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/holders", tags=["Holders"])
 
-@router.get("/", response_model=StandardResponse[List[Dict[str, Any]]])
+@router.get("/", response_model=StandardResponse[List[HolderResponse]])
 async def get_all_holders(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """
     Get all registered secret holders.
     
     Returns:
-        List of holder addresses
+        List of holder addresses with their public keys and status
     """
     try:
         # Call the blockchain service to get all holders
         holders = await blockchain_service.contract.functions.getHolders().call()
+        holder_responses = []
+        for holder in holders:
+            # Get holder's public key
+            public_key = await blockchain_service.contract.functions.getHolderPublicKey(holder).call()
+            holder_responses.append(HolderResponse(
+                address=holder,
+                public_key=public_key,
+                active=True  # We assume active if they're in the holders list
+            ))
         return StandardResponse(
             success=True,
             message="Successfully retrieved all holders",
-            data=holders
+            data=holder_responses
         )
     except Exception as e:
         logger.error(f"Error getting all holders: {str(e)}")
@@ -101,7 +111,7 @@ async def get_required_deposit(blockchain_service: BlockchainService = Depends(g
         return StandardResponse(
             success=True,
             message="Successfully retrieved required deposit",
-            data=RequiredDepositResponse(deposit=deposit)
+            data=RequiredDepositResponse(required_deposit=blockchain_service.w3.from_wei(deposit, 'ether'))
         )
     except Exception as e:
         logger.error(f"Error getting required deposit: {str(e)}")
@@ -128,8 +138,8 @@ async def join_as_holder(
             
         # Call the blockchain service to join as holder
         result = await blockchain_service.join_as_holder(
-            public_key=request.public_key,
-            deposit_amount=request.deposit_amount
+            deposit_amount=request.deposit_amount,
+            public_key=request.public_key
         )
         
         if not result.get("success", False):
@@ -139,9 +149,9 @@ async def join_as_holder(
             success=True,
             message="Successfully joined as a secret holder",
             data=TransactionResponse(
-                transaction_hash=result["transaction_hash"],
-                holder_address=result["holder_address"],
-                public_key=result["public_key"]
+                success=True,
+                message="Successfully joined as holder",
+                transaction_hash=result["transaction_hash"]
             )
         )
     except Exception as e:
