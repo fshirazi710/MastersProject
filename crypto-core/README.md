@@ -92,3 +92,66 @@ Here is a step-by-step guide on how to set up a system:
     - `CONTRACT_ADDRESS`: the address of the deployed smart contract.
     - `API_URL`: an RPC URL of the blockchain.
 Then modify the `client-script/src/bin/main.rs` file to specify the secret and the time to reveal the secret. Run the code to send a timed release transaction.
+
+## Running Tests
+
+To test the TimedReleaseVoting contract, follow these steps:
+
+### Prerequisites
+
+1. Make sure you have Node.js and npm installed
+2. Install dependencies:
+   ```
+   npm install
+   ```
+3. Create a `.env` file based on `.env.example` with your configuration:
+   ```
+   cp .env.example .env
+   ```
+4. Edit the `.env` file to include:
+   - `PRIVATE_KEY`: Your Ethereum private key (without 0x prefix)
+   - `WEB3_PROVIDER_URL`: URL to your Ethereum node (e.g., Infura, Alchemy, or local node)
+
+### Deployment
+
+Before running tests, you need to deploy the contract:
+
+1. Compile the contract:
+   ```
+   node compile.js
+   ```
+2. Deploy the contract:
+   ```
+   node deploy.js
+   ```
+   This will create a `deployment.json` file in the `build` directory with the contract address.
+
+### Running Tests
+
+Run the tests with:
+
+```
+node test-contract.js
+```
+
+The test script will:
+1. Connect to the blockchain using your configured provider
+2. Load the deployed contract address from `build/deployment.json`
+3. Execute a series of tests against the contract
+4. Log the results to the console
+
+### Test Coverage
+
+The current tests cover:
+- Retrieving the required deposit amount
+- Joining as holders (with 3 different accounts)
+- Getting the number of holders
+- Getting all holder addresses
+- Submitting a vote with encrypted data
+- Retrieving vote data
+
+### Troubleshooting
+
+- If you see errors about missing environment variables, make sure your `.env` file is properly configured
+- If you see errors about deployment info not found, make sure you've run `deploy.js` first
+- For gas-related errors, try increasing the gas limit in the test file

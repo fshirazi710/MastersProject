@@ -15,6 +15,7 @@ contract TimedReleaseVoting {
         uint256[2] publicKey;  // BLS12-381 G1 point (x, y)
         uint256 deposit;
         bool active;
+        uint256 rewards;  // Accumulated rewards for the holder
     }
     
     // Vote data structure
@@ -26,11 +27,14 @@ contract TimedReleaseVoting {
         mapping(address => uint256[2]) shares;  // Submitted shares
         address[] shareSubmitters;  // List of addresses that submitted shares
         bool exists;
+        uint256 reward;  // Reward amount for this vote
+        bool rewardDistributed;  // Whether the reward has been distributed
     }
     
     // Constants
     uint256 public constant REQUIRED_DEPOSIT = 1 ether;  // Required deposit to become a holder
     uint256 public constant MIN_HOLDERS = 3;  // Minimum number of holders required for a vote
+    uint256 public constant REWARD_PER_VOTE = 0.1 ether;  // Reward amount per vote to be distributed
     
     // State
     mapping(address => Holder) public holders;
@@ -44,6 +48,8 @@ contract TimedReleaseVoting {
     event HolderExited(address indexed holderAddress);
     event VoteSubmitted(uint256 indexed voteId, uint256 decryptionTime);
     event ShareSubmitted(uint256 indexed voteId, address indexed holderAddress);
+    event RewardDistributed(uint256 indexed voteId, uint256 totalReward, uint256 numRecipients);
+    event RewardClaimed(address indexed holderAddress, uint256 amount);
     
     // ======== Modifiers ========
     
@@ -75,7 +81,8 @@ contract TimedReleaseVoting {
         holders[msg.sender] = Holder({
             publicKey: publicKey,
             deposit: msg.value,
-            active: true
+            active: true,
+            rewards: 0
         });
         
         holderAddresses.push(msg.sender);
@@ -87,11 +94,21 @@ contract TimedReleaseVoting {
      * @dev Exit as a secret holder and withdraw deposit
      */
     function exitAsHolder() external onlyHolder {
-        // Check if holder has pending shares to submit
-        // This is a simplified check - in production, you'd want more sophisticated logic
+        // Check if holder has pending shares to submit for votes that have reached decryption time
         for (uint256 i = 0; i < voteCount; i++) {
-            if (votes[i].decryptionTime > block.timestamp) {
-                require(votes[i].shares[msg.sender][0] != 0, "Pending shares to submit");
+            if (votes[i].exists && votes[i].decryptionTime <= block.timestamp) {
+                // For votes that have reached decryption time, check if holder has submitted their share
+                bool hasSubmitted = false;
+                for (uint256 j = 0; j < votes[i].shareSubmitters.length; j++) {
+                    if (votes[i].shareSubmitters[j] == msg.sender) {
+                        hasSubmitted = true;
+                        break;
+                    }
+                }
+                require(hasSubmitted, "Must submit shares for all past votes");
+            } else if (votes[i].exists && votes[i].decryptionTime > block.timestamp) {
+                // For future votes, holder cannot exit
+                revert("Cannot exit with pending future votes");
             }
         }
         
@@ -99,7 +116,9 @@ contract TimedReleaseVoting {
         holders[msg.sender].active = false;
         
         // Return deposit
-        payable(msg.sender).transfer(holders[msg.sender].deposit);
+        uint256 depositAmount = holders[msg.sender].deposit;
+        holders[msg.sender].deposit = 0;
+        payable(msg.sender).transfer(depositAmount);
         
         emit HolderExited(msg.sender);
     }
@@ -116,7 +135,7 @@ contract TimedReleaseVoting {
         bytes calldata nonce,
         uint256 decryptionTime,
         uint256[2] calldata g2r
-    ) external {
+    ) external payable {
         require(getNumHolders() >= MIN_HOLDERS, "Not enough holders");
         require(decryptionTime > block.timestamp, "Decryption time must be in the future");
         
@@ -128,6 +147,8 @@ contract TimedReleaseVoting {
         votes[voteId].decryptionTime = decryptionTime;
         votes[voteId].g2r = g2r;
         votes[voteId].exists = true;
+        votes[voteId].reward = msg.value > 0 ? msg.value : REWARD_PER_VOTE;
+        votes[voteId].rewardDistributed = false;
         
         emit VoteSubmitted(voteId, decryptionTime);
     }
@@ -148,6 +169,101 @@ contract TimedReleaseVoting {
         votes[voteId].shareSubmitters.push(msg.sender);
         
         emit ShareSubmitted(voteId, msg.sender);
+        
+        // Distribute rewards if all holders have submitted their shares
+        if (votes[voteId].shareSubmitters.length == getNumHolders() && !votes[voteId].rewardDistributed) {
+            distributeRewards(voteId);
+        }
+    }
+    
+    /**
+     * @dev Manually trigger reward distribution for a vote
+     * @param voteId The ID of the vote
+     */
+    function triggerRewardDistribution(uint256 voteId) external voteExists(voteId) afterDecryptionTime(voteId) {
+        // Ensure some time has passed after decryption time to give holders a chance to submit
+        require(block.timestamp >= votes[voteId].decryptionTime + 1 hours, "Wait at least 1 hour after decryption time");
+        require(!votes[voteId].rewardDistributed, "Rewards already distributed");
+        require(votes[voteId].shareSubmitters.length > 0, "No shares submitted");
+        
+        distributeRewards(voteId);
+    }
+    
+    /**
+     * @dev Distribute rewards for a vote
+     * @param voteId The ID of the vote
+     */
+    function distributeRewards(uint256 voteId) internal voteExists(voteId) {
+        require(!votes[voteId].rewardDistributed, "Rewards already distributed");
+        require(votes[voteId].shareSubmitters.length > 0, "No shares submitted");
+        
+        uint256 totalReward = votes[voteId].reward;
+        uint256 numRecipients = votes[voteId].shareSubmitters.length;
+        
+        // If all holders submitted their shares, distribute evenly
+        if (numRecipients == getNumHolders()) {
+            uint256 rewardPerHolder = totalReward / numRecipients;
+            
+            for (uint256 i = 0; i < numRecipients; i++) {
+                address holderAddress = votes[voteId].shareSubmitters[i];
+                holders[holderAddress].rewards += rewardPerHolder;
+            }
+        } else {
+            // If some holders didn't submit, distribute only to those who did
+            uint256 rewardPerHolder = totalReward / numRecipients;
+            
+            for (uint256 i = 0; i < numRecipients; i++) {
+                address holderAddress = votes[voteId].shareSubmitters[i];
+                holders[holderAddress].rewards += rewardPerHolder;
+            }
+        }
+        
+        votes[voteId].rewardDistributed = true;
+        
+        emit RewardDistributed(voteId, totalReward, numRecipients);
+    }
+    
+    /**
+     * @dev Claim accumulated rewards
+     */
+    function claimRewards() external onlyHolder {
+        uint256 rewardAmount = holders[msg.sender].rewards;
+        require(rewardAmount > 0, "No rewards to claim");
+        
+        holders[msg.sender].rewards = 0;
+        payable(msg.sender).transfer(rewardAmount);
+        
+        emit RewardClaimed(msg.sender, rewardAmount);
+    }
+    
+    /**
+     * @dev Force exit a holder who failed to submit shares
+     * @param holderAddress The address of the holder to force exit
+     * @param voteId The ID of the vote for which the holder failed to submit a share
+     */
+    function forceExitHolder(address holderAddress, uint256 voteId) external voteExists(voteId) {
+        require(votes[voteId].decryptionTime <= block.timestamp, "Decryption time not reached");
+        require(holders[holderAddress].active, "Not an active holder");
+        
+        // Check if holder has submitted their share
+        bool hasSubmitted = false;
+        for (uint256 i = 0; i < votes[voteId].shareSubmitters.length; i++) {
+            if (votes[voteId].shareSubmitters[i] == holderAddress) {
+                hasSubmitted = true;
+                break;
+            }
+        }
+        
+        // If holder has submitted, they cannot be force exited
+        require(!hasSubmitted, "Holder has submitted their share");
+        
+        // Mark as inactive
+        holders[holderAddress].active = false;
+        
+        // Forfeit deposit - it stays in the contract
+        holders[holderAddress].deposit = 0;
+        
+        emit HolderExited(holderAddress);
     }
     
     // ======== View Functions ========
@@ -252,5 +368,23 @@ contract TimedReleaseVoting {
      */
     function requiredDeposit() external pure returns (uint256) {
         return REQUIRED_DEPOSIT;
+    }
+    
+    /**
+     * @dev Get the accumulated rewards for a holder
+     * @param holderAddress The address of the holder
+     * @return The accumulated rewards for the holder
+     */
+    function getHolderRewards(address holderAddress) external view returns (uint256) {
+        return holders[holderAddress].rewards;
+    }
+    
+    /**
+     * @dev Get vote reward amount
+     * @param voteId The ID of the vote
+     * @return The reward amount for the vote
+     */
+    function getVoteReward(uint256 voteId) external view voteExists(voteId) returns (uint256) {
+        return votes[voteId].reward;
     }
 } 
