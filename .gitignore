@@ -57,6 +57,5 @@ __pycache__/
 node_modules/
 
 # Ignore package-lock.json
-package-lock.json
-
-
+crypto-core/package-lock.json
+frontend/package-lock.json
