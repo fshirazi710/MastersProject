@@ -1,7 +1,7 @@
 """
 Share router for managing secret shares in the system.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any
 
 from app.core.dependencies import get_blockchain_service
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/shares", tags=["Shares"])
 
-@router.post("", response_model=TransactionResponse)
+@router.post("", response_model=StandardResponse[TransactionResponse])
 async def submit_share(request: ShareSubmitRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """
     Submit a share for a vote.
@@ -43,10 +43,14 @@ async def submit_share(request: ShareSubmitRequest, blockchain_service: Blockcha
         if not result.get("success", False):
             raise handle_blockchain_error("submit share", Exception(result.get("error", "Unknown error")))
             
-        return TransactionResponse(
+        return StandardResponse(
             success=True,
             message="Share submitted successfully",
-            transaction_hash=result["transaction_hash"]
+            data=TransactionResponse(
+                success=True,
+                message="Share submitted successfully",
+                transaction_hash=result["transaction_hash"]
+            )
         )
     except Exception as e:
         logger.error(f"Error submitting share: {str(e)}")
@@ -94,12 +98,14 @@ async def get_submitted_shares(vote_id: int, blockchain_service: BlockchainServi
     try:
         # Check if the vote exists
         try:
-            blockchain_service.contract.functions.getVote(vote_id).call()
+            await blockchain_service.contract.functions.getVote(vote_id).call()
         except Exception:
+            # Use raise instead of return to ensure the exception is propagated
             raise handle_not_found_error("Vote", str(vote_id))
             
         # Call the blockchain service to get the submitted shares
-        submitters, shares = blockchain_service.contract.functions.getSubmittedShares(vote_id).call()
+        get_shares_func = blockchain_service.contract.functions.getSubmittedShares(vote_id)
+        submitters, shares = await get_shares_func.call()
         
         # Format the response
         result = []
@@ -119,6 +125,9 @@ async def get_submitted_shares(vote_id: int, blockchain_service: BlockchainServi
                 "count": len(result)
             }
         )
+    except HTTPException:
+        # Re-raise HTTP exceptions (like 404) directly
+        raise
     except Exception as e:
         logger.error(f"Error getting submitted shares: {str(e)}")
         raise handle_blockchain_error("get submitted shares", e) 

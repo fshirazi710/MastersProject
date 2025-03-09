@@ -423,4 +423,97 @@ Join as a secret holder by providing public key and deposit.
 
 ## Share Router
 
-*Coming soon*
+Base path: `/api/shares`
+
+### Endpoints
+
+#### POST /
+Submit a share for a vote.
+
+**Request:**
+```json
+{
+    "vote_id": 1,
+    "share_index": 2,
+    "share_value": 123456789
+}
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Share submitted successfully",
+    "data": {
+        "success": true,
+        "message": "Share submitted successfully",
+        "transaction_hash": "0x1234567890abcdef"
+    }
+}
+```
+
+**Validation:**
+- `vote_id`: Positive integer
+- `share_index`: Positive integer (> 0)
+- `share_value`: Integer
+
+#### POST /verify
+Verify a share submission.
+
+**Request:**
+```json
+{
+    "vote_id": 1,
+    "holder_address": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "share": [2, 123456789]
+}
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Share verification successful",
+    "data": {
+        "valid": true,
+        "holder_address": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "vote_id": 1
+    }
+}
+```
+
+#### GET /by-vote/{vote_id}
+Get all submitted shares for a specific vote.
+
+**Parameters:**
+- `vote_id`: ID of the vote
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Successfully retrieved 2 submitted shares for vote 1",
+    "data": {
+        "vote_id": 1,
+        "submitted_shares": [
+            {
+                "holder_address": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+                "share_index": 1,
+                "share_value": 123456789
+            },
+            {
+                "holder_address": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+                "share_index": 2,
+                "share_value": 987654321
+            }
+        ],
+        "count": 2
+    }
+}
+```
+
+### Error Responses
+
+- `404`: Vote not found
+- `422`: Invalid input data
+- `500`: Blockchain interaction error

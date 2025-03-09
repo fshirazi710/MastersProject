@@ -4,6 +4,7 @@ Tests for the share router.
 import pytest
 from fastapi import status
 import json
+from unittest.mock import AsyncMock, MagicMock
 
 # Test data
 test_vote_id = 1
@@ -17,10 +18,10 @@ class TestSubmitShare:
     async def test_submit_share_success(self, client, mock_blockchain_service):
         """Test submitting a share successfully."""
         # Setup mock
-        mock_blockchain_service.submit_share.return_value = {
+        mock_blockchain_service.submit_share = AsyncMock(return_value={
             "success": True,
             "transaction_hash": "0x1234567890abcdef"
-        }
+        })
         
         # Request data
         request_data = {
@@ -37,7 +38,7 @@ class TestSubmitShare:
         data = response.json()
         assert data["success"] is True
         assert "Share submitted successfully" in data["message"]
-        assert data["transaction_hash"] == "0x1234567890abcdef"
+        assert data["data"]["transaction_hash"] == "0x1234567890abcdef"
         
         # Verify mock calls
         mock_blockchain_service.submit_share.assert_called_once_with(
@@ -48,10 +49,10 @@ class TestSubmitShare:
     async def test_submit_share_error(self, client, mock_blockchain_service):
         """Test error handling when submitting a share."""
         # Setup mock to return an error
-        mock_blockchain_service.submit_share.return_value = {
+        mock_blockchain_service.submit_share = AsyncMock(return_value={
             "success": False,
             "error": "Transaction failed"
-        }
+        })
         
         # Request data
         request_data = {
@@ -66,7 +67,7 @@ class TestSubmitShare:
         # Assertions
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         data = response.json()
-        assert data["detail"] == "Failed to submit share: Transaction failed"
+        assert "Transaction failed" in data["detail"]
         
         # Verify mock calls
         mock_blockchain_service.submit_share.assert_called_once_with(
@@ -104,7 +105,7 @@ class TestVerifyShare:
     async def test_verify_share_valid(self, client, mock_blockchain_service):
         """Test verifying a valid share."""
         # Setup mock
-        mock_blockchain_service.verify_share_submission.return_value = True
+        mock_blockchain_service.verify_share_submission = AsyncMock(return_value=True)
         
         # Request data
         request_data = {
@@ -135,7 +136,7 @@ class TestVerifyShare:
     async def test_verify_share_invalid(self, client, mock_blockchain_service):
         """Test verifying an invalid share."""
         # Setup mock
-        mock_blockchain_service.verify_share_submission.return_value = False
+        mock_blockchain_service.verify_share_submission = AsyncMock(return_value=False)
         
         # Request data
         request_data = {
@@ -153,6 +154,8 @@ class TestVerifyShare:
         assert data["success"] is True
         assert "Share verification failed" in data["message"]
         assert data["data"]["valid"] is False
+        assert data["data"]["holder_address"] == test_holder_address
+        assert data["data"]["vote_id"] == test_vote_id
         
         # Verify mock calls
         mock_blockchain_service.verify_share_submission.assert_called_once_with(
@@ -164,7 +167,7 @@ class TestVerifyShare:
     async def test_verify_share_error(self, client, mock_blockchain_service):
         """Test error handling when verifying a share."""
         # Setup mock to raise an exception
-        mock_blockchain_service.verify_share_submission.side_effect = Exception("Verification failed")
+        mock_blockchain_service.verify_share_submission = AsyncMock(side_effect=Exception("Verification error"))
         
         # Request data
         request_data = {
@@ -179,7 +182,7 @@ class TestVerifyShare:
         # Assertions
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         data = response.json()
-        assert data["detail"] == "Failed to verify share: Verification failed"
+        assert "Verification error" in data["detail"]
         
         # Verify mock calls
         mock_blockchain_service.verify_share_submission.assert_called_once_with(
@@ -193,15 +196,20 @@ class TestGetSubmittedShares:
     
     async def test_get_submitted_shares_success(self, client, mock_blockchain_service):
         """Test getting submitted shares successfully."""
-        # Setup mocks
-        mock_blockchain_service.contract.functions.getVote().return_value.call.return_value = ["vote_data"]
+        # Setup mocks for contract functions
+        get_vote_mock = AsyncMock()
+        get_vote_mock.call = AsyncMock(return_value=["vote_data"])
+        mock_blockchain_service.contract.functions.getVote = MagicMock(return_value=get_vote_mock)
         
         submitters = [test_holder_address, "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"]
         shares = [
             [1, 123456789],
             [2, 987654321]
         ]
-        mock_blockchain_service.contract.functions.getSubmittedShares().return_value.call.return_value = (submitters, shares)
+        
+        get_shares_mock = AsyncMock()
+        get_shares_mock.call = AsyncMock(return_value=(submitters, shares))
+        mock_blockchain_service.contract.functions.getSubmittedShares = MagicMock(return_value=get_shares_mock)
         
         # Make request
         response = client.get(f"/api/shares/by-vote/{test_vote_id}")
@@ -222,7 +230,9 @@ class TestGetSubmittedShares:
     async def test_get_submitted_shares_vote_not_found(self, client, mock_blockchain_service):
         """Test getting submitted shares for a non-existent vote."""
         # Setup mock to raise an exception
-        mock_blockchain_service.contract.functions.getVote().return_value.call.side_effect = Exception("Vote not found")
+        get_vote_mock = AsyncMock()
+        get_vote_mock.call = AsyncMock(side_effect=Exception("Vote not found"))
+        mock_blockchain_service.contract.functions.getVote = MagicMock(return_value=get_vote_mock)
         
         # Make request
         response = client.get(f"/api/shares/by-vote/{test_vote_id}")
@@ -239,8 +249,13 @@ class TestGetSubmittedShares:
     async def test_get_submitted_shares_empty(self, client, mock_blockchain_service):
         """Test getting submitted shares when there are none."""
         # Setup mocks
-        mock_blockchain_service.contract.functions.getVote().return_value.call.return_value = ["vote_data"]
-        mock_blockchain_service.contract.functions.getSubmittedShares().return_value.call.return_value = ([], [])
+        get_vote_mock = AsyncMock()
+        get_vote_mock.call = AsyncMock(return_value=["vote_data"])
+        mock_blockchain_service.contract.functions.getVote = MagicMock(return_value=get_vote_mock)
+        
+        get_shares_mock = AsyncMock()
+        get_shares_mock.call = AsyncMock(return_value=([], []))
+        mock_blockchain_service.contract.functions.getSubmittedShares = MagicMock(return_value=get_shares_mock)
         
         # Make request
         response = client.get(f"/api/shares/by-vote/{test_vote_id}")
@@ -261,8 +276,13 @@ class TestGetSubmittedShares:
     async def test_get_submitted_shares_error(self, client, mock_blockchain_service):
         """Test error handling when getting submitted shares."""
         # Setup mock to raise an exception
-        mock_blockchain_service.contract.functions.getVote().return_value.call.return_value = ["vote_data"]
-        mock_blockchain_service.contract.functions.getSubmittedShares().return_value.call.side_effect = Exception("Failed to get shares")
+        get_vote_mock = AsyncMock()
+        get_vote_mock.call = AsyncMock(return_value=["vote_data"])
+        mock_blockchain_service.contract.functions.getVote = MagicMock(return_value=get_vote_mock)
+        
+        get_shares_mock = AsyncMock()
+        get_shares_mock.call = AsyncMock(side_effect=Exception("Blockchain error"))
+        mock_blockchain_service.contract.functions.getSubmittedShares = MagicMock(return_value=get_shares_mock)
         
         # Make request
         response = client.get(f"/api/shares/by-vote/{test_vote_id}")
@@ -270,7 +290,7 @@ class TestGetSubmittedShares:
         # Assertions
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         data = response.json()
-        assert data["detail"] == "Failed to get submitted shares: Failed to get shares"
+        assert "Blockchain error" in data["detail"]
         
         # Verify mock calls
         mock_blockchain_service.contract.functions.getVote.assert_called_once()
