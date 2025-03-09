@@ -1,73 +1,87 @@
 <template>
-    <div class="login">
-        <h1>Login</h1>
+  <div class="login-page">
+    <div class="login-container">
+      <h1>Login</h1>
+      
+      <!-- Error message -->
+      <div v-if="error" class="error-message">
+        {{ error }}
+      </div>
+      
+      <form @submit.prevent="handleSubmit" class="login-form">
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input 
+            type="email" 
+            id="email" 
+            v-model="formData.email" 
+            required 
+            class="form-input"
+            placeholder="Enter your email"
+          >
+        </div>
         
-        <form @submit.prevent="handleSubmit" class="form-container">
-          <div class="form-group">
-            <label for="email">Email</label>
-            <input
-              type="email"
-              id="email"
-              v-model="loginData.email"
-              required
-              class="form-input"
-              placeholder="Enter your email"
-            >
-          </div>
-  
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input
-              type="password"
-              id="password"
-              v-model="loginData.password"
-              required
-              class="form-input"
-              placeholder="Enter your password"
-            >
-          </div>
-  
-          <div class="form-actions">
-            <button type="submit" class="btn primary">Login</button>
-          </div>
-  
-          <div class="form-footer">
-            <p>Don't have an account? <NuxtLink to="/register">Register</NuxtLink></p>
-          </div>
-        </form>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input 
+            type="password" 
+            id="password" 
+            v-model="formData.password" 
+            required 
+            class="form-input"
+            placeholder="Enter your password"
+          >
+        </div>
+        
+        <button 
+          type="submit" 
+          class="btn primary" 
+          :disabled="loading"
+        >
+          {{ loading ? 'Logging in...' : 'Login' }}
+        </button>
+      </form>
+      
+      <div class="register-link">
+        Don't have an account? <router-link to="/register">Register</router-link>
+      </div>
     </div>
+  </div>
 </template>
   
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
-import {store} from '../authentication.js'
-
+import { authApi } from '@/services/api'
 
 const router = useRouter()
-const loginData = ref({
-    email: '',
-    password: ''
+const loading = ref(false)
+const error = ref('')
+
+// Form data
+const formData = ref({
+  email: '',
+  password: ''
 })
 
+// Handle form submission
 const handleSubmit = async () => {
+  loading.value = true
+  error.value = ''
+  
   try {
-    const loginPayload = { ...loginData.value };
-
-    const response = await axios.post("http://127.0.0.1:8000/login", loginPayload, {
-      withCredentials: true, // Ensure cookies are sent
-    });
-
-    // Store the JWT in local storage
-    localStorage.setItem('token', response.data.token); // Assuming the token is returned in the response
-
-    store.checkLoginStatus();  // Call the method to check login status
-
-    alert(response.data.message);
-    router.push('/all-votes'); // Redirect to a protected route
-  } catch (error) {
-    alert(error.response?.data?.detail || 'Failed to log user in');
+    const response = await authApi.login(formData.value)
+    
+    // Store the token in localStorage
+    localStorage.setItem('auth_token', response.data.data.token)
+    
+    // Redirect to home page
+    router.push('/')
+  } catch (err) {
+    console.error('Login failed:', err)
+    error.value = err.response?.data?.detail || 'Login failed. Please check your credentials.'
+  } finally {
+    loading.value = false
   }
 }
 </script>

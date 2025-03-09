@@ -34,7 +34,7 @@
           <input 
             type="datetime-local" 
             id="startDate" 
-            v-model="voteData.startDate" 
+            v-model="voteData.start_date" 
             required 
             class="form-input"
           >
@@ -46,7 +46,7 @@
           <input 
             type="datetime-local" 
             id="endDate" 
-            v-model="voteData.endDate" 
+            v-model="voteData.end_date" 
             required 
             class="form-input"
           >
@@ -67,7 +67,7 @@
             <input 
               type="number"
               id="rewardPool"
-              v-model="voteData.rewardPool"
+              v-model="voteData.reward_pool"
               required
               min="0.001"
               step="0.001"
@@ -81,7 +81,7 @@
             <input 
               type="number"
               id="requiredDeposit"
-              v-model="voteData.requiredDeposit"
+              v-model="voteData.required_deposit"
               required
               min="0.001"
               step="0.001"
@@ -132,9 +132,11 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import { voteApi } from '@/services/api'
 
 const router = useRouter();
+const loading = ref(false);
+const error = ref(null);
 
 // This line sets the middleware for authentication
 definePageMeta({
@@ -145,11 +147,11 @@ definePageMeta({
 const voteData = ref({
   title: '',
   description: '',
-  startDate: '',
-  endDate: '',
+  start_date: '',
+  end_date: '',
   options: ['', ''],
-  rewardPool: 0.003,
-  requiredDeposit: 0.001,
+  reward_pool: 0.003,
+  required_deposit: 0.001,
 })
 
 // Add a new empty option to the options array
@@ -162,15 +164,29 @@ const removeOption = (index) => {
   voteData.value.options.splice(index, 1)
 }
 
-const handleSubmit = () => {
-  axios.post("http://127.0.0.1:8000/create-vote", voteData.value)
-    .then(response => {
-      alert(response.data.message)
-      router.push('/active-votes')
-    })
-    .catch(error => {
-      alert(error.response?.data?.message || 'Failed to create vote')
-    })
+const handleSubmit = async () => {
+  if (loading.value) return;
+  
+  loading.value = true;
+  error.value = null;
+  
+  try {
+    // Format dates to ISO strings
+    const formattedData = {
+      ...voteData.value,
+      start_date: new Date(voteData.value.start_date).toISOString(),
+      end_date: new Date(voteData.value.end_date).toISOString(),
+    };
+    
+    const response = await voteApi.createVote(formattedData);
+    alert(response.data.message || 'Vote created successfully!');
+    router.push('/all-votes');
+  } catch (err) {
+    console.error('Failed to create vote:', err);
+    error.value = err.response?.data?.detail || 'Failed to create vote. Please try again.';
+  } finally {
+    loading.value = false;
+  }
 }
 </script>
 

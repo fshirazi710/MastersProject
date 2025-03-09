@@ -91,49 +91,59 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import axios from 'axios'
-import RegisterToVote from '~/components/vote/RegisterToVote.vue'
-import CastYourVote from '~/components/vote/CastYourVote.vue'
-import VoteResults from '~/components/vote/VoteResults.vue'
-import SecretHolders from '~/components/vote/SecretHolders.vue'
+import { voteApi, shareApi } from '@/services/api'
+import CastYourVote from '@/components/vote/CastYourVote.vue'
+import VoteResults from '@/components/vote/VoteResults.vue'
+import SecretHolders from '@/components/vote/SecretHolders.vue'
+import RegisterToVote from '@/components/vote/RegisterToVote.vue'
 
 // Get route params for vote ID
 const route = useRoute()
 const loading = ref(true)
-const vote = ref({})
+const error = ref(null)
+const vote = ref(null)
+const shareStatus = ref(null)
 
-
-const fetchVoteData = () => {
+const fetchVoteData = async () => {
     loading.value = true
-    axios.get(`http://127.0.0.1:8000/vote/${route.params.id}`)
-    .then(response => {
-      vote.value = {
-      ...response.data.data,
-      secretHolderCount: 5, // Fixed value
-      requiredKeys: 3,      // Fixed value
-      releasedKeys: 0,      // Fixed value
-      secretHolders: [      // Fixed value
-        { 
-          id: 1, 
-          address: '0x1234...5678', 
-          status: 'active',
-          hasReleasedKey: false 
-        },
-        { 
-          id: 2, 
-          address: '0x8765...4321', 
-          status: 'active',
-          hasReleasedKey: false 
+    error.value = null
+    
+    try {
+        // Fetch vote details
+        const voteResponse = await voteApi.getVoteById(route.params.id)
+        const voteData = voteResponse.data.data
+        
+        // Fetch share status for this vote
+        const shareResponse = await voteApi.getShareStatus(route.params.id)
+        shareStatus.value = shareResponse.data.data
+        
+        // Transform the response data to match the expected format
+        vote.value = {
+            id: voteData.id,
+            title: voteData.title || `Vote ${voteData.id}`,
+            description: voteData.description || 'No description available',
+            status: voteData.status || 'active',
+            startDate: voteData.start_date || new Date().toISOString(),
+            endDate: voteData.end_date || new Date(Date.now() + 86400000).toISOString(),
+            options: voteData.options || [],
+            participantCount: voteData.participant_count || 0,
+            rewardPool: voteData.reward_pool || 0,
+            requiredDeposit: voteData.required_deposit || 0,
+            secretHolderCount: shareStatus.value.total_holders || 0,
+            requiredKeys: shareStatus.value.threshold || 0,
+            releasedKeys: shareStatus.value.submitted_shares || 0,
+            secretHolders: Object.entries(shareStatus.value.holder_status || {}).map(([address, status]) => ({
+                address,
+                status: 'active',
+                hasReleasedKey: status.submitted
+            }))
         }
-      ],
-      }
-    })
-    .catch(error => {
-      console.error("Failed to fetch vote data:", error)
-    })
-    .finally(() => {
-      loading.value = false
-    })
+    } catch (err) {
+        console.error("Failed to fetch vote data:", err)
+        error.value = "Failed to load vote details. Please try again later."
+    } finally {
+        loading.value = false
+    }
 }
 
 // Hook to execute the fetchVoteData function when the component is mounted
@@ -143,6 +153,8 @@ onMounted(() => {
 
 // Compute time remaining until vote ends
 const timeRemaining = computed(() => {
+  if (!vote.value) return ''
+  
   const end = new Date(vote.value.endDate)
   const now = new Date()
   const diff = end - now
@@ -165,6 +177,48 @@ const formatDate = (dateString) => {
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+// Handle vote submission
+const handleVoteSubmit = async (selectedOption) => {
+  try {
+    await voteApi.submitVote({
+      vote_id: vote.value.id,
+      vote_data: selectedOption,
+      decryption_time: new Date(vote.value.endDate).getTime() / 1000
+    })
+    alert('Vote submitted successfully!')
+    fetchVoteData() // Refresh data
+  } catch (err) {
+    alert('Failed to submit vote: ' + (err.response?.data?.detail || err.message))
+  }
+}
+
+// Handle share submission
+const handleShareSubmit = async (shareData) => {
+  try {
+    await shareApi.submitShare(
+      vote.value.id,
+      shareData.shareIndex,
+      shareData.shareValue
+    )
+    alert('Share submitted successfully!')
+    fetchVoteData() // Refresh data
+  } catch (err) {
+    alert('Failed to submit share: ' + (err.response?.data?.detail || err.message))
+  }
+}
+
+// Handle vote decryption
+const handleDecrypt = async () => {
+  try {
+    const response = await voteApi.decryptVote(vote.value.id)
+    alert('Vote decrypted successfully!')
+    vote.value.decryptedData = response.data.data.vote_data
+    fetchVoteData() // Refresh data
+  } catch (err) {
+    alert('Failed to decrypt vote: ' + (err.response?.data?.detail || err.message))
+  }
 }
 </script>
 

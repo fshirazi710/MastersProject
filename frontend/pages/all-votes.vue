@@ -88,15 +88,19 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import axios from 'axios'
+import { useRouter } from 'vue-router'
+import { voteApi } from '@/services/api'
 
-// Search and filter state
+const router = useRouter()
+const loading = ref(true)
+const error = ref(null)
 const searchQuery = ref('')
 const statusFilter = ref('all')
-const loading = ref(true)
 
 // Computed property for filtered votes
 const filteredVotes = computed(() => {
+  if (!votes.value) return []
+  
   return votes.value.filter(vote => {
     // Match by title or description text
     const matchesSearch = vote.title.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
@@ -113,19 +117,32 @@ const filteredVotes = computed(() => {
 const votes = ref([])
 
 // Fetch votes from the FastAPI backend
-const getVotes = () => {
+const getVotes = async () => {
   loading.value = true
-  axios.get("http://127.0.0.1:8000/all-votes")
-    .then(response => {
-      console.log(response)
-      votes.value = response.data.data
-    })
-    .catch(error => {
-      console.error("Failed to fetch votes:", error)
-    })
-    .finally(() => {
-      loading.value = false
-    })
+  error.value = null
+  
+  try {
+    const response = await voteApi.getAllVotes()
+    
+    // Transform the response data to match the expected format
+    votes.value = response.data.data.map(vote => ({
+      id: vote.vote_id,
+      title: vote.title || `Vote ${vote.vote_id}`,
+      description: vote.description || 'No description available',
+      status: vote.status || 'active',
+      startDate: new Date(vote.start_date || Date.now()).toISOString(),
+      endDate: new Date(vote.end_date || Date.now() + 86400000).toISOString(),
+      options: vote.options || [],
+      participantCount: vote.participant_count || 0,
+      rewardPool: vote.reward_pool || 0,
+      requiredDeposit: vote.required_deposit || 0
+    }))
+  } catch (err) {
+    console.error("Failed to fetch votes:", err)
+    error.value = "Failed to load votes. Please try again later."
+  } finally {
+    loading.value = false
+  }
 }
 
 // Hook to execute the getVotes function when the component is mounted

@@ -45,11 +45,14 @@ async def get_all_votes(blockchain_service: BlockchainService = Depends(get_bloc
         List of all votes
     """
     try:
-        vote_count = await blockchain_service.contract.functions.voteCount().call()
+        # Get the vote count from the contract using the helper method
+        vote_count = await blockchain_service.call_contract_function("voteCount")
         votes = []
         
         for i in range(vote_count):
-            vote_data = await blockchain_service.contract.functions.getVote(i).call()
+            # Get vote data for each vote using the helper method
+            vote_data = await blockchain_service.call_contract_function("getVote", i)
+            
             # Convert g2r integers to strings
             g2r_values = [str(val) for val in vote_data[3]] if vote_data[3] else []
             votes.append(VoteResponse(
@@ -78,13 +81,13 @@ async def get_vote_summary(blockchain_service: BlockchainService = Depends(get_b
         Status information for all votes
     """
     try:
-        total_votes = await blockchain_service.contract.functions.voteCount().call()
+        total_votes = await blockchain_service.call_contract_function("voteCount")
         active_votes = 0
         closed_votes = 0
         decrypted_votes = 0
         
         for i in range(total_votes):
-            vote_data = await blockchain_service.contract.functions.getVote(i).call()
+            vote_data = await blockchain_service.call_contract_function("getVote", i)
             status = vote_data[8] if len(vote_data) > 8 else None
             if status == "active":
                 active_votes += 1
@@ -119,8 +122,8 @@ async def get_vote_data(vote_id: int, blockchain_service: BlockchainService = De
         Vote data including ciphertext, nonce, and decryption time
     """
     try:
-        # Call the blockchain service to get the vote data
-        vote_data = await blockchain_service.contract.functions.getVote(vote_id).call()
+        # Call the blockchain service to get the vote data using the helper method
+        vote_data = await blockchain_service.call_contract_function("getVote", vote_id)
         
         # Convert the vote data to a readable format
         data = {

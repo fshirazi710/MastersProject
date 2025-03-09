@@ -98,14 +98,13 @@ async def get_submitted_shares(vote_id: int, blockchain_service: BlockchainServi
     try:
         # Check if the vote exists
         try:
-            await blockchain_service.contract.functions.getVote(vote_id).call()
+            await blockchain_service.call_contract_function("getVote", vote_id)
         except Exception:
-            # Use raise instead of return to ensure the exception is propagated
+            # Re-raise HTTP exceptions (like 404) directly
             raise handle_not_found_error("Vote", str(vote_id))
             
-        # Call the blockchain service to get the submitted shares
-        get_shares_func = blockchain_service.contract.functions.getSubmittedShares(vote_id)
-        submitters, shares = await get_shares_func.call()
+        # Call the blockchain service to get the submitted shares using the helper method
+        submitters, shares = await blockchain_service.call_contract_function("getSubmittedShares", vote_id)
         
         # Format the response
         result = []

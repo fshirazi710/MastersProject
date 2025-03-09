@@ -1,141 +1,121 @@
 <template>
-    <div class="register">
-        <h1>Register as Vote Organiser</h1>
+  <div class="register-page">
+    <div class="register-container">
+      <h1>Create an Account</h1>
+      
+      <!-- Error message -->
+      <div v-if="error" class="error-message">
+        {{ error }}
+      </div>
+      
+      <form @submit.prevent="handleSubmit" class="register-form">
+        <div class="form-group">
+          <label for="name">Full Name</label>
+          <input 
+            type="text" 
+            id="name" 
+            v-model="formData.name" 
+            required 
+            class="form-input"
+            placeholder="Enter your full name"
+          >
+        </div>
         
-        <form @submit.prevent="handleSubmit" class="form-container">
-          <!-- Name input -->
-          <div class="form-group">
-            <label for="name">Full Name</label>
-            <input
-              type="text"
-              id="name"
-              v-model="registerationData.name"
-              required
-              class="form-input"
-              placeholder="Enter your full name"
-            >
-          </div>
-  
-          <!-- Email input -->
-          <div class="form-group">
-            <label for="email">Email</label>
-            <input
-              type="email"
-              id="email"
-              v-model="registerationData.email"
-              required
-              class="form-input"
-              placeholder="Enter your email"
-            >
-          </div>
-  
-          <!-- Password input -->
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input
-              type="password"
-              id="password"
-              v-model="registerationData.password"
-              required
-              class="form-input"
-              placeholder="Enter your password"
-              minlength="8"
-            >
-            <p class="helper-text">Password must be at least 8 characters long</p>
-          </div>
-  
-          <!-- Confirm Password input -->
-          <div class="form-group">
-            <label for="confirmPassword">Confirm Password</label>
-            <input
-              type="password"
-              id="confirmPassword"
-              v-model="registerationData.confirmPassword"
-              required
-              class="form-input"
-              placeholder="Confirm your password"
-            >
-          </div>
-  
-          <!-- Error message display -->
-          <div v-if="errorMessage" class="error-message">
-            {{ errorMessage }}
-          </div>
-  
-          <!-- Submit button -->
-          <div class="form-actions">
-            <button type="submit" class="btn primary" :disabled="isSubmitting">
-              {{ isSubmitting ? 'Registering...' : 'Register' }}
-            </button>
-          </div>
-  
-          <!-- Login link -->
-          <div class="form-footer">
-            <p>Already have an account? <NuxtLink to="/login">Login</NuxtLink></p>
-          </div>
-        </form>
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input 
+            type="email" 
+            id="email" 
+            v-model="formData.email" 
+            required 
+            class="form-input"
+            placeholder="Enter your email"
+          >
+        </div>
+        
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input 
+            type="password" 
+            id="password" 
+            v-model="formData.password" 
+            required 
+            class="form-input"
+            placeholder="Create a password"
+            minlength="8"
+          >
+          <small class="form-hint">Password must be at least 8 characters long</small>
+        </div>
+        
+        <div class="form-group">
+          <label for="role">Role</label>
+          <select 
+            id="role" 
+            v-model="formData.role" 
+            required 
+            class="form-select"
+          >
+            <option v-for="role in roles" :key="role.value" :value="role.value">
+              {{ role.label }}
+            </option>
+          </select>
+        </div>
+        
+        <button 
+          type="submit" 
+          class="btn primary" 
+          :disabled="loading"
+        >
+          {{ loading ? 'Registering...' : 'Register' }}
+        </button>
+      </form>
+      
+      <div class="login-link">
+        Already have an account? <router-link to="/login">Login</router-link>
+      </div>
     </div>
+  </div>
 </template>
   
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
-import { config } from '../config'
+import { authApi } from '@/services/api'
 
 const router = useRouter()
-const errorMessage = ref('')
-const isSubmitting = ref(false)
+const loading = ref(false)
+const error = ref('')
 
-const registerationData = ref({
-    name: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
-    role: 'vote-organiser' // Set default role
+// Form data
+const formData = ref({
+  name: '',
+  email: '',
+  password: '',
+  role: 'voter' // Default role
 })
 
-const validateForm = () => {
-    errorMessage.value = ''
-    if (registerationData.value.password !== registerationData.value.confirmPassword) {
-        errorMessage.value = 'Passwords do not match'
-        return false
-    }
-    if (registerationData.value.password.length < 8) {
-        errorMessage.value = 'Password must be at least 8 characters long'
-        return false
-    }
-    return true
-}
+// Available roles
+const roles = [
+  { value: 'voter', label: 'Voter' },
+  { value: 'holder', label: 'Secret Holder' }
+]
 
+// Handle form submission
 const handleSubmit = async () => {
-    if (!validateForm() || isSubmitting.value) {
-        return
-    }
-
-    isSubmitting.value = true
-    errorMessage.value = ''
-
-    try {
-        // Don't hash password here - it will be hashed securely in the backend
-        const { confirmPassword, ...payload } = registerationData.value
-        
-        const response = await axios.post(`${config.api.baseURL}/register`, payload, {
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        })
-        
-        if (response.data.message) {
-            alert(response.data.message)
-            router.push('/login')
-        }
-    } catch (error) {
-        console.error('Registration error:', error)
-        errorMessage.value = error.response?.data?.detail || 'Failed to register user. Please try again.'
-    } finally {
-        isSubmitting.value = false
-    }
+  loading.value = true
+  error.value = ''
+  
+  try {
+    const response = await authApi.register(formData.value)
+    
+    alert('Registration successful! Please log in.')
+    router.push('/login')
+  } catch (err) {
+    console.error('Registration failed:', err)
+    error.value = err.response?.data?.detail || 'Registration failed. Please try again.'
+  } finally {
+    loading.value = false
+  }
 }
 </script>
   

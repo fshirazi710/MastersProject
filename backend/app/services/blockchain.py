@@ -8,6 +8,7 @@ import logging
 import json
 import os
 import secrets
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -581,3 +582,27 @@ class BlockchainService:
                 "success": False,
                 "error": str(e)
             }
+
+    async def call_contract_function(self, function_name, *args):
+        """
+        Helper method to call a contract function with proper async handling.
+        
+        Args:
+            function_name: Name of the contract function to call
+            *args: Arguments to pass to the function
+            
+        Returns:
+            Result of the contract function call
+        """
+        try:
+            # Get the function from the contract
+            func = getattr(self.contract.functions, function_name)
+            # Call the function with the provided arguments
+            contract_func = func(*args)
+            # For Web3.py, we need to use a loop to properly await the call
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, contract_func.call)
+            return result
+        except Exception as e:
+            logger.error(f"Error calling contract function {function_name}: {str(e)}")
+            raise e

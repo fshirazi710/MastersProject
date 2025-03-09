@@ -1,128 +1,115 @@
 <template>
   <div class="become-holder">
-    <h1>Available Secret Holder Positions</h1>
+    <h1>Become a Secret Holder</h1>
     
-    <!-- Information section explaining the role -->
-    <div class="info-card">
+    <div class="info-panel">
       <h2>What is a Secret Holder?</h2>
-      <p>Secret holders are trusted parties who maintain encrypted keys that help secure the voting process. Each holder plays a crucial role in the final vote revelation.</p>
-      
-      <div class="reward-info">
-        <h3>💰 Rewards System</h3>
-        <p>The reward pool is divided equally among all participating secret holders who successfully:</p>
-        <ul class="reward-list">
-          <li>Maintain their key throughout the voting period</li>
-          <li>Release their key share after voting ends</li>
-          <li>Complete all holder responsibilities</li>
-        </ul>
-        <p class="note">Note: More holders = smaller individual rewards, but better system security</p>
-      </div>
-
-      <ul class="responsibilities">
-        <li>Hold a portion of the decryption key</li>
-        <li>Release your key share after voting ends</li>
-        <li>Help maintain voting integrity</li>
-        <li>Participate in result revelation</li>
+      <p>Secret holders are trusted participants who help secure the voting system. They hold cryptographic shares of the decryption key and can only decrypt votes when the voting period ends.</p>
+      <p>To become a secret holder, you need to:</p>
+      <ul>
+        <li>Deposit ETH as a security bond</li>
+        <li>Generate a cryptographic key pair</li>
+        <li>Commit to releasing your key share when votes need to be decrypted</li>
       </ul>
     </div>
-
-    <!-- Available sessions grid -->
-    <div class="sessions-grid">
-      <div v-for="session in availableSessions" :key="session.id" class="session-card">
-        <h3>{{ session.title }}</h3>
-        <p class="description">{{ session.description }}</p>
-        
-        <div class="session-meta">
-          <div class="meta-item">
-            <span class="label">Required Deposit:</span>
-            <span class="value">{{ session.requiredDeposit }} ETH</span>
-            <span class="note">(Returned after successful participation)</span>
-          </div>
-          <div class="meta-item">
-            <span class="label">Reward Pool:</span>
-            <span class="value">{{ session.rewardPool }} ETH</span>
-            <span class="reward-per-holder">Current reward per holder: {{ (session.rewardPool / session.currentHolders).toFixed(6) }} ETH</span>
-          </div>
-          <div class="meta-item">
-            <span class="label">Holders:</span>
-            <span class="value">{{ session.currentHolders }}/{{ session.requiredHolders }}</span>
-          </div>
-          <div class="meta-item">
-            <span class="label">Voting Period:</span>
-            <span class="value">{{ formatDate(session.startDate) }} - {{ formatDate(session.endDate) }}</span>
-          </div>
-        </div>
-
-        <button 
-          @click="joinSession(session)"
-          class="btn primary"
-          :disabled="isSubmitting === session.id"
-        >
-          {{ isSubmitting === session.id ? 'Processing...' : `Join as Holder (${session.requiredDeposit} ETH)` }}
-        </button>
-      </div>
-    </div>
-
-    <!-- No sessions available message -->
-    <div v-if="availableSessions.length === 0" class="no-sessions">
-      <p>No voting sessions currently looking for secret holders</p>
-    </div>
-
-    <!-- Status messages -->
+    
+    <!-- Status message -->
     <div v-if="statusMessage" :class="['status-message', statusType]">
       {{ statusMessage }}
+    </div>
+    
+    <!-- Loading indicator -->
+    <div v-if="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Loading...</p>
+    </div>
+    
+    <!-- Registration form -->
+    <div v-else class="registration-form">
+      <h2>Register as a Secret Holder</h2>
+      
+      <div class="form-group">
+        <label>Required Deposit:</label>
+        <div class="deposit-amount">{{ requiredDeposit }} ETH</div>
+      </div>
+      
+      <div class="form-group">
+        <label>Your Public Key:</label>
+        <div class="public-key">{{ publicKey.join(', ') }}</div>
+        <button @click="generatePublicKey" class="btn secondary">Generate New Key</button>
+      </div>
+      
+      <button 
+        @click="joinAsHolder" 
+        class="btn primary" 
+        :disabled="isSubmitting"
+      >
+        <span v-if="isSubmitting">Processing...</span>
+        <span v-else>Become a Secret Holder</span>
+      </button>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
-
-const availableSessions = ref([])
-const isSubmitting = ref(null) // Holds the session ID being processed
-const statusMessage = ref('')
-const statusType = ref('')
+import { holderApi } from '@/services/api'
 
 // This line sets the middleware for authentication
 definePageMeta({
   middleware: 'auth'
 })
 
-// Fetch available sessions that need secret holders
-const fetchAvailableSessions = async () => {
-  try {
-    const response = await axios.get('http://127.0.0.1:8000/secret-holder-positions')
-    availableSessions.value = response.data.sessions
-  } catch (error) {
-    console.error('Failed to fetch available sessions:', error)
-    statusMessage.value = 'Failed to load available positions'
-    statusType.value = 'error'
-  }
+const loading = ref(false)
+const isSubmitting = ref(null)
+const statusMessage = ref('')
+const statusType = ref('')
+const requiredDeposit = ref(0)
+const publicKey = ref([0, 0])
+
+// Generate a random public key (in a real app, this would be a proper cryptographic key)
+const generatePublicKey = () => {
+  publicKey.value = [
+    Math.floor(Math.random() * 1000000000),
+    Math.floor(Math.random() * 1000000000)
+  ]
 }
 
-// Join a specific session as a secret holder
-const joinSession = async (session) => {
-  isSubmitting.value = session.id
+// Fetch the required deposit amount
+const fetchRequiredDeposit = async () => {
+  loading.value = true
   statusMessage.value = ''
   
   try {
-    const response = await axios.post('http://127.0.0.1:8000/secret-holders/join', {
-      sessionId: session.id,
-      depositAmount: session.requiredDeposit
-    })
+    const response = await holderApi.getRequiredDeposit()
+    requiredDeposit.value = response.data.data.required_deposit
+    generatePublicKey()
+  } catch (error) {
+    statusMessage.value = 'Failed to fetch required deposit amount'
+    statusType.value = 'error'
+  } finally {
+    loading.value = false
+  }
+}
+
+// Join as a secret holder
+const joinAsHolder = async () => {
+  if (isSubmitting.value) return
+  
+  isSubmitting.value = true
+  statusMessage.value = ''
+  statusType.value = ''
+  
+  try {
+    const response = await holderApi.joinAsHolder(publicKey.value, requiredDeposit.value)
     
     statusMessage.value = 'Successfully registered as a secret holder!'
     statusType.value = 'success'
-    
-    // Refresh the available sessions
-    await fetchAvailableSessions()
-    
   } catch (error) {
-    statusMessage.value = error.response?.data?.message || 'Failed to process registration'
+    statusMessage.value = error.response?.data?.detail || 'Failed to process registration'
     statusType.value = 'error'
   } finally {
-    isSubmitting.value = null
+    isSubmitting.value = false
   }
 }
 
@@ -135,7 +122,7 @@ const formatDate = (dateString) => {
 }
 
 onMounted(() => {
-  fetchAvailableSessions()
+  fetchRequiredDeposit()
 })
 </script>
 
