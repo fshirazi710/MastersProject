@@ -14,7 +14,8 @@
     "bcryptjs": "^3.0.2",
     "nuxt": "^3.15.4",
     "vue": "latest",
-    "vue-router": "latest"
+    "vue-router": "latest",
+    "web3": "^1.10.0"
   },
   "devDependencies": {
     "sass": "^1.69.0",

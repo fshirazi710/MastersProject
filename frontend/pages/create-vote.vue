@@ -1,6 +1,25 @@
 <template>
   <div class="create-vote">
     <h1>Create New Vote</h1>
+
+    <!-- Wallet connection status -->
+    <div class="wallet-status" v-if="!walletConnected">
+      <div class="alert alert-warning">
+        <p>Please connect your wallet to create a vote</p>
+        <button @click="connectWallet" class="btn primary">Connect Wallet</button>
+      </div>
+    </div>
+
+    <div v-else class="wallet-info">
+      <p>Connected Wallet: {{ walletAddress }}</p>
+      <p>Balance: {{ walletBalance }} ETH</p>
+    </div>
+
+    <!-- Error message -->
+    <div v-if="error" class="alert alert-error">
+      {{ error }}
+    </div>
+
     <!-- Main form container with submit handler -->
     <form @submit.prevent="handleSubmit" class="form-container">
       <!-- Vote title input -->
@@ -124,19 +143,25 @@
       </div>
 
       <!-- Form submit button -->
-      <button type="submit" class="btn primary">Create Vote</button>
+      <button type="submit" class="btn primary" :disabled="loading || !walletConnected">
+        {{ loading ? 'Creating Vote...' : 'Create Vote' }}
+      </button>
     </form>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { voteApi } from '@/services/api'
+import { web3Service } from '@/services/web3'
 
 const router = useRouter();
 const loading = ref(false);
 const error = ref(null);
+const walletConnected = ref(false);
+const walletAddress = ref('');
+const walletBalance = ref(0);
 
 // This line sets the middleware for authentication
 definePageMeta({
@@ -153,6 +178,19 @@ const voteData = ref({
   reward_pool: 0.003,
   required_deposit: 0.001,
 })
+
+// Initialize Web3 and connect wallet
+const connectWallet = async () => {
+  try {
+    await web3Service.init();
+    walletConnected.value = true;
+    walletAddress.value = await web3Service.getAccount();
+    walletBalance.value = await web3Service.getBalance();
+  } catch (err) {
+    console.error('Failed to connect wallet:', err);
+    error.value = 'Failed to connect wallet. Please make sure MetaMask is installed and unlocked.';
+  }
+}
 
 // Add a new empty option to the options array
 const addOption = () => {
@@ -171,6 +209,16 @@ const handleSubmit = async () => {
   error.value = null;
   
   try {
+    // Check if wallet is connected
+    if (!walletConnected.value) {
+      throw new Error('Please connect your wallet first');
+    }
+
+    // Check if user has enough balance
+    if (Number(walletBalance.value) < Number(voteData.value.reward_pool)) {
+      throw new Error('Insufficient balance for reward pool');
+    }
+
     // Format dates to ISO strings
     const formattedData = {
       ...voteData.value,
@@ -178,18 +226,69 @@ const handleSubmit = async () => {
       end_date: new Date(voteData.value.end_date).toISOString(),
     };
     
+    // First create the vote in the backend
     const response = await voteApi.createVote(formattedData);
+    const voteId = response.data.data.id;
+
+    // Then submit the vote to the blockchain with reward pool
+    await web3Service.submitVote({
+      ...formattedData,
+      vote_id: voteId,
+      ciphertext: '0x', // This should come from the backend
+      nonce: '0x', // This should come from the backend
+      g2r: ['0', '0'], // This should come from the backend
+      threshold: 2 // This should be calculated based on the number of holders
+    });
+
     alert(response.data.message || 'Vote created successfully!');
     router.push('/all-votes');
   } catch (err) {
     console.error('Failed to create vote:', err);
-    error.value = err.response?.data?.detail || 'Failed to create vote. Please try again.';
+    error.value = err.message || 'Failed to create vote. Please try again.';
   } finally {
     loading.value = false;
   }
 }
+
+// Initialize Web3 when component is mounted
+onMounted(() => {
+  connectWallet();
+})
 </script>
 
 <style lang="scss" scoped>
 @use '@/assets/styles/pages/create-vote';
+
+.wallet-status {
+  margin-bottom: 2rem;
+}
+
+.wallet-info {
+  margin-bottom: 2rem;
+  padding: 1rem;
+  background: #f5f5f5;
+  border-radius: 4px;
+
+  p {
+    margin: 0.5rem 0;
+  }
+}
+
+.alert {
+  padding: 1rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+
+  &.alert-warning {
+    background: #fff3cd;
+    border: 1px solid #ffeeba;
+    color: #856404;
+  }
+
+  &.alert-error {
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+  }
+}
 </style> 
