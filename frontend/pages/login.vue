@@ -51,10 +51,12 @@
   
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { authApi } from '@/services/api'
+import { store } from '../authentication.js'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const error = ref('')
 
@@ -72,11 +74,12 @@ const handleSubmit = async () => {
   try {
     const response = await authApi.login(formData.value)
     
-    // Store the token in localStorage
-    localStorage.setItem('auth_token', response.data.data.token)
+    // Use the new setLoggedIn method
+    store.setLoggedIn(response.data.data.token)
     
-    // Redirect to home page
-    router.push('/')
+    // Redirect to the original destination or home page
+    const redirectPath = route.query.redirect || '/'
+    router.push(redirectPath)
   } catch (err) {
     console.error('Login failed:', err)
     error.value = err.response?.data?.detail || 'Login failed. Please check your credentials.'

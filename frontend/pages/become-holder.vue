@@ -55,11 +55,6 @@
 import { ref, onMounted } from 'vue'
 import { holderApi } from '@/services/api'
 
-// This line sets the middleware for authentication
-definePageMeta({
-  middleware: 'auth'
-})
-
 const loading = ref(false)
 const isSubmitting = ref(null)
 const statusMessage = ref('')

@@ -12,7 +12,7 @@ const apiClient = axios.create({
 // Add request interceptor to include auth token if available
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('auth_token');
+    const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -30,7 +30,17 @@ export const authApi = {
   
   // Login user
   login: (credentials) => {
-    return apiClient.post('/api/auth/login', credentials);
+    // Create URLSearchParams for proper form encoding
+    const formData = new URLSearchParams();
+    formData.append('username', credentials.email);
+    formData.append('password', credentials.password);
+    
+    // Send as form data with appropriate content type
+    return apiClient.post('/api/auth/login', formData.toString(), {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
   },
 };
 

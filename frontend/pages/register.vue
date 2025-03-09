@@ -44,21 +44,20 @@
             placeholder="Create a password"
             minlength="8"
           >
-          <small class="form-hint">Password must be at least 8 characters long</small>
+          <small class="form-hint">Password must be at least 8 characters long, contain uppercase, lowercase, and a number</small>
         </div>
         
         <div class="form-group">
-          <label for="role">Role</label>
-          <select 
-            id="role" 
-            v-model="formData.role" 
+          <label for="confirmPassword">Confirm Password</label>
+          <input 
+            type="password" 
+            id="confirmPassword" 
+            v-model="confirmPassword" 
             required 
-            class="form-select"
+            class="form-input"
+            placeholder="Confirm your password"
+            minlength="8"
           >
-            <option v-for="role in roles" :key="role.value" :value="role.value">
-              {{ role.label }}
-            </option>
-          </select>
         </div>
         
         <button 
@@ -85,25 +84,57 @@ import { authApi } from '@/services/api'
 const router = useRouter()
 const loading = ref(false)
 const error = ref('')
+const confirmPassword = ref('')
 
 // Form data
 const formData = ref({
   name: '',
   email: '',
   password: '',
-  role: 'voter' // Default role
+  role: 'vote-organiser' // Fixed role for vote organizers
 })
 
-// Available roles
-const roles = [
-  { value: 'voter', label: 'Voter' },
-  { value: 'holder', label: 'Secret Holder' }
-]
+// Validate password requirements
+const validatePassword = (password) => {
+  const hasUpperCase = /[A-Z]/.test(password);
+  const hasLowerCase = /[a-z]/.test(password);
+  const hasDigit = /\d/.test(password);
+  
+  if (!hasUpperCase) {
+    return "Password must contain at least one uppercase letter";
+  }
+  if (!hasLowerCase) {
+    return "Password must contain at least one lowercase letter";
+  }
+  if (!hasDigit) {
+    return "Password must contain at least one digit";
+  }
+  if (password.length < 8) {
+    return "Password must be at least 8 characters long";
+  }
+  
+  return null;
+}
 
 // Handle form submission
 const handleSubmit = async () => {
   loading.value = true
   error.value = ''
+  
+  // Check if passwords match
+  if (formData.value.password !== confirmPassword.value) {
+    error.value = 'Passwords do not match';
+    loading.value = false;
+    return;
+  }
+  
+  // Validate password requirements
+  const passwordError = validatePassword(formData.value.password);
+  if (passwordError) {
+    error.value = passwordError;
+    loading.value = false;
+    return;
+  }
   
   try {
     const response = await authApi.register(formData.value)
@@ -112,7 +143,17 @@ const handleSubmit = async () => {
     router.push('/login')
   } catch (err) {
     console.error('Registration failed:', err)
-    error.value = err.response?.data?.detail || 'Registration failed. Please try again.'
+    // Format error message in a user-friendly way
+    if (err.response?.data?.detail) {
+      if (Array.isArray(err.response.data.detail)) {
+        // Handle validation errors
+        error.value = err.response.data.detail.map(err => err.msg).join('\n');
+      } else {
+        error.value = err.response.data.detail;
+      }
+    } else {
+      error.value = 'Registration failed. Please try again.';
+    }
   } finally {
     loading.value = false
   }
@@ -128,6 +169,13 @@ const handleSubmit = async () => {
     padding: 10px;
     border-radius: 4px;
     background-color: rgba(220, 53, 69, 0.1);
+    white-space: pre-line; /* Allow line breaks in error messages */
+}
+
+.form-hint {
+    color: #6c757d;
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
 }
 
 .form-actions {

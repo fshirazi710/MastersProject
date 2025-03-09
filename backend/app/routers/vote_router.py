@@ -26,6 +26,7 @@ from app.schemas import (
     VoteStatusResponse
 )
 from app.services.blockchain import BlockchainService
+from app.routers.auth_router import get_current_user
 
 import logging
 import random
@@ -197,12 +198,18 @@ async def submit_vote(request: VoteSubmitRequest, blockchain_service: Blockchain
         raise handle_blockchain_error("submit vote", e)
 
 @router.post("/create", response_model=StandardResponse[TransactionResponse])
-async def create_vote(data: VoteCreateRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+async def create_vote(
+    data: VoteCreateRequest, 
+    blockchain_service: BlockchainService = Depends(get_blockchain_service),
+    current_user = Depends(get_current_user)  # Only require authentication for vote creation
+):
     """
-    Create a new vote on the blockchain.
+    Create a new vote with options and parameters.
     
     Args:
-        data: Vote creation request with title, description, dates, options, and reward pool
+        data: Vote creation data
+        blockchain_service: Blockchain service
+        current_user: Current authenticated user
         
     Returns:
         Transaction response with transaction hash

@@ -4,3 +4,10 @@
     <!-- ... existing code ... -->
   </div>
 </template>
+
+<script setup>
+// Add authentication middleware
+definePageMeta({
+  middleware: 'auth'
+})
+</script>

@@ -62,7 +62,7 @@ def get_crypto_service() -> CryptoService:
             raise
     return _crypto_service
 
-def get_db() -> AsyncIOMotorClient:
+async def get_db() -> AsyncIOMotorClient:
     """
     Dependency for getting a database connection.
     Simply wraps the get_mongodb function for consistency.
@@ -73,4 +73,5 @@ def get_db() -> AsyncIOMotorClient:
     - Share submissions
     - Reward distribution records
     """
-    return get_mongodb() 
+    db = await get_mongodb()
+    return db 

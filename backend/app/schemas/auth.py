@@ -24,9 +24,11 @@ class RegisterRequest(BaseModel):
                          description="User's password",
                          min_length=8,
                          examples=["SecureP@ssw0rd"])
-    role: str = Field(..., 
-                     description="User's role in the system",
-                     examples=["voter"])
+    role: str = Field(
+        default="vote-organiser",
+        description="User's role in the system",
+        examples=["vote-organiser"]
+    )
     
     @field_validator('password')
     @classmethod
@@ -44,10 +46,9 @@ class RegisterRequest(BaseModel):
     @classmethod
     def valid_role(cls, v):
         """Validate user role."""
-        valid_roles = ['admin', 'voter', 'holder']
-        if v.lower() not in valid_roles:
-            raise ValueError(f'Role must be one of: {", ".join(valid_roles)}')
-        return v.lower()
+        if v != 'vote-organiser':
+            raise ValueError('Role must be vote-organiser')
+        return v
 
 class LoginRequest(BaseModel):
     """Schema for user login request."""
