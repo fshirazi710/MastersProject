@@ -11,13 +11,13 @@
   },
   "dependencies": {
     "axios": "latest",
-    "bcryptjs": "^3.0.2",
     "nuxt": "^3.15.4",
     "vue": "latest",
     "vue-router": "latest",
-    "web3": "^1.10.0"
+    "web3": "^4.16.0"
   },
   "devDependencies": {
+    "@types/node": "^20.11.24",
     "sass": "^1.69.0",
     "sass-embedded": "^1.72.0",
     "sass-loader": "^13.3.0"
