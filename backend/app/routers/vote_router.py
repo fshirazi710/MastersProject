@@ -232,7 +232,16 @@ async def create_vote(
         
         # Get transaction count for nonce
         nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
-        
+        estimated_gas = blockchain_service.contract.functions.createVote(
+            data.title,
+            data.description,
+            start_timestamp,
+            end_timestamp,
+            data.options,
+            reward_pool_wei,
+            required_deposit_wei
+        ).estimate_gas({"from": WALLET_ADDRESS})
+         
         # Create vote transaction
         create_vote_tx = blockchain_service.contract.functions.createVote(
             data.title,
@@ -244,14 +253,14 @@ async def create_vote(
             required_deposit_wei
         ).build_transaction({
             'from': WALLET_ADDRESS,
-            'gas': 3000000,
+            'gas': estimated_gas,
             'gasPrice': blockchain_service.w3.eth.gas_price,
             'nonce': nonce,
         })
         
         # Sign and send transaction
         signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_vote_tx, PRIVATE_KEY)
-        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
         tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else blockchain_service.w3.to_hex(tx_hash)
         
         return StandardResponse(
