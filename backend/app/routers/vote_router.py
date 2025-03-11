@@ -215,6 +215,7 @@ async def create_vote(
         Transaction response with transaction hash
     """
     try:
+        logger.error(data)
         # Validate dates
         start_timestamp = int(datetime.fromisoformat(data.start_date).timestamp())
         end_timestamp = int(datetime.fromisoformat(data.end_date).timestamp())

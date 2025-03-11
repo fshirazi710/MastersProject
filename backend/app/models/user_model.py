@@ -12,6 +12,7 @@ class UserRole(str, enum.Enum):
     ADMIN = "admin"
     VOTER = "voter"
     HOLDER = "holder"
+    VOTE_ORGANISER = "vote-organiser"
 
 class User(BaseModel):
     """

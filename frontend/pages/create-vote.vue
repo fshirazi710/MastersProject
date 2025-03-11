@@ -225,7 +225,7 @@ const handleSubmit = async () => {
       start_date: new Date(voteData.value.start_date).toISOString(),
       end_date: new Date(voteData.value.end_date).toISOString(),
     };
-    
+    console.log(formattedData)
     // First create the vote in the backend
     const response = await voteApi.createVote(formattedData);
     const voteId = response.data.data.id;

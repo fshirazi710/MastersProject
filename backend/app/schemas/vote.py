@@ -87,26 +87,26 @@ class VoteCreateRequest(BaseModel):
         examples=[0.1]
     )
     
-    @field_validator('start_date', 'end_date')
-    @classmethod
-    def validate_date_format(cls, v):
-        """Validate date format."""
-        try:
-            datetime.strptime(v, "%Y-%m-%dT%H:%M:%S")
-        except ValueError:
-            raise ValueError("Date must be in ISO format (YYYY-MM-DDTHH:MM:SS)")
-        return v
+    # @field_validator('start_date', 'end_date')
+    # @classmethod
+    # def validate_date_format(cls, v):
+    #     """Validate date format."""
+    #     try:
+    #         datetime.strptime(v, "%Y-%m-%dT%H:%M:%S")
+    #     except ValueError:
+    #         raise ValueError("Date must be in ISO format (YYYY-MM-DDTHH:MM:SS)")
+    #     return v
     
-    @field_validator('end_date')
-    @classmethod
-    def validate_end_date(cls, v, info):
-        """Validate that end date is after start date."""
-        if 'start_date' in info.data:
-            start = datetime.strptime(info.data['start_date'], "%Y-%m-%dT%H:%M:%S")
-            end = datetime.strptime(v, "%Y-%m-%dT%H:%M:%S")
-            if end <= start:
-                raise ValueError("End date must be after start date")
-        return v
+    # @field_validator('end_date')
+    # @classmethod
+    # def validate_end_date(cls, v, info):
+    #     """Validate that end date is after start date."""
+    #     if 'start_date' in info.data:
+    #         start = datetime.strptime(info.data['start_date'], "%Y-%m-%dT%H:%M:%S")
+    #         end = datetime.strptime(v, "%Y-%m-%dT%H:%M:%S")
+    #         if end <= start:
+    #             raise ValueError("End date must be after start date")
+    #     return v
     
     @field_validator('options')
     @classmethod
