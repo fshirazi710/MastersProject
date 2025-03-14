@@ -10,7 +10,9 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
+    "@noble/curves": "^1.8.1",
     "axios": "latest",
+    "js-cookie": "^3.0.5",
     "nuxt": "^3.15.4",
     "vue": "latest",
     "vue-router": "latest",

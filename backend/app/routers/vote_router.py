@@ -159,26 +159,21 @@ async def get_vote_data(vote_id: int, blockchain_service: BlockchainService = De
     """
     try:
         # Call the blockchain service to get the vote data using the helper method
-        vote_data = await blockchain_service.call_contract_function("getVote", vote_id)
-        
+        vote_data = await blockchain_service.call_contract_function("getVote1", vote_id)
         # Convert the vote data to a readable format
         data = {
             "id": vote_id,
-            "ciphertext": vote_data[0].hex() if vote_data[0] else None,
-            "nonce": vote_data[1].hex() if vote_data[1] else None,
-            "decryption_time": vote_data[2] if len(vote_data) > 2 else None,
-            "g2r": [str(vote_data[3][0]), str(vote_data[3][1])] if len(vote_data) > 3 and vote_data[3] else None,
-            "title": vote_data[4] if len(vote_data) > 4 else None,
-            "description": vote_data[5] if len(vote_data) > 5 else None,
-            "start_date": datetime.fromtimestamp(vote_data[6]).isoformat() if len(vote_data) > 6 else None,
-            "end_date": datetime.fromtimestamp(vote_data[7]).isoformat() if len(vote_data) > 7 else None,
-            "status": vote_data[8] if len(vote_data) > 8 else None,
-            "participant_count": vote_data[9] if len(vote_data) > 9 else None,
-            "options": vote_data[10] if len(vote_data) > 10 else None,
-            "reward_pool": blockchain_service.w3.from_wei(vote_data[11], 'ether') if len(vote_data) > 11 else 0,
-            "required_deposit": blockchain_service.w3.from_wei(vote_data[12], 'ether') if len(vote_data) > 12 else 0,
+            "title": vote_data[1] if len(vote_data) > 1 else None,
+            "description": vote_data[2] if len(vote_data) > 2 else None,
+            "start_date": datetime.fromtimestamp(vote_data[3]).isoformat() if len(vote_data) > 3 else None,
+            "end_date": datetime.fromtimestamp(vote_data[4]).isoformat() if len(vote_data) > 4 else None,
+            "status": vote_data[5] if len(vote_data) > 5 else None,
+            "participant_count": vote_data[6] if len(vote_data) > 6 else None,
+            "options": vote_data[7] if len(vote_data) > 7 else None,
+            "reward_pool": blockchain_service.w3.from_wei(vote_data[8], 'ether') if len(vote_data) > 8 else 0,
+            "required_deposit": blockchain_service.w3.from_wei(vote_data[9], 'ether') if len(vote_data) > 9 else 0,
         }
-        
+        logger.error(data)
         return StandardResponse(
             success=True,
             message=f"Successfully retrieved vote data for vote {vote_id}",
