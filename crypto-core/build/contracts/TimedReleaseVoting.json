@@ -1,6 +1,87 @@
 {
   "abi": [
     {
+      "inputs": [],
+      "name": "claimRewards",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "title",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "startDate",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "endDate",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "participantCount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string[]",
+          "name": "options",
+          "type": "string[]"
+        }
+      ],
+      "name": "createVote",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "exitAsHolder",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "holderAddress",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "voteId",
+          "type": "uint256"
+        }
+      ],
+      "name": "forceExitHolder",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
       "anonymous": false,
       "inputs": [
         {
@@ -31,6 +112,19 @@
       ],
       "name": "HolderJoined",
       "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256[2]",
+          "name": "publicKey",
+          "type": "uint256[2]"
+        }
+      ],
+      "name": "joinAsHolder",
+      "outputs": [],
+      "stateMutability": "payable",
+      "type": "function"
     },
     {
       "anonymous": false,
@@ -115,6 +209,75 @@
       "type": "event"
     },
     {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "voteId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "shareIndex",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "shareValue",
+          "type": "uint256"
+        }
+      ],
+      "name": "submitShare",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes",
+          "name": "ciphertext",
+          "type": "bytes"
+        },
+        {
+          "internalType": "bytes",
+          "name": "nonce",
+          "type": "bytes"
+        },
+        {
+          "internalType": "uint256",
+          "name": "decryptionTime",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256[2]",
+          "name": "g2r",
+          "type": "uint256[2]"
+        },
+        {
+          "internalType": "uint256",
+          "name": "threshold",
+          "type": "uint256"
+        }
+      ],
+      "name": "submitVote",
+      "outputs": [],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "voteId",
+          "type": "uint256"
+        }
+      ],
+      "name": "triggerRewardDistribution",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
       "anonymous": false,
       "inputs": [
         {
@@ -128,18 +291,6 @@
           "internalType": "string",
           "name": "title",
           "type": "string"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "rewardPoolWei",
-          "type": "uint256"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "requiredDepositWei",
-          "type": "uint256"
         }
       ],
       "name": "VoteCreated",
@@ -169,126 +320,6 @@
       ],
       "name": "VoteSubmitted",
       "type": "event"
-    },
-    {
-      "inputs": [],
-      "name": "MIN_HOLDERS",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "REQUIRED_DEPOSIT",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "REWARD_PER_VOTE",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "claimRewards",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "string",
-          "name": "title",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "description",
-          "type": "string"
-        },
-        {
-          "internalType": "uint256",
-          "name": "startDate",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "endDate",
-          "type": "uint256"
-        },
-        {
-          "internalType": "string[]",
-          "name": "options",
-          "type": "string[]"
-        },
-        {
-          "internalType": "uint256",
-          "name": "rewardPoolWei",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "requiredDepositWei",
-          "type": "uint256"
-        }
-      ],
-      "name": "createVote",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "exitAsHolder",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "holderAddress",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "voteId",
-          "type": "uint256"
-        }
-      ],
-      "name": "forceExitHolder",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
     },
     {
       "inputs": [
@@ -425,6 +456,60 @@
           "type": "uint256"
         }
       ],
+      "name": "getVote1",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "title",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "startDate",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "endDate",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "participantCount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string[]",
+          "name": "options",
+          "type": "string[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "voteId",
+          "type": "uint256"
+        }
+      ],
       "name": "getVoteReward",
       "outputs": [
         {
@@ -504,16 +589,29 @@
       "type": "function"
     },
     {
-      "inputs": [
+      "inputs": [],
+      "name": "MIN_HOLDERS",
+      "outputs": [
         {
-          "internalType": "uint256[2]",
-          "name": "publicKey",
-          "type": "uint256[2]"
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
         }
       ],
-      "name": "joinAsHolder",
-      "outputs": [],
-      "stateMutability": "payable",
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "REQUIRED_DEPOSIT",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -527,6 +625,19 @@
         }
       ],
       "stateMutability": "pure",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "REWARD_PER_VOTE",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -551,75 +662,6 @@
         }
       ],
       "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "voteId",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "shareIndex",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "shareValue",
-          "type": "uint256"
-        }
-      ],
-      "name": "submitShare",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes",
-          "name": "ciphertext",
-          "type": "bytes"
-        },
-        {
-          "internalType": "bytes",
-          "name": "nonce",
-          "type": "bytes"
-        },
-        {
-          "internalType": "uint256",
-          "name": "decryptionTime",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256[2]",
-          "name": "g2r",
-          "type": "uint256[2]"
-        },
-        {
-          "internalType": "uint256",
-          "name": "threshold",
-          "type": "uint256"
-        }
-      ],
-      "name": "submitVote",
-      "outputs": [],
-      "stateMutability": "payable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "voteId",
-          "type": "uint256"
-        }
-      ],
-      "name": "triggerRewardDistribution",
-      "outputs": [],
-      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -740,16 +782,6 @@
         {
           "internalType": "uint256",
           "name": "participantCount",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "rewardPoolWei",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "requiredDepositWei",
           "type": "uint256"
         }
       ],

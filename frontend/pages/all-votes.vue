@@ -126,7 +126,7 @@ const getVotes = async () => {
     
     // Transform the response data to match the expected format
     votes.value = response.data.data.map(vote => ({
-      id: vote.vote_id,
+      id: vote.id,
       title: vote.title || `Vote ${vote.vote_id}`,
       description: vote.description || 'No description available',
       status: vote.status || 'active',

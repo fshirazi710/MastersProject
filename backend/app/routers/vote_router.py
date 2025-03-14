@@ -37,6 +37,40 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/votes", tags=["Votes"])
 
+# Endpoint to retrieve all votes
+@router.get("/all-votes")
+async def get_all_votes(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+    try:
+        # Get total number of votes from the smart contract
+        vote_count = await blockchain_service.call_contract_function("voteCount1")
+        votes = []
+
+        # Iterate through each vote and retrieve its data
+        for vote_id in range(vote_count):
+            vote_data = await blockchain_service.call_contract_function("getVote1", vote_id)
+            votes.append(
+                {
+                    "id": vote_data[0],
+                    "title": vote_data[1],
+                    "description": vote_data[2],
+                    "startDate": datetime.fromtimestamp(vote_data[3]).strftime(
+                        "%Y-%m-%dT%H:%M"
+                    ),  # Convert Unix timestamps to formatted datetime strings
+                    "endDate": datetime.fromtimestamp(vote_data[4]).strftime(
+                        "%Y-%m-%dT%H:%M"
+                    ),  # Convert Unix timestamps to formatted datetime strings
+                    "status": vote_data[5],
+                    "participantCount": vote_data[6],
+                    "options": vote_data[7],
+                    "reward_pool": blockchain_service.w3.from_wei(vote_data[11], 'ether') if len(vote_data) > 11 else 0,
+                    "required_deposit": blockchain_service.w3.from_wei(vote_data[12], 'ether') if len(vote_data) > 12 else 0,
+                }
+            )
+        return {"data": votes}
+    except Exception as e:
+        logger.error(f"Error in get_all_votes: {str(e)}")
+        return {"data": [], "error": str(e)}
+
 @router.get("/", response_model=StandardResponse[List[VoteResponse]])
 async def get_all_votes(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """
@@ -47,12 +81,12 @@ async def get_all_votes(blockchain_service: BlockchainService = Depends(get_bloc
     """
     try:
         # Get the vote count from the contract using the helper method
-        vote_count = await blockchain_service.call_contract_function("voteCount")
+        vote_count = await blockchain_service.call_contract_function("voteCount1")
         votes = []
         
         for i in range(vote_count):
             # Get vote data for each vote using the helper method
-            vote_data = await blockchain_service.call_contract_function("getVote", i)
+            vote_data = await blockchain_service.call_contract_function("getVote1", i)
             
             # Convert g2r integers to strings
             g2r_values = [str(val) for val in vote_data[3]] if vote_data[3] else []
@@ -110,6 +144,7 @@ async def get_vote_summary(blockchain_service: BlockchainService = Depends(get_b
     except Exception as e:
         logger.error(f"Error getting vote summary: {str(e)}")
         raise handle_blockchain_error("get vote summary", e)
+
 
 @router.get("/{vote_id}", response_model=StandardResponse[Dict[str, Any]])
 async def get_vote_data(vote_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
