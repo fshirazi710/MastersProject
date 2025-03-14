@@ -18,7 +18,6 @@ from app.schemas import (
     DecryptVoteRequest, 
     DecryptVoteResponse,
     VotingTokenRequest,
-    VotingTokenResponse,
     TokenValidationRequest,
     ShareStatusResponse,
     StandardResponse,
@@ -307,65 +306,41 @@ async def create_vote(
     except Exception as e:
         logger.error(f"Error creating vote: {str(e)}")
         raise handle_blockchain_error("create vote", e)
+    
 
-# Function to generate a unique alphanumeric token
-def generate_voting_token(length=8):
-    """Generate a random voting token."""
-    characters = string.ascii_letters + string.digits
-    return ''.join(random.choices(characters, k=length))
-
-@router.post("/tokens/{vote_id}", response_model=StandardResponse[VotingTokenResponse])
-async def generate_token(vote_id: int, db=Depends(get_db)):
+@router.post("/store_public_key/{vote_id}")
+async def store_public_key(vote_id: int, public_key: str, is_secret_holder: bool, db=Depends(get_db)):
     """
     Generate a unique voting token for a vote.
     
     Args:
         vote_id: ID of the vote
-        
+        public_key: Public key for identification
+        is_secret_holder: Boolean flag for secret holder status
+    
     Returns:
         StandardResponse with generated token
     """
-    try:
-        # Generate a unique token
-        max_attempts = 10  # Prevent infinite loops
-        attempts = 0
-        
-        while attempts < max_attempts:
-            token = generate_voting_token()
-            
-            # Check if the token already exists
-            existing_token = await db.election_tokens.tokens.find_one({"token": token})
-            if existing_token is None:
-                # Create token object
-                token_data = {
-                    "vote_id": vote_id,
-                    "token": token,
-                    "created_at": datetime.now(UTC).isoformat()
-                }
-                
-                # Save the token
-                await db.election_tokens.tokens.insert_one(token_data)
-                
-                # Create response
-                token_response = VotingTokenResponse(
-                    token=token,
-                    vote_id=vote_id
-                )
-                
-                return StandardResponse(
-                    success=True,
-                    message="Token generated successfully",
-                    data=token_response
-                )
-            
-            attempts += 1
-        
-        # If we couldn't generate a unique token after max attempts
-        raise handle_validation_error("Failed to generate unique token after maximum attempts")
-        
-    except Exception as e:
-        logger.error(f"Error generating token: {str(e)}")
-        raise handle_blockchain_error("generate token", e)
+
+    public_key_data = {
+        "vote_id": vote_id,
+        "reward_token": 1,
+        "public_key": public_key,
+        "is_secret_holder": is_secret_holder,
+    }
+
+    if is_secret_holder:
+        public_key_data["reward_token"] = 0
+
+    # Save the token
+    await db.public_keys.insert_one(public_key_data)
+
+
+    return StandardResponse(
+        success=True,
+        message="Public key stored securely",
+    )
+
 
 @router.get("/tokens/validate", response_model=StandardResponse[Dict[str, bool]])
 async def validate_token(token: str, db=Depends(get_db)):

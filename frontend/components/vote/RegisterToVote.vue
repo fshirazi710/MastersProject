@@ -74,6 +74,7 @@
 
     // Store the private key in a cookie for 1 day
     Cookies.set("privateKey", sk.toString(16), { expires: 1, secure: true, sameSite: "Strict" });
+    storePublicKey()
 
     // Update the reactive pk variable to trigger UI update
     pk.value = publicKey.toHex();
@@ -92,16 +93,22 @@
   const rewardPool = ref(0.5) // Example value, replace with actual logic to fetch this
   const requiredDeposit = ref(0.1) // Example value, replace with actual logic to fetch this
   
-  // // Method to generate voting token
-  // const generateToken = async () => {
-  //   try {
-  //     const response = await axios.post(`http://127.0.0.1:8000/generate-token/${props.voteId}`);
-  //     votingToken.value = response.data.token;
-  //   } catch (error) {
-  //     console.error("Failed to generate voting token:", error);
-  //     votingToken.value = "Error generating token";
-  //   }
-  // }
+  // Method to generate voting token
+  const storePublicKey = async () => {
+    try {
+        const response = await axios.post(
+            `http://127.0.0.1:8000/api/votes/store_public_key/${props.voteId}`, // voteId should be part of the URL
+            {
+                public_key: String(pk),  // Send only public_key and is_secret_holder in the body
+                is_secret_holder: Boolean(isSecretHolder),
+            }
+        );
+        votingToken.value = response.data.token;
+    } catch (error) {
+        console.error("Failed to store public key:", error);
+        votingToken.value = "Error storing public key";
+    }
+}
   </script>
   
   <style lang="scss" scoped>
