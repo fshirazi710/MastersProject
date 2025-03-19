@@ -21,7 +21,8 @@ from app.schemas.vote import (
     VotingTokenRequest,
     VotingTokenResponse,
     TokenValidationRequest,
-    VoteStatusResponse
+    VoteStatusResponse,
+    PublicKeyRequest
 )
 
 # Holder schemas

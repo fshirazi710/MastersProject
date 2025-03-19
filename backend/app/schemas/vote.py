@@ -42,6 +42,19 @@ class VoteSubmitRequest(BaseModel):
             raise handle_validation_error("Decryption time must be in the future")
         return v
 
+class PublicKeyRequest(BaseModel):
+    """Schema for storing public key."""
+    public_key: str = Field(
+        ..., 
+        description="Title of the vote",
+        examples=["Presidential Election 2024"]
+    )
+    is_secret_holder: bool = Field(
+        ..., 
+        description="Description of the vote",
+        examples=["Vote for the next president of the United States"]
+    )
+
 class VoteCreateRequest(BaseModel):
     """Schema for creating a new vote."""
     title: str = Field(

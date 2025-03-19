@@ -91,6 +91,11 @@ export const voteApi = {
     const payload = threshold ? { threshold } : {};
     return apiClient.post(`/api/votes/${voteId}/decrypt`, payload);
   },
+
+  // Store Public Key
+  storePublicKey: (voteId, data) => {
+    return apiClient.post(`/api/votes/store-public-key/${voteId}`, data);
+  },
 };
 
 // API service for holders

@@ -13,7 +13,8 @@ from app.core.config import (
 )
 from app.schemas import (
     VoteSubmitRequest, 
-    VoteCreateRequest, 
+    VoteCreateRequest,
+    PublicKeyRequest,
     VoteResponse, 
     DecryptVoteRequest, 
     DecryptVoteResponse,
@@ -199,6 +200,26 @@ async def get_election_information(election_id: int, blockchain_service: Blockch
         raise handle_blockchain_error("get election information", e)
 
 
+@router.post("/store-public-key/{vote_id}", response_model=StandardResponse[TransactionResponse])
+async def store_public_key(vote_id: int, data: PublicKeyRequest, db=Depends(get_db)):
+    public_key_data = {
+        "vote_id": vote_id,
+        "reward_token": 1,
+        "public_key": data.public_key,
+        "is_secret_holder": data.is_secret_holder,
+    }
+
+    if data.is_secret_holder:
+        public_key_data["reward_token"] = 0
+
+    await db.public_keys.insert_one(public_key_data)
+
+    return StandardResponse(
+        success=True,
+        message="Public key stored securely",
+    )
+
+
 @router.get("/", response_model=StandardResponse[List[VoteResponse]])
 async def get_all_votes(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """
@@ -358,96 +379,6 @@ async def submit_vote(request: VoteSubmitRequest, blockchain_service: Blockchain
     except Exception as e:
         logger.error(f"Error submitting vote: {str(e)}")
         raise handle_blockchain_error("submit vote", e)
-
-# Function to generate a unique alphanumeric token
-def generate_voting_token(length=8):
-    """Generate a random voting token."""
-    characters = string.ascii_letters + string.digits
-    return ''.join(random.choices(characters, k=length))
-
-@router.post("/tokens/{vote_id}", response_model=StandardResponse[VotingTokenResponse])
-async def generate_token(vote_id: int, db=Depends(get_db)):
-    """
-    Generate a unique voting token for a vote.
-    
-    Args:
-        vote_id: ID of the vote
-        
-    Returns:
-        StandardResponse with generated token
-    """
-    try:
-        # Generate a unique token
-        max_attempts = 10  # Prevent infinite loops
-        attempts = 0
-        
-        while attempts < max_attempts:
-            token = generate_voting_token()
-            
-            # Check if the token already exists
-            existing_token = await db.election_tokens.tokens.find_one({"token": token})
-            if existing_token is None:
-                # Create token object
-                token_data = {
-                    "vote_id": vote_id,
-                    "token": token,
-                    "created_at": datetime.now(UTC).isoformat()
-                }
-                
-                # Save the token
-                await db.election_tokens.tokens.insert_one(token_data)
-                
-                # Create response
-                token_response = VotingTokenResponse(
-                    token=token,
-                    vote_id=vote_id
-                )
-                
-                return StandardResponse(
-                    success=True,
-                    message="Token generated successfully",
-                    data=token_response
-                )
-            
-            attempts += 1
-        
-        # If we couldn't generate a unique token after max attempts
-        raise handle_validation_error("Failed to generate unique token after maximum attempts")
-        
-    except Exception as e:
-        logger.error(f"Error generating token: {str(e)}")
-        raise handle_blockchain_error("generate token", e)
-
-@router.get("/tokens/validate", response_model=StandardResponse[Dict[str, bool]])
-async def validate_token(token: str, db=Depends(get_db)):
-    """
-    Validate a voting token.
-    
-    Args:
-        token: The token to validate
-        
-    Returns:
-        Validation result
-    """
-    try:
-        # Check if the token exists in the database
-        token_doc = await db.election_tokens.tokens.find_one({"token": token})
-        
-        if token_doc:
-            return StandardResponse(
-                success=True,
-                message="Token is valid",
-                data={"valid": True, "vote_id": token_doc["vote_id"]}
-            )
-        else:
-            return StandardResponse(
-                success=True,
-                message="Token is invalid",
-                data={"valid": False}
-            )
-    except Exception as e:
-        logger.error(f"Error validating token: {str(e)}")
-        raise handle_blockchain_error("validate token", e)
 
 @router.get("/{vote_id}/shares", response_model=StandardResponse[ShareStatusResponse])
 async def get_share_status(

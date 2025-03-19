@@ -47,7 +47,7 @@
           <p></p>
           <strong>Required Deposit: {{ requiredDeposit }} ETH</strong>
         </div>
-        <button @click="generateToken" class="btn primary">
+        <button @click="generateKeyPair()" class="btn primary">
           Generate Unique Voting Token
         </button>
         <!-- New styled alert box for votingToken -->
@@ -60,7 +60,9 @@
   
   <script setup>
   import { ref } from 'vue'
-  import axios from 'axios'
+  import { voteApi } from '@/services/api'
+  import { generateBLSKeyPair } from "../../services/cryptography";
+  import Cookies from "js-cookie";
   
   const props = defineProps({
     voteId: {
@@ -73,15 +75,32 @@
   const votingToken = ref('')
   const rewardPool = ref(0.5) // Example value, replace with actual logic to fetch this
   const requiredDeposit = ref(0.1) // Example value, replace with actual logic to fetch this
-  
+  const pk = ref(null); // Make pk reactive
+
+  const generateKeyPair = async () => {
+    const { sk, pk: publicKey } = generateBLSKeyPair();
+
+    // Store the private key in a cookie for 1 day
+    Cookies.set("privateKey", sk.toString(16), { expires: 1, secure: true, sameSite: "Strict" });
+
+    // Update the reactive pk variable to trigger UI update
+    pk.value = publicKey.toHex();
+
+    storePublicKey()
+  };
+
   // Method to generate voting token
-  const generateToken = async () => {
+  const storePublicKey = async () => {
     try {
-      const response = await axios.post(`http://127.0.0.1:8000/generate-token/${props.voteId}`);
-      votingToken.value = response.data.token;
-    } catch (error) {
-      console.error("Failed to generate voting token:", error);
-      votingToken.value = "Error generating token";
+      const response = await voteApi.storePublicKey(props.voteId, {
+        public_key: pk.value,
+        is_secret_holder: isSecretHolder.value === 'yes' ? true : false
+      });
+
+      alert("TEMPORARY: Success")
+    } catch (err) {
+      console.error('Failed to store public key:', err);
+      error.value = err.message || 'Failed to store public key. Please try again.';
     }
   }
   </script>
