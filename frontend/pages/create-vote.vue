@@ -227,7 +227,6 @@ const handleSubmit = async () => {
     };
     
     // First create the vote in the backend
-    console.log(formattedData)
     const response = await voteApi.createVote(formattedData);
     const voteId = response.data.data.id;
 

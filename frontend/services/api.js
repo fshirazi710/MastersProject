@@ -48,7 +48,7 @@ export const authApi = {
 export const voteApi = {
   // Get all votes
   getAllVotes: () => {
-    return apiClient.get('/api/votes/');
+    return apiClient.get('/api/votes/all-elections');
   },
   
   // Get vote summary

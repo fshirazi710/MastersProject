@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MITelectionCount
 pragma solidity ^0.8.0;
 
 /**
@@ -8,6 +8,53 @@ pragma solidity ^0.8.0;
  * to ensure votes remain secret until a predetermined time.
  */
 contract TimedReleaseVoting {
+
+    struct Election {
+        uint256 id;
+        string title;
+        string description;
+        uint256 startDate;
+        uint256 endDate;
+        string[] options;
+        uint256 rewardPool;
+        uint256 electionDeposit;
+    }
+
+    mapping(uint256 => Election) public election;
+    uint256 public electionCount;
+
+    event ElectionCreated(uint256 id, string title);
+
+    function createElection(
+        string memory title,
+        string memory description,
+        uint256 startDate,
+        uint256 endDate,
+        string[] memory options,
+        uint256 rewardPool,
+        uint256 electionDeposit
+    ) public returns (uint256) {
+        election[voteCount] = Election(electionCount, title, description, startDate, endDate, options, rewardPool, electionDeposit);
+        emit ElectionCreated(electionCount, title);
+        electionCount++;
+        return electionCount - 1;
+    }
+    
+    function getElection(uint256 voteId) public view returns (
+        uint256 id,
+        string memory title,
+        string memory description,
+        uint256 startDate,
+        uint256 endDate,
+        string[] memory options,
+        uint256 rewardPool,
+        uint256 electionDeposit
+    ) {
+        require(voteId < electionCount, "Election does not exist");
+        Election memory v = election[voteId];
+        return (v.id, v.title, v.description, v.startDate, v.endDate, v.options, v.rewardPool, v.electionDeposit);
+    }
+
     // ======== State Variables ========
     
     // Holder management

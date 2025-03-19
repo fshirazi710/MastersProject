@@ -101,6 +101,58 @@ async def create_election(data: VoteCreateRequest, blockchain_service: Blockchai
         raise handle_blockchain_error("create election", e)
 
 
+@router.get("/all-elections")
+async def get_all_elections(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+    try:
+        # Get total number of votes from the smart contract
+        num_of_elections = await blockchain_service.call_contract_function("electionCount")
+        elections = []
+        
+        # Get current timestamp
+        current_timestamp = int(datetime.now().timestamp())
+
+        # Iterate through each vote and retrieve its data
+        for election_id in range(num_of_elections):
+            election_info = await blockchain_service.call_contract_function("getElection", election_id)
+            
+            # Get start and end timestamps
+            start_timestamp = election_info[3]
+            end_timestamp = election_info[4]
+            
+            # Determine status based on timestamps
+            if current_timestamp < start_timestamp:
+                status = "join"
+            elif current_timestamp > end_timestamp:
+                status = "ended"
+            else:
+                status = "active"
+
+            elections.append(
+                {
+                    "id": election_info[0],
+                    "title": election_info[1],
+                    "description": election_info[2],
+                    "start_date": datetime.fromtimestamp(election_info[3]).strftime(
+                        "%Y-%m-%dT%H:%M"
+                    ),
+                    "end_date": datetime.fromtimestamp(election_info[4]).strftime(
+                        "%Y-%m-%dT%H:%M"
+                    ),
+                    "status": status,
+                    "participant_count": 0,
+                    "secret_holder_count": 0,
+                    "options": election_info[5],
+                    "reward_pool": blockchain_service.w3.from_wei(election_info[6], 'ether') if len(election_info) > 6 else 0,
+                    "required_deposit": blockchain_service.w3.from_wei(election_info[7], 'ether') if len(election_info) > 7 else 0,
+                }
+            )
+        logger.info(elections)
+        return elections
+    except Exception as e:
+        logger.error(f"Error in get_all_elections: {str(e)}")
+        raise handle_blockchain_error("get all elections", e)
+
+
 @router.get("/", response_model=StandardResponse[List[VoteResponse]])
 async def get_all_votes(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """
