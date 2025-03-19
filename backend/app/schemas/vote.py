@@ -92,6 +92,11 @@ class VoteCreateRequest(BaseModel):
     def validate_date_format(cls, v):
         """Validate date format."""
         try:
+            # Remove milliseconds and timezone indicator if present
+            if '.' in v:
+                v = v.split('.')[0]
+            if v.endswith('Z'):
+                v = v[:-1]
             datetime.strptime(v, "%Y-%m-%dT%H:%M:%S")
         except ValueError:
             raise ValueError("Date must be in ISO format (YYYY-MM-DDTHH:MM:SS)")
@@ -102,8 +107,21 @@ class VoteCreateRequest(BaseModel):
     def validate_end_date(cls, v, info):
         """Validate that end date is after start date."""
         if 'start_date' in info.data:
-            start = datetime.strptime(info.data['start_date'], "%Y-%m-%dT%H:%M:%S")
-            end = datetime.strptime(v, "%Y-%m-%dT%H:%M:%S")
+            # Clean up both dates before comparison
+            start_date = info.data['start_date']
+            if '.' in start_date:
+                start_date = start_date.split('.')[0]
+            if start_date.endswith('Z'):
+                start_date = start_date[:-1]
+                
+            end_date = v
+            if '.' in end_date:
+                end_date = end_date.split('.')[0]
+            if end_date.endswith('Z'):
+                end_date = end_date[:-1]
+                
+            start = datetime.strptime(start_date, "%Y-%m-%dT%H:%M:%S")
+            end = datetime.strptime(end_date, "%Y-%m-%dT%H:%M:%S")
             if end <= start:
                 raise ValueError("End date must be after start date")
         return v

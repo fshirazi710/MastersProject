@@ -68,7 +68,7 @@ export const voteApi = {
   
   // Create a new vote
   createVote: (voteData) => {
-    return apiClient.post('/api/votes/create', voteData);
+    return apiClient.post('/api/votes/create-election', voteData);
   },
   
   // Generate a voting token

@@ -37,6 +37,70 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/votes", tags=["Votes"])
 
+
+@router.post("/create-election", response_model=StandardResponse[TransactionResponse])
+async def create_election(data: VoteCreateRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service), current_user = Depends(get_current_user)):
+    try:
+        logger.error(data)
+        start_timestamp = int(datetime.fromisoformat(data.start_date).timestamp())
+        end_timestamp = int(datetime.fromisoformat(data.end_date).timestamp())
+        
+        if end_timestamp <= start_timestamp:
+            raise handle_validation_error("End date must be after start date")
+            
+        if len(data.options) < 2:
+            raise handle_validation_error("At least two options are required")
+            
+        reward_pool_wei = blockchain_service.w3.to_wei(data.reward_pool, 'ether')
+        required_deposit_wei = blockchain_service.w3.to_wei(data.required_deposit, 'ether')
+        
+        nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
+        estimated_gas = blockchain_service.contract.functions.createElection(
+            data.title,
+            data.description,
+            start_timestamp,
+            end_timestamp,
+            data.options,
+            reward_pool_wei,
+            required_deposit_wei
+        ).estimate_gas({"from": WALLET_ADDRESS})
+         
+        create_election_tx = blockchain_service.contract.functions.createElection(
+            data.title,
+            data.description,
+            start_timestamp,
+            end_timestamp,
+            data.options,
+            reward_pool_wei,
+            required_deposit_wei
+        ).build_transaction({
+            'from': WALLET_ADDRESS,
+            'gas': estimated_gas,
+            'gasPrice': blockchain_service.w3.eth.gas_price,
+            'nonce': nonce,
+        })
+        
+        # Sign and send transaction
+        signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_election_tx, PRIVATE_KEY)
+        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+        tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else blockchain_service.w3.to_hex(tx_hash)
+        
+        return StandardResponse(
+            success=True,
+            message="Successfully created election",
+            data=TransactionResponse(
+                success=True,
+                message="Successfully created election",
+                transaction_hash=tx_hash_hex
+            )
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating election: {str(e)}")
+        raise handle_blockchain_error("create election", e)
+
+
 @router.get("/", response_model=StandardResponse[List[VoteResponse]])
 async def get_all_votes(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """
@@ -196,77 +260,6 @@ async def submit_vote(request: VoteSubmitRequest, blockchain_service: Blockchain
     except Exception as e:
         logger.error(f"Error submitting vote: {str(e)}")
         raise handle_blockchain_error("submit vote", e)
-
-@router.post("/create", response_model=StandardResponse[TransactionResponse])
-async def create_vote(
-    data: VoteCreateRequest, 
-    blockchain_service: BlockchainService = Depends(get_blockchain_service),
-    current_user = Depends(get_current_user)  # Only require authentication for vote creation
-):
-    """
-    Create a new vote with options and parameters.
-    
-    Args:
-        data: Vote creation data
-        blockchain_service: Blockchain service
-        current_user: Current authenticated user
-        
-    Returns:
-        Transaction response with transaction hash
-    """
-    try:
-        # Validate dates
-        start_timestamp = int(datetime.fromisoformat(data.start_date).timestamp())
-        end_timestamp = int(datetime.fromisoformat(data.end_date).timestamp())
-        
-        if end_timestamp <= start_timestamp:
-            raise handle_validation_error("End date must be after start date")
-            
-        if len(data.options) < 2:
-            raise handle_validation_error("At least two options are required")
-            
-        # Convert ETH to Wei
-        reward_pool_wei = blockchain_service.w3.to_wei(data.reward_pool, 'ether')
-        required_deposit_wei = blockchain_service.w3.to_wei(data.required_deposit, 'ether')
-        
-        # Get transaction count for nonce
-        nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
-        
-        # Create vote transaction
-        create_vote_tx = blockchain_service.contract.functions.createVote(
-            data.title,
-            data.description,
-            start_timestamp,
-            end_timestamp,
-            data.options,
-            reward_pool_wei,
-            required_deposit_wei
-        ).build_transaction({
-            'from': WALLET_ADDRESS,
-            'gas': 3000000,
-            'gasPrice': blockchain_service.w3.eth.gas_price,
-            'nonce': nonce,
-        })
-        
-        # Sign and send transaction
-        signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_vote_tx, PRIVATE_KEY)
-        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-        tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else blockchain_service.w3.to_hex(tx_hash)
-        
-        return StandardResponse(
-            success=True,
-            message="Successfully created vote",
-            data=TransactionResponse(
-                success=True,
-                message="Successfully created vote",
-                transaction_hash=tx_hash_hex
-            )
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating vote: {str(e)}")
-        raise handle_blockchain_error("create vote", e)
 
 # Function to generate a unique alphanumeric token
 def generate_voting_token(length=8):
