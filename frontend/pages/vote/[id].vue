@@ -78,13 +78,6 @@
       :required-keys="vote.requiredKeys"
     />
 
-    <!-- Secret holders section -->
-    <SecretHolders
-      :secret-holders="vote.secretHolders"
-      :required-keys="vote.requiredKeys"
-      :vote-status="vote.status"
-    />
-
   </div>
 </template>
 
@@ -112,10 +105,10 @@ const fetchVoteData = async () => {
         // Fetch vote details
         const voteResponse = await voteApi.getVoteById(route.params.id)
         const voteData = voteResponse.data.data
-        
+
         // Fetch share status for this vote
-        const shareResponse = await voteApi.getShareStatus(route.params.id)
-        shareStatus.value = shareResponse.data.data
+        // const shareResponse = await voteApi.getShareStatus(route.params.id)
+        // shareStatus.value = shareResponse.data.data
         
         // Transform the response data to match the expected format
         vote.value = {
@@ -129,14 +122,9 @@ const fetchVoteData = async () => {
             participantCount: voteData.participant_count || 0,
             rewardPool: voteData.reward_pool || 0,
             requiredDeposit: voteData.required_deposit || 0,
-            secretHolderCount: shareStatus.value.total_holders || 0,
-            requiredKeys: shareStatus.value.threshold || 0,
-            releasedKeys: shareStatus.value.submitted_shares || 0,
-            secretHolders: Object.entries(shareStatus.value.holder_status || {}).map(([address, status]) => ({
-                address,
-                status: 'active',
-                hasReleasedKey: status.submitted
-            }))
+            secretHolderCount: voteData.secret_holder_count || 0,
+            requiredKeys: 0,
+            releasedKeys: 0,
         }
     } catch (err) {
         console.error("Failed to fetch vote data:", err)

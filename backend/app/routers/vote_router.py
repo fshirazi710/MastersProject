@@ -153,6 +153,52 @@ async def get_all_elections(blockchain_service: BlockchainService = Depends(get_
         raise handle_blockchain_error("get all elections", e)
 
 
+@router.get("/election/{election_id}", response_model=StandardResponse[Dict[str, Any]])
+async def get_election_information(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+    try:
+        # Call the blockchain service to get the vote data using the helper method
+        election_info = await blockchain_service.call_contract_function("getElection", election_id)
+        
+        # Get current timestamp
+        current_timestamp = int(datetime.now().timestamp())
+        
+        # Get start and end timestamps
+        start_timestamp = election_info[3]
+        end_timestamp = election_info[4]
+        
+        # Determine status based on timestamps
+        if current_timestamp < start_timestamp:
+            status = "join"
+        elif current_timestamp > end_timestamp:
+            status = "ended"
+        else:
+            status = "active"
+        
+        # Convert the vote data to a readable format
+        data = {
+            "id": election_id,
+            "title": election_info[1] if len(election_info) > 1 else None,
+            "description": election_info[2] if len(election_info) > 2 else None,
+            "start_date": datetime.fromtimestamp(election_info[3]).isoformat() if len(election_info) > 3 else None,
+            "end_date": datetime.fromtimestamp(election_info[4]).isoformat() if len(election_info) > 4 else None,
+            "status": status,
+            "participant_count": 0,
+            "secret_holder_count": 0,
+            "options": election_info[5] if len(election_info) > 7 else None,
+            "reward_pool": blockchain_service.w3.from_wei(election_info[6], 'ether') if len(election_info) > 6 else 0,
+            "required_deposit": blockchain_service.w3.from_wei(election_info[7], 'ether') if len(election_info) > 7 else 0,
+        }
+
+        return StandardResponse(
+            success=True,
+            message=f"Successfully retrieved election information for election {election_id}",
+            data=data
+        )
+    except Exception as e:
+        logger.error(f"Error getting election information: {str(e)}")
+        raise handle_blockchain_error("get election information", e)
+
+
 @router.get("/", response_model=StandardResponse[List[VoteResponse]])
 async def get_all_votes(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """

@@ -58,7 +58,7 @@ export const voteApi = {
   
   // Get vote by ID
   getVoteById: (voteId) => {
-    return apiClient.get(`/api/votes/${voteId}`);
+    return apiClient.get(`/api/votes/election/${voteId}`);
   },
   
   // Submit a vote
