@@ -50,9 +50,17 @@ class PublicKeyRequest(BaseModel):
         examples=["Presidential Election 2024"]
     )
     is_secret_holder: bool = Field(
-        ..., 
+        ...,
         description="Description of the vote",
         examples=["Vote for the next president of the United States"]
+    )
+    
+class KeyRequest(BaseModel):
+    """Schema for storing public key."""
+    public_key: str = Field(
+        ..., 
+        description="Title of the vote",
+        examples=["Presidential Election 2024"]
     )
 
 class VoteCreateRequest(BaseModel):

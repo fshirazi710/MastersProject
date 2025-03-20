@@ -68,6 +68,7 @@
       v-if="vote.status === 'active'"
       :vote-id="route.params.id"
       :options="vote.options"
+      :endDate="vote.endDate"
     />
 
     <!-- Results section - only shown for ended votes -->
@@ -87,7 +88,6 @@ import { useRoute } from 'vue-router'
 import { voteApi, shareApi } from '@/services/api'
 import CastYourVote from '@/components/vote/CastYourVote.vue'
 import VoteResults from '@/components/vote/VoteResults.vue'
-import SecretHolders from '@/components/vote/SecretHolders.vue'
 import RegisterToVote from '@/components/vote/RegisterToVote.vue'
 
 // Get route params for vote ID
@@ -115,7 +115,7 @@ const fetchVoteData = async () => {
             id: voteData.id,
             title: voteData.title || `Vote ${voteData.id}`,
             description: voteData.description || 'No description available',
-            status: voteData.status || 'active',
+            status: "active" || 'active',
             startDate: voteData.start_date || new Date().toISOString(),
             endDate: voteData.end_date || new Date(Date.now() + 86400000).toISOString(),
             options: voteData.options || [],
@@ -165,21 +165,6 @@ const formatDate = (dateString) => {
     hour: '2-digit',
     minute: '2-digit'
   })
-}
-
-// Handle vote submission
-const handleVoteSubmit = async (selectedOption) => {
-  try {
-    await voteApi.submitVote({
-      vote_id: vote.value.id,
-      vote_data: selectedOption,
-      decryption_time: new Date(vote.value.endDate).getTime() / 1000
-    })
-    alert('Vote submitted successfully!')
-    fetchVoteData() // Refresh data
-  } catch (err) {
-    alert('Failed to submit vote: ' + (err.response?.data?.detail || err.message))
-  }
 }
 
 // Handle share submission

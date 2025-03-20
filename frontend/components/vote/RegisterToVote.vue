@@ -4,17 +4,17 @@
       <!-- Encryption notice to inform users -->
       <div class="encryption-notice">
         <i class="lock-icon">🔒</i>
-        <p>This voting token is essential for casting your vote. If you lose it, you will not be able to participate in the voting process.</p>
+        <p>The key pair generated here is essential for casting your vote. Your key is stored in your browser, return here to cast your vote.</p>
       </div>
       <div class="encryption-notice">
         <i class="lock-icon">🔒</i>
         <p>You can choose to be a secret holder, which means you are a part of making sure your vote remains secure.
-          If you choose to become a secret holder, you will need to release your specific key at the specified time.
+          If you choose to become a secret holder, you will need to release your private key at the specified time.
         </p>
       </div>
     
       <!-- Voting form with radio options -->
-      <form @submit.prevent="generateToken" class="voting-form">
+      <form @submit.prevent="generateKeyPair" class="voting-form">
         <h3>Would you like to be a secret holder?</h3>
         <div class="options-list">
           <label class="option-item">
@@ -42,18 +42,9 @@
             </div>
           </label>
         </div>
-        <div v-if="isSecretHolder === 'yes'" class="alert-box">
-          <strong>Reward Pool: {{ rewardPool }} ETH</strong>
-          <p></p>
-          <strong>Required Deposit: {{ requiredDeposit }} ETH</strong>
-        </div>
-        <button @click="generateKeyPair()" class="btn primary">
-          Generate Unique Voting Token
+        <button @click="generateKeyPair" class="btn primary">
+          Generate Key Pair
         </button>
-        <!-- New styled alert box for votingToken -->
-        <div v-if="votingToken" class="alert-box">
-          <strong>Voting Token:</strong> {{ votingToken }}
-        </div>
       </form>
     </div>
   </template>
@@ -72,16 +63,13 @@
   })
   
   const isSecretHolder = ref('yes')
-  const votingToken = ref('')
-  const rewardPool = ref(0.5) // Example value, replace with actual logic to fetch this
-  const requiredDeposit = ref(0.1) // Example value, replace with actual logic to fetch this
-  const pk = ref(null); // Make pk reactive
+  const pk = ref(null);
 
   const generateKeyPair = async () => {
     const { sk, pk: publicKey } = generateBLSKeyPair();
 
     // Store the private key in a cookie for 1 day
-    Cookies.set("privateKey", sk.toString(16), { expires: 1, secure: true, sameSite: "Strict" });
+    Cookies.set("privateKey", sk.toString(16), { expires: 5, secure: true, sameSite: "Strict" });
 
     // Update the reactive pk variable to trigger UI update
     pk.value = publicKey.toHex();

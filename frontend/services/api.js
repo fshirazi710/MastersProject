@@ -96,6 +96,11 @@ export const voteApi = {
   storePublicKey: (voteId, data) => {
     return apiClient.post(`/api/votes/store-public-key/${voteId}`, data);
   },
+
+  // Validate Public Key
+  validatePublicKey: (data) => {
+    return apiClient.post(`/api/votes/validate-public-key`, data);
+  },
 };
 
 // API service for holders

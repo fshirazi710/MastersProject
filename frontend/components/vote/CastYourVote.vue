@@ -1,26 +1,8 @@
 <template>
     <div class="voting-section">
       <h2>Cast Your Vote</h2>
-      <!-- Voting token input -->
-      <form v-if="!isTokenValid" @submit.prevent="validateVotingToken" class="token-form">
-        <div class="encryption-notice">
-          <i class="lock-icon">🔒</i>
-          <p>Once you enter a valid token, you will be allowed to cast your vote.</p>
-        </div>
-        <div class="form-group">
-          <label for="voting-token">Enter Your Voting Token</label>
-          <input 
-            type="text" 
-            id="voting-token" 
-            v-model="votingTokenInput" 
-            required 
-            class="form-input"
-          >
-        </div>
-        <button type="submit" class="btn primary token-button">Validate Token</button>
-      </form>
   
-      <div v-if="isTokenValid">
+      <div>
         <!-- Encryption notice to inform users -->
         <div class="encryption-notice">
           <i class="lock-icon">🔒</i>
@@ -43,7 +25,7 @@
               </div>
             </label>
           </div>
-          <button type="submit" class="btn primary" :disabled="!selectedOption">
+          <button @click="handleVoteSubmit" type="submit" class="btn primary" :disabled="!selectedOption">
             Submit Encrypted Vote
           </button>
         </form>
@@ -53,7 +35,9 @@
   
   <script setup>
   import { ref } from 'vue'
-  import axios from 'axios'
+  import { voteApi } from '@/services/api'
+  import { getPublicKeyFromPrivate } from '@/services/cryptography';
+  import Cookies from 'js-cookie';
   
   const props = defineProps({
     voteId: {
@@ -63,37 +47,51 @@
     options: {
       type: Array,
       required: true
+    },
+    endDate: {
+      type: String,
+      required: true
     }
   })
   
-  const votingTokenInput = ref('')
-  const isTokenValid = ref(false)
   const selectedOption = ref(null)
   
-  // Method to validate the voting token
-  const validateVotingToken = async () => {
+  // Method to validate the key pair
+  const validateKeyPair = async () => {
     try {
-      const response = await axios.get(`http://127.0.0.1:8000/validate-token`, {
-        params: { token: votingTokenInput.value }
-      });
-      if (response.data.valid) {
-        isTokenValid.value = true;
-      } else {
-        isTokenValid.value = false;
+      const privateKeyHex = Cookies.get("privateKey");
+
+      if (!privateKeyHex) {
+        throw new Error("No private key found. Please register first.");
       }
+
+      const publicKeyHex = getPublicKeyFromPrivate(privateKeyHex)
+
+      const response = await voteApi.validatePublicKey({ public_key: publicKeyHex });
+      alert(response.data.message);
+      return response.data.success
     } catch (error) {
-      console.error("Failed to validate voting token:", error);
-      alert('Error validating token. Please try again.');
+      console.error("Failed to validate key pair:", error);
+      alert('Error validating key pair. Please try again.');
     }
   }
   
   // Handle vote submission
-  const handleVote = () => {
-    // TODO: Add validation
-    // TODO: Add API integration
-    // TODO: Add encryption
-    // TODO: Add success/error handling
-    console.log('Voted for option:', selectedOption.value)
+  const handleVoteSubmit = async (selectedOption) => {
+    try {
+      const response = await validateKeyPair()
+      if (response) {
+        console.log(new Date(props.endDate).getTime() / 1000)
+        await voteApi.submitVote({
+          vote_id: props.voteId,
+          vote_data: selectedOption,
+          decryption_time: new Date(props.endDate).getTime() / 1000
+        })
+        alert('Vote submitted successfully!')
+      }
+    } catch (err) {
+      alert('Failed to submit vote: ' + (err.response?.data?.detail || err.message))
+    }
   }
   </script>
   

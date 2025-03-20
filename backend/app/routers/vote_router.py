@@ -15,6 +15,7 @@ from app.schemas import (
     VoteSubmitRequest, 
     VoteCreateRequest,
     PublicKeyRequest,
+    KeyRequest,
     VoteResponse, 
     DecryptVoteRequest, 
     DecryptVoteResponse,
@@ -218,6 +219,19 @@ async def store_public_key(vote_id: int, data: PublicKeyRequest, db=Depends(get_
         success=True,
         message="Public key stored securely",
     )
+
+
+@router.post("/validate-public-key", response_model=StandardResponse[TransactionResponse])
+async def validate_public_key(data: KeyRequest, db=Depends(get_db)):
+    key = await db.public_keys.find_one({"public_key": data.public_key})
+    if not key:
+        logger.warning(f"Public key not found: {data.public_key}")
+        raise handle_validation_error("Invalid public key")
+    else:
+        return StandardResponse(
+            success=True,
+            message="Public key validated successfully",
+        )
 
 
 @router.get("/", response_model=StandardResponse[List[VoteResponse]])

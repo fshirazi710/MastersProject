@@ -11,3 +11,9 @@ export function generateBLSKeyPair() {
     const pk = bls12_381.G1.ProjectivePoint.fromPrivateKey(sk); // Public key
     return { sk, pk };
 }
+
+export function getPublicKeyFromPrivate(privateKey) {
+    const sk = typeof privateKey === 'string' ? BigInt("0x" + privateKey) : privateKey;
+    const publicKey = bls12_381.G1.ProjectivePoint.fromPrivateKey(sk);
+    return publicKey.toHex(true);
+}
