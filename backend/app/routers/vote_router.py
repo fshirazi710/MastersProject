@@ -104,7 +104,7 @@ async def create_election(data: VoteCreateRequest, blockchain_service: Blockchai
 
 
 @router.get("/all-elections")
-async def get_all_elections(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+async def get_all_elections(blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
     try:
         # Get total number of votes from the smart contract
         num_of_elections = await blockchain_service.call_contract_function("electionCount")
@@ -129,6 +129,8 @@ async def get_all_elections(blockchain_service: BlockchainService = Depends(get_
             else:
                 status = "active"
 
+            participant_count = await db.public_keys.count_documents({"vote_id": election_id})
+
             elections.append(
                 {
                     "id": election_info[0],
@@ -141,14 +143,13 @@ async def get_all_elections(blockchain_service: BlockchainService = Depends(get_
                         "%Y-%m-%dT%H:%M"
                     ),
                     "status": status,
-                    "participant_count": 0,
+                    "participant_count": participant_count,
                     "secret_holder_count": 0,
                     "options": election_info[5],
                     "reward_pool": blockchain_service.w3.from_wei(election_info[6], 'ether') if len(election_info) > 6 else 0,
                     "required_deposit": blockchain_service.w3.from_wei(election_info[7], 'ether') if len(election_info) > 7 else 0,
                 }
             )
-        logger.info(elections)
         return elections
     except Exception as e:
         logger.error(f"Error in get_all_elections: {str(e)}")
@@ -156,7 +157,7 @@ async def get_all_elections(blockchain_service: BlockchainService = Depends(get_
 
 
 @router.get("/election/{election_id}", response_model=StandardResponse[Dict[str, Any]])
-async def get_election_information(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+async def get_election_information(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
     try:
         # Call the blockchain service to get the vote data using the helper method
         election_info = await blockchain_service.call_contract_function("getElection", election_id)
@@ -176,6 +177,8 @@ async def get_election_information(election_id: int, blockchain_service: Blockch
         else:
             status = "active"
         
+        participant_count = await db.public_keys.count_documents({"vote_id": election_id})
+        
         # Convert the vote data to a readable format
         data = {
             "id": election_id,
@@ -184,7 +187,7 @@ async def get_election_information(election_id: int, blockchain_service: Blockch
             "start_date": datetime.fromtimestamp(election_info[3]).isoformat() if len(election_info) > 3 else None,
             "end_date": datetime.fromtimestamp(election_info[4]).isoformat() if len(election_info) > 4 else None,
             "status": status,
-            "participant_count": 0,
+            "participant_count": participant_count,
             "secret_holder_count": 0,
             "options": election_info[5] if len(election_info) > 7 else None,
             "reward_pool": blockchain_service.w3.from_wei(election_info[6], 'ether') if len(election_info) > 6 else 0,

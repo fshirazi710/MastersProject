@@ -15,12 +15,6 @@ class JoinHolderRequest(BaseModel):
         max_length=2,
         examples=[[123456789, 987654321]]
     )
-    deposit_amount: float = Field(
-        ..., 
-        description="Amount of ETH to deposit",
-        gt=0,
-        examples=[1.0]
-    )
     
     @field_validator('public_key')
     @classmethod
@@ -28,14 +22,6 @@ class JoinHolderRequest(BaseModel):
         """Validate that the public key has exactly two components."""
         if len(v) != 2:
             raise ValueError("Public key must have exactly 2 components [x, y]")
-        return v
-    
-    @field_validator('deposit_amount')
-    @classmethod
-    def validate_deposit(cls, v):
-        """Validate that the deposit amount is positive."""
-        if v <= 0:
-            raise ValueError("Deposit amount must be greater than 0")
         return v
 
 class HolderResponse(BaseModel):

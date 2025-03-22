@@ -42,7 +42,7 @@
             </div>
           </label>
         </div>
-        <button @click="generateKeyPair" class="btn primary">
+        <button class="btn primary">
           Generate Key Pair
         </button>
       </form>
@@ -51,8 +51,8 @@
   
   <script setup>
   import { ref } from 'vue'
-  import { voteApi } from '@/services/api'
-  import { generateBLSKeyPair } from "../../services/cryptography";
+  import { voteApi, holderApi } from '@/services/api'
+  import { generateBLSKeyPair, getG1PointsFromPublicKey } from "../../services/cryptography";
   import Cookies from "js-cookie";
   
   const props = defineProps({
@@ -72,7 +72,7 @@
     Cookies.set("privateKey", sk.toString(16), { expires: 5, secure: true, sameSite: "Strict" });
 
     // Update the reactive pk variable to trigger UI update
-    pk.value = publicKey.toHex();
+    pk.value = publicKey.toHex(true);
 
     storePublicKey()
   };
@@ -85,10 +85,29 @@
         is_secret_holder: isSecretHolder.value === 'yes' ? true : false
       });
 
-      alert("TEMPORARY: Success")
+      if (isSecretHolder.value === 'yes') {
+        const [pointX, pointY] = getG1PointsFromPublicKey(pk.value);
+        joinAsSecretHolder(props.voteId, [pointX, pointY])
+      }
+      else {
+        console.log("ERROR");
+      }
+
+      alert("TEMPORARY: Success");
     } catch (err) {
       console.error('Failed to store public key:', err);
       error.value = err.message || 'Failed to store public key. Please try again.';
+    }
+  }
+
+  const joinAsSecretHolder = async (vote_id, public_key) => {
+    try {
+      console.log(public_key)
+      console.log(public_key.map(share => share.toString()))
+      const response = await holderApi.joinAsHolder(vote_id, public_key.map(share => share.toString()));
+    } catch (err) {
+      console.error('Failed to join as secret holder:', err);
+      error.value = err.message || 'Failed to join as secret holder. Please try again.';
     }
   }
   </script>

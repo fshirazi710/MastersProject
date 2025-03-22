@@ -67,6 +67,8 @@
 
       const publicKeyHex = getPublicKeyFromPrivate(privateKeyHex)
 
+      console.log(publicKeyHex)
+
       const response = await voteApi.validatePublicKey({ public_key: publicKeyHex });
       alert(response.data.message);
       return response.data.success

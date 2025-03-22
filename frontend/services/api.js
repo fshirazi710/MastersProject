@@ -111,8 +111,8 @@ export const holderApi = {
   },
   
   // Get holder count
-  getHolderCount: () => {
-    return apiClient.get('/api/holders/count');
+  getHolderCount: (election_id) => {
+    return apiClient.get(`/api/holders/count/${election_id}`);
   },
   
   // Check holder status
@@ -126,8 +126,8 @@ export const holderApi = {
   },
   
   // Join as holder
-  joinAsHolder: (publicKey, depositAmount) => {
-    return apiClient.post('/api/holders/join', { public_key: publicKey, deposit_amount: depositAmount });
+  joinAsHolder: (election_id, publicKey) => {
+    return apiClient.post(`/api/holders/join/${election_id}`, { public_key: publicKey });
   },
 };
 

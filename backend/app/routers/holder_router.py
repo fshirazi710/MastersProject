@@ -53,8 +53,8 @@ async def get_all_holders(blockchain_service: BlockchainService = Depends(get_bl
         logger.error(f"Error getting all holders: {str(e)}")
         raise handle_blockchain_error("get all holders", e)
 
-@router.get("/count", response_model=StandardResponse[HolderCountResponse])
-async def get_holder_count(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+@router.get("/count/{election_id}", response_model=StandardResponse[HolderCountResponse])
+async def get_holder_count(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """
     Get the total number of registered holders.
     
@@ -63,7 +63,7 @@ async def get_holder_count(blockchain_service: BlockchainService = Depends(get_b
     """
     try:
         # Call the blockchain service to get the holder count using the helper method
-        count = await blockchain_service.call_contract_function("holderCount")
+        count = await blockchain_service.call_contract_function("getNumHoldersByElection", election_id)
         return StandardResponse(
             success=True,
             message="Successfully retrieved holder count",
@@ -117,9 +117,10 @@ async def get_required_deposit(blockchain_service: BlockchainService = Depends(g
         logger.error(f"Error getting required deposit: {str(e)}")
         raise handle_blockchain_error("get required deposit", e)
 
-@router.post("/join", response_model=StandardResponse[TransactionResponse])
+@router.post("/join/{election_id}", response_model=StandardResponse[TransactionResponse])
 async def join_as_holder(
-    request: JoinHolderRequest,
+    election_id: int,
+    request: dict,
     blockchain_service: BlockchainService = Depends(get_blockchain_service)
 ):
     """
@@ -133,13 +134,19 @@ async def join_as_holder(
     """
     try:
         # Validate public key format
-        if not isinstance(request.public_key, list) or len(request.public_key) != 2:
+        if not isinstance(request["public_key"], list) or len(request["public_key"]) != 2:
             raise handle_validation_error("Public key must be a list with exactly two components")
-            
+        
+        # Convert public key strings to integers
+        try:
+            public_key = [int(x) for x in request["public_key"]]
+        except ValueError:
+            raise handle_validation_error("Public key components must be valid integers")
+        
         # Call the blockchain service to join as holder
         result = await blockchain_service.join_as_holder(
-            deposit_amount=request.deposit_amount,
-            public_key=request.public_key
+            election_id=election_id,
+            public_key=public_key
         )
         
         if not result.get("success", False):

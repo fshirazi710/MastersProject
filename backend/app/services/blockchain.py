@@ -9,6 +9,10 @@ import json
 import os
 import secrets
 import asyncio
+from app.core.config import (
+    WALLET_ADDRESS,
+    PRIVATE_KEY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,45 +54,44 @@ class BlockchainService:
             
         return self.w3.eth.contract(address=self.contract_address, abi=abi)
     
-    async def join_as_holder(self, deposit_amount: float) -> dict:
+    async def join_as_holder(self, election_id: int, public_key: List[int]) -> dict:
         """
         Allows a user to join as a secret holder by staking a deposit.
         Implements the joinAsHolder function from the smart contract.
         """
         try:
-            # Generate BLS12-381 keypair for the holder
-            private_key, public_key = self.crypto_service.generate_keypair()
-            
-            # Convert deposit to Wei
-            deposit_wei = self.w3.to_wei(deposit_amount, 'ether')
-            
-            # Build transaction with public key
-            transaction = self.contract.functions.joinAsHolder(
-                [public_key[0].n, public_key[1].n]  # Convert FQ to integers
+            nonce = self.w3.eth.get_transaction_count(WALLET_ADDRESS)
+            estimated_gas = self.contract.functions.joinAsHolder(
+                election_id, public_key[0].to_bytes(48, "big") + public_key[1].to_bytes(48, "big")
+            ).estimate_gas({"from": WALLET_ADDRESS})
+
+            join_as_holder_tx = self.contract.functions.joinAsHolder(
+                election_id, public_key[0].to_bytes(48, "big") + public_key[1].to_bytes(48, "big")
             ).build_transaction({
-                'from': self.account.address,
-                'value': deposit_wei,
-                'nonce': self.w3.eth.get_transaction_count(self.account.address),
+                'from': WALLET_ADDRESS,
+                'gas': estimated_gas,
+                'gasPrice': self.w3.eth.gas_price,
+                'nonce': nonce,
             })
-            
+
             # Sign and send transaction
-            signed_txn = self.account.sign_transaction(transaction)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
-            
+            signed_tx = self.w3.eth.account.sign_transaction(join_as_holder_tx, PRIVATE_KEY)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else self.w3.to_hex(tx_hash)
+
             # Wait for transaction receipt
             receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-            
-            logger.info(f"Successfully joined as holder. Transaction: {tx_hash.hex()}")
+
+            logger.info(f"Successfully joined as holder. Transaction: {tx_hash_hex}")
             return {
                 'success': True,
-                'transaction_hash': tx_hash.hex(),
-                'holder_address': self.account.address,
-                'public_key': [public_key[0].n, public_key[1].n]
+                'transaction_hash': tx_hash_hex,
+                'holder_address': WALLET_ADDRESS,
+                'public_key': public_key
             }
-            
+
         except Exception as e:
             logger.error(f"Failed to join as holder: {str(e)}")
-            # Instead of raising the exception directly, use the error handler
             raise handle_blockchain_error("join as holder", e)
 
     async def submit_vote(self, vote_data: bytes, decryption_time: int, reward_amount: float = 0.1, threshold: int = None) -> dict:

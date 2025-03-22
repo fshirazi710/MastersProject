@@ -17,3 +17,11 @@ export function getPublicKeyFromPrivate(privateKey) {
     const publicKey = bls12_381.G1.ProjectivePoint.fromPrivateKey(sk);
     return publicKey.toHex(true);
 }
+
+export function getG1PointsFromPublicKey(publicKey) {
+    const compressedPkBytes = Uint8Array.from(Buffer.from(publicKey, "hex"));
+    const g1Point = bls12_381.G1.ProjectivePoint.fromHex(compressedPkBytes);
+    const px = g1Point.px;
+    const py = g1Point.py;
+    return [px, py];
+}

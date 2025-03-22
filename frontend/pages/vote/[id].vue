@@ -41,12 +41,12 @@
         <h3>Encryption Status</h3>
         <div class="encryption-status">
           <div class="status-item">
-            <span class="label">Total Secret Holders:</span>
-            <span>{{ vote.secretHolderCount }}</span>
+            <span class="label">Total Vote Participants:</span>
+            <span>{{ vote.participantCount }}</span>
           </div>
           <div class="status-item">
-            <span class="label">Keys Required:</span>
-            <span>{{ vote.requiredKeys }}</span>
+            <span class="label">Total Secret Holders:</span>
+            <span>{{ vote.secretHolderCount }}</span>
           </div>
           <!-- Show released keys count for ended votes -->
           <div v-if="vote.status === 'ended'" class="status-item">
@@ -71,6 +71,11 @@
       :endDate="vote.endDate"
     />
 
+    <!-- Submit Secret Share section - secret holders can submit their shares -->
+    <SubmitSecretShare 
+      v-if="vote.status === 'ended'"
+    />
+
     <!-- Results section - only shown for ended votes -->
     <VoteResults
       v-if="vote.status === 'ended'"
@@ -85,17 +90,17 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { voteApi, shareApi } from '@/services/api'
+import { voteApi, shareApi, holderApi } from '@/services/api'
 import CastYourVote from '@/components/vote/CastYourVote.vue'
 import VoteResults from '@/components/vote/VoteResults.vue'
 import RegisterToVote from '@/components/vote/RegisterToVote.vue'
+import SubmitSecretShare from '~/components/vote/SubmitSecretShare.vue'
 
 // Get route params for vote ID
 const route = useRoute()
 const loading = ref(true)
 const error = ref(null)
 const vote = ref(null)
-const shareStatus = ref(null)
 
 const fetchVoteData = async () => {
     loading.value = true
@@ -106,23 +111,22 @@ const fetchVoteData = async () => {
         const voteResponse = await voteApi.getVoteById(route.params.id)
         const voteData = voteResponse.data.data
 
-        // Fetch share status for this vote
-        // const shareResponse = await voteApi.getShareStatus(route.params.id)
-        // shareStatus.value = shareResponse.data.data
+        const holdersResponse = await holderApi.getHolderCount(route.params.id)
+        const holderData = holdersResponse.data.data
         
         // Transform the response data to match the expected format
         vote.value = {
             id: voteData.id,
             title: voteData.title || `Vote ${voteData.id}`,
             description: voteData.description || 'No description available',
-            status: "active" || 'active',
+            status: "join" || 'active',
             startDate: voteData.start_date || new Date().toISOString(),
             endDate: voteData.end_date || new Date(Date.now() + 86400000).toISOString(),
             options: voteData.options || [],
             participantCount: voteData.participant_count || 0,
             rewardPool: voteData.reward_pool || 0,
             requiredDeposit: voteData.required_deposit || 0,
-            secretHolderCount: voteData.secret_holder_count || 0,
+            secretHolderCount: holderData.count || 0,
             requiredKeys: 0,
             releasedKeys: 0,
         }
