@@ -34,7 +34,7 @@ contract TimedReleaseVoting {
         uint256 rewardPool,
         uint256 electionDeposit
     ) public returns (uint256) {
-        election[voteCount] = Election(electionCount, title, description, startDate, endDate, options, rewardPool, electionDeposit);
+        election[electionCount] = Election(electionCount, title, description, startDate, endDate, options, rewardPool, electionDeposit);
         emit ElectionCreated(electionCount, title);
         electionCount++;
         return electionCount - 1;
@@ -64,6 +64,13 @@ contract TimedReleaseVoting {
         bool active;
         uint256 rewards;  // Accumulated rewards for the holder
     }
+
+    struct Holder2 {
+        bytes publicKey;  // BLS12-381 G1 point (x, y)
+        uint256 electionId;
+        bool active;
+        uint256 rewards;  // Accumulated rewards for the holder
+    }
     
     // Vote data structure
     struct Vote {
@@ -86,12 +93,15 @@ contract TimedReleaseVoting {
     
     // State
     mapping(address => Holder) public holders;
+    mapping(bytes => Holder2) public holders2;
     address[] public holderAddresses;
+    bytes[] public holderAddresses2;
     mapping(uint256 => Vote) public votes;
     uint256 public voteCount;
     
     // ======== Events ========
     
+    event HolderJoined2(bytes indexed publicKey, uint256 electionId);
     event HolderJoined(address indexed holderAddress, uint256[2] publicKey);
     event HolderExited(address indexed holderAddress);
     event VoteSubmitted(uint256 indexed voteId, uint256 decryptionTime, uint256 threshold);
@@ -122,21 +132,21 @@ contract TimedReleaseVoting {
      * @dev Join as a secret holder by staking a deposit
      * @param publicKey The BLS12-381 public key of the holder
      */
-    function joinAsHolder(uint256[2] memory publicKey) external payable {
-        require(!holders[msg.sender].active, "Already a holder");
-        require(msg.value >= REQUIRED_DEPOSIT, "Insufficient deposit");
-        
-        holders[msg.sender] = Holder({
+    function joinAsHolder(uint256 electionId, bytes memory publicKey) external payable {
+        require(!holders2[publicKey].active, "Already a holder");
+
+        holders2[publicKey] = Holder2({
             publicKey: publicKey,
-            deposit: msg.value,
+            electionId: electionId,
             active: true,
             rewards: 0
         });
-        
-        holderAddresses.push(msg.sender);
-        
-        emit HolderJoined(msg.sender, publicKey);
+
+        holderAddresses2.push(publicKey);
+
+        emit HolderJoined2(publicKey, electionId);
     }
+
     
     /**
      * @dev Exit as a secret holder and withdraw deposit
@@ -334,7 +344,22 @@ contract TimedReleaseVoting {
         }
         return count;
     }
-    
+
+    /**
+    * @dev Get the number of registered holders for a specific election
+    * @param electionId The ID of the election
+    * @return The number of holders for the given election
+    */
+    function getNumHoldersByElection(uint256 electionId) public view returns (uint256) {
+        uint256 count = 0;
+        for (uint256 i = 0; i < holderAddresses2.length; i++) {
+            if (holders2[holderAddresses2[i]].active && holders2[holderAddresses2[i]].electionId == electionId) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     /**
      * @dev Get the public key of a holder
      * @param holderAddress The address of the holder
