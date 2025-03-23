@@ -18,6 +18,7 @@ from app.schemas import (
     DecryptVoteRequest, 
     DecryptVoteResponse,
     VotingTokenRequest,
+    VotingTokenResponse,
     TokenValidationRequest,
     ShareStatusResponse,
     StandardResponse,
@@ -36,39 +37,121 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/votes", tags=["Votes"])
 
-# Endpoint to retrieve all votes
-@router.get("/all-votes")
-async def get_all_votes(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+
+@router.post("/create-election", response_model=StandardResponse[TransactionResponse])
+async def create_election(data: VoteCreateRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service), current_user = Depends(get_current_user)):
+    try:
+        logger.error(data)
+        start_timestamp = int(datetime.fromisoformat(data.start_date).timestamp())
+        end_timestamp = int(datetime.fromisoformat(data.end_date).timestamp())
+        
+        if end_timestamp <= start_timestamp:
+            raise handle_validation_error("End date must be after start date")
+            
+        if len(data.options) < 2:
+            raise handle_validation_error("At least two options are required")
+            
+        reward_pool_wei = blockchain_service.w3.to_wei(data.reward_pool, 'ether')
+        required_deposit_wei = blockchain_service.w3.to_wei(data.required_deposit, 'ether')
+        
+        nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
+        estimated_gas = blockchain_service.contract.functions.createElection(
+            data.title,
+            data.description,
+            start_timestamp,
+            end_timestamp,
+            data.options,
+            reward_pool_wei,
+            required_deposit_wei
+        ).estimate_gas({"from": WALLET_ADDRESS})
+        
+        create_election_tx = blockchain_service.contract.functions.createElection(
+            data.title,
+            data.description,
+            start_timestamp,
+            end_timestamp,
+            data.options,
+            reward_pool_wei,
+            required_deposit_wei
+        ).build_transaction({
+            'from': WALLET_ADDRESS,
+            'gas': estimated_gas,
+            'gasPrice': blockchain_service.w3.eth.gas_price,
+            'nonce': nonce,
+        })
+        
+        # Sign and send transaction
+        signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_election_tx, PRIVATE_KEY)
+        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else blockchain_service.w3.to_hex(tx_hash)
+        
+        return StandardResponse(
+            success=True,
+            message="Successfully created election",
+            data=TransactionResponse(
+                success=True,
+                message="Successfully created election",
+                transaction_hash=tx_hash_hex
+            )
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating election: {str(e)}")
+        raise handle_blockchain_error("create election", e)
+
+
+@router.get("/all-elections")
+async def get_all_elections(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     try:
         # Get total number of votes from the smart contract
-        vote_count = await blockchain_service.call_contract_function("voteCount1")
-        votes = []
+        num_of_elections = await blockchain_service.call_contract_function("electionCount")
+        elections = []
+        
+        # Get current timestamp
+        current_timestamp = int(datetime.now().timestamp())
 
         # Iterate through each vote and retrieve its data
-        for vote_id in range(vote_count):
-            vote_data = await blockchain_service.call_contract_function("getVote1", vote_id)
-            votes.append(
+        for election_id in range(num_of_elections):
+            election_info = await blockchain_service.call_contract_function("getElection", election_id)
+            
+            # Get start and end timestamps
+            start_timestamp = election_info[3]
+            end_timestamp = election_info[4]
+            
+            # Determine status based on timestamps
+            if current_timestamp < start_timestamp:
+                status = "join"
+            elif current_timestamp > end_timestamp:
+                status = "ended"
+            else:
+                status = "active"
+
+            elections.append(
                 {
-                    "id": vote_data[0],
-                    "title": vote_data[1],
-                    "description": vote_data[2],
-                    "startDate": datetime.fromtimestamp(vote_data[3]).strftime(
+                    "id": election_info[0],
+                    "title": election_info[1],
+                    "description": election_info[2],
+                    "start_date": datetime.fromtimestamp(election_info[3]).strftime(
                         "%Y-%m-%dT%H:%M"
-                    ),  # Convert Unix timestamps to formatted datetime strings
-                    "endDate": datetime.fromtimestamp(vote_data[4]).strftime(
+                    ),
+                    "end_date": datetime.fromtimestamp(election_info[4]).strftime(
                         "%Y-%m-%dT%H:%M"
-                    ),  # Convert Unix timestamps to formatted datetime strings
-                    "status": vote_data[5],
-                    "participantCount": vote_data[6],
-                    "options": vote_data[7],
-                    "reward_pool": blockchain_service.w3.from_wei(vote_data[11], 'ether') if len(vote_data) > 11 else 0,
-                    "required_deposit": blockchain_service.w3.from_wei(vote_data[12], 'ether') if len(vote_data) > 12 else 0,
+                    ),
+                    "status": status,
+                    "participant_count": 0,
+                    "secret_holder_count": 0,
+                    "options": election_info[5],
+                    "reward_pool": blockchain_service.w3.from_wei(election_info[6], 'ether') if len(election_info) > 6 else 0,
+                    "required_deposit": blockchain_service.w3.from_wei(election_info[7], 'ether') if len(election_info) > 7 else 0,
                 }
             )
-        return {"data": votes}
+        logger.info(elections)
+        return elections
     except Exception as e:
-        logger.error(f"Error in get_all_votes: {str(e)}")
-        return {"data": [], "error": str(e)}
+        logger.error(f"Error in get_all_elections: {str(e)}")
+        raise handle_blockchain_error("get all elections", e)
+
 
 @router.get("/", response_model=StandardResponse[List[VoteResponse]])
 async def get_all_votes(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
@@ -80,12 +163,12 @@ async def get_all_votes(blockchain_service: BlockchainService = Depends(get_bloc
     """
     try:
         # Get the vote count from the contract using the helper method
-        vote_count = await blockchain_service.call_contract_function("voteCount1")
+        vote_count = await blockchain_service.call_contract_function("voteCount")
         votes = []
         
         for i in range(vote_count):
             # Get vote data for each vote using the helper method
-            vote_data = await blockchain_service.call_contract_function("getVote1", i)
+            vote_data = await blockchain_service.call_contract_function("getVote", i)
             
             # Convert g2r integers to strings
             g2r_values = [str(val) for val in vote_data[3]] if vote_data[3] else []
@@ -144,7 +227,6 @@ async def get_vote_summary(blockchain_service: BlockchainService = Depends(get_b
         logger.error(f"Error getting vote summary: {str(e)}")
         raise handle_blockchain_error("get vote summary", e)
 
-
 @router.get("/{vote_id}", response_model=StandardResponse[Dict[str, Any]])
 async def get_vote_data(vote_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """
@@ -158,21 +240,26 @@ async def get_vote_data(vote_id: int, blockchain_service: BlockchainService = De
     """
     try:
         # Call the blockchain service to get the vote data using the helper method
-        vote_data = await blockchain_service.call_contract_function("getVote1", vote_id)
+        vote_data = await blockchain_service.call_contract_function("getVote", vote_id)
+        
         # Convert the vote data to a readable format
         data = {
             "id": vote_id,
-            "title": vote_data[1] if len(vote_data) > 1 else None,
-            "description": vote_data[2] if len(vote_data) > 2 else None,
-            "start_date": datetime.fromtimestamp(vote_data[3]).isoformat() if len(vote_data) > 3 else None,
-            "end_date": datetime.fromtimestamp(vote_data[4]).isoformat() if len(vote_data) > 4 else None,
-            "status": vote_data[5] if len(vote_data) > 5 else None,
-            "participant_count": vote_data[6] if len(vote_data) > 6 else None,
-            "options": vote_data[7] if len(vote_data) > 7 else None,
-            "reward_pool": blockchain_service.w3.from_wei(vote_data[8], 'ether') if len(vote_data) > 8 else 0,
-            "required_deposit": blockchain_service.w3.from_wei(vote_data[9], 'ether') if len(vote_data) > 9 else 0,
+            "ciphertext": vote_data[0].hex() if vote_data[0] else None,
+            "nonce": vote_data[1].hex() if vote_data[1] else None,
+            "decryption_time": vote_data[2] if len(vote_data) > 2 else None,
+            "g2r": [str(vote_data[3][0]), str(vote_data[3][1])] if len(vote_data) > 3 and vote_data[3] else None,
+            "title": vote_data[4] if len(vote_data) > 4 else None,
+            "description": vote_data[5] if len(vote_data) > 5 else None,
+            "start_date": datetime.fromtimestamp(vote_data[6]).isoformat() if len(vote_data) > 6 else None,
+            "end_date": datetime.fromtimestamp(vote_data[7]).isoformat() if len(vote_data) > 7 else None,
+            "status": vote_data[8] if len(vote_data) > 8 else None,
+            "participant_count": vote_data[9] if len(vote_data) > 9 else None,
+            "options": vote_data[10] if len(vote_data) > 10 else None,
+            "reward_pool": blockchain_service.w3.from_wei(vote_data[11], 'ether') if len(vote_data) > 11 else 0,
+            "required_deposit": blockchain_service.w3.from_wei(vote_data[12], 'ether') if len(vote_data) > 12 else 0,
         }
-        logger.error(data)
+        
         return StandardResponse(
             success=True,
             message=f"Successfully retrieved vote data for vote {vote_id}",
@@ -226,121 +313,64 @@ async def submit_vote(request: VoteSubmitRequest, blockchain_service: Blockchain
         logger.error(f"Error submitting vote: {str(e)}")
         raise handle_blockchain_error("submit vote", e)
 
-@router.post("/create", response_model=StandardResponse[TransactionResponse])
-async def create_vote(
-    data: VoteCreateRequest, 
-    blockchain_service: BlockchainService = Depends(get_blockchain_service),
-    current_user = Depends(get_current_user)  # Only require authentication for vote creation
-):
-    """
-    Create a new vote with options and parameters.
-    
-    Args:
-        data: Vote creation data
-        blockchain_service: Blockchain service
-        current_user: Current authenticated user
-        
-    Returns:
-        Transaction response with transaction hash
-    """
-    try:
-        logger.error(data)
-        # Validate dates
-        start_timestamp = int(datetime.fromisoformat(data.start_date).timestamp())
-        end_timestamp = int(datetime.fromisoformat(data.end_date).timestamp())
-        
-        if end_timestamp <= start_timestamp:
-            raise handle_validation_error("End date must be after start date")
-            
-        if len(data.options) < 2:
-            raise handle_validation_error("At least two options are required")
-            
-        # Convert ETH to Wei
-        reward_pool_wei = blockchain_service.w3.to_wei(data.reward_pool, 'ether')
-        required_deposit_wei = blockchain_service.w3.to_wei(data.required_deposit, 'ether')
-        
-        # Get transaction count for nonce
-        nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
-        estimated_gas = blockchain_service.contract.functions.createVote(
-            data.title,
-            data.description,
-            start_timestamp,
-            end_timestamp,
-            data.options,
-            reward_pool_wei,
-            required_deposit_wei
-        ).estimate_gas({"from": WALLET_ADDRESS})
-         
-        # Create vote transaction
-        create_vote_tx = blockchain_service.contract.functions.createVote(
-            data.title,
-            data.description,
-            start_timestamp,
-            end_timestamp,
-            data.options,
-            reward_pool_wei,
-            required_deposit_wei
-        ).build_transaction({
-            'from': WALLET_ADDRESS,
-            'gas': estimated_gas,
-            'gasPrice': blockchain_service.w3.eth.gas_price,
-            'nonce': nonce,
-        })
-        
-        # Sign and send transaction
-        signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_vote_tx, PRIVATE_KEY)
-        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-        tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else blockchain_service.w3.to_hex(tx_hash)
-        
-        return StandardResponse(
-            success=True,
-            message="Successfully created vote",
-            data=TransactionResponse(
-                success=True,
-                message="Successfully created vote",
-                transaction_hash=tx_hash_hex
-            )
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating vote: {str(e)}")
-        raise handle_blockchain_error("create vote", e)
-    
+# Function to generate a unique alphanumeric token
+def generate_voting_token(length=8):
+    """Generate a random voting token."""
+    characters = string.ascii_letters + string.digits
+    return ''.join(random.choices(characters, k=length))
 
-@router.post("/store_public_key/{vote_id}")
-async def store_public_key(vote_id: int, public_key: str, is_secret_holder: bool, db=Depends(get_db)):
+@router.post("/tokens/{vote_id}", response_model=StandardResponse[VotingTokenResponse])
+async def generate_token(vote_id: int, db=Depends(get_db)):
     """
     Generate a unique voting token for a vote.
     
     Args:
         vote_id: ID of the vote
-        public_key: Public key for identification
-        is_secret_holder: Boolean flag for secret holder status
-    
+        
     Returns:
         StandardResponse with generated token
     """
-
-    public_key_data = {
-        "vote_id": vote_id,
-        "reward_token": 1,
-        "public_key": public_key,
-        "is_secret_holder": is_secret_holder,
-    }
-
-    if is_secret_holder:
-        public_key_data["reward_token"] = 0
-
-    # Save the token
-    await db.public_keys.insert_one(public_key_data)
-
-
-    return StandardResponse(
-        success=True,
-        message="Public key stored securely",
-    )
-
+    try:
+        # Generate a unique token
+        max_attempts = 10  # Prevent infinite loops
+        attempts = 0
+        
+        while attempts < max_attempts:
+            token = generate_voting_token()
+            
+            # Check if the token already exists
+            existing_token = await db.election_tokens.tokens.find_one({"token": token})
+            if existing_token is None:
+                # Create token object
+                token_data = {
+                    "vote_id": vote_id,
+                    "token": token,
+                    "created_at": datetime.now(UTC).isoformat()
+                }
+                
+                # Save the token
+                await db.election_tokens.tokens.insert_one(token_data)
+                
+                # Create response
+                token_response = VotingTokenResponse(
+                    token=token,
+                    vote_id=vote_id
+                )
+                
+                return StandardResponse(
+                    success=True,
+                    message="Token generated successfully",
+                    data=token_response
+                )
+            
+            attempts += 1
+        
+        # If we couldn't generate a unique token after max attempts
+        raise handle_validation_error("Failed to generate unique token after maximum attempts")
+        
+    except Exception as e:
+        logger.error(f"Error generating token: {str(e)}")
+        raise handle_blockchain_error("generate token", e)
 
 @router.get("/tokens/validate", response_model=StandardResponse[Dict[str, bool]])
 async def validate_token(token: str, db=Depends(get_db)):

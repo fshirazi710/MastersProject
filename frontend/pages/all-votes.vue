@@ -123,9 +123,9 @@ const getVotes = async () => {
   
   try {
     const response = await voteApi.getAllVotes()
-    
+
     // Transform the response data to match the expected format
-    votes.value = response.data.data.map(vote => ({
+    votes.value = response.data.map(vote => ({
       id: vote.id,
       title: vote.title || `Vote ${vote.vote_id}`,
       description: vote.description || 'No description available',

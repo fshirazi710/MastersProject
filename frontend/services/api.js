@@ -48,7 +48,7 @@ export const authApi = {
 export const voteApi = {
   // Get all votes
   getAllVotes: () => {
-    return apiClient.get('/api/votes/all-votes');
+    return apiClient.get('/api/votes/all-elections');
   },
   
   // Get vote summary
@@ -68,7 +68,7 @@ export const voteApi = {
   
   // Create a new vote
   createVote: (voteData) => {
-    return apiClient.post('/api/votes/create', voteData);
+    return apiClient.post('/api/votes/create-election', voteData);
   },
   
   // Generate a voting token
