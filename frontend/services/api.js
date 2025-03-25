@@ -85,6 +85,11 @@ export const voteApi = {
   getShareStatus: (voteId) => {
     return apiClient.get(`/api/votes/${voteId}/shares`);
   },
+
+  // Get share status for a vote
+  getSecretShares: (voteId, public_key) => {
+    return apiClient.post(`/api/votes/get-secret-shares/${voteId}`, {public_key: public_key});
+  },
   
   // Decrypt a vote
   decryptVote: (voteId, threshold = null) => {
@@ -106,8 +111,8 @@ export const voteApi = {
 // API service for holders
 export const holderApi = {
   // Get all holders
-  getAllHolders: () => {
-    return apiClient.get('/api/holders/');
+  getAllHolders: (election_id) => {
+    return apiClient.get(`/api/holders/${election_id}`);
   },
   
   // Get holder count
@@ -128,6 +133,11 @@ export const holderApi = {
   // Join as holder
   joinAsHolder: (election_id, publicKey) => {
     return apiClient.post(`/api/holders/join/${election_id}`, { public_key: publicKey });
+  },
+
+  // Join as holder
+  submitSecretKey: (election_id, privateKey) => {
+    return apiClient.post(`/api/holders/submit-secret-key/${election_id}`, { secert_key: privateKey });
   },
 };
 

@@ -15,6 +15,10 @@ from app.schemas import (
     RequiredDepositResponse,
     HolderResponse
 )
+from app.core.config import (
+    WALLET_ADDRESS,
+    PRIVATE_KEY,
+)
 from app.services.blockchain import BlockchainService
 
 import logging
@@ -24,8 +28,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/holders", tags=["Holders"])
 
-@router.get("/", response_model=StandardResponse[List[HolderResponse]])
-async def get_all_holders(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+@router.get("/{election_id}")
+async def get_all_holders(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """
     Get all registered secret holders.
     
@@ -34,20 +38,12 @@ async def get_all_holders(blockchain_service: BlockchainService = Depends(get_bl
     """
     try:
         # Call the blockchain service to get all holders using the helper method
-        holders = await blockchain_service.call_contract_function("getHolders")
-        holder_responses = []
-        for holder in holders:
-            # Get holder's public key using the helper method
-            public_key = await blockchain_service.call_contract_function("getHolderPublicKey", holder)
-            holder_responses.append(HolderResponse(
-                address=holder,
-                public_key=public_key,
-                active=True  # We assume active if they're in the holders list
-            ))
+        holders = await blockchain_service.call_contract_function("getHoldersByElection", election_id)
+            
         return StandardResponse(
             success=True,
             message="Successfully retrieved all holders",
-            data=holder_responses
+            data=holders
         )
     except Exception as e:
         logger.error(f"Error getting all holders: {str(e)}")
@@ -133,20 +129,12 @@ async def join_as_holder(
         Transaction response with transaction hash
     """
     try:
-        # Validate public key format
-        if not isinstance(request["public_key"], list) or len(request["public_key"]) != 2:
-            raise handle_validation_error("Public key must be a list with exactly two components")
-        
-        # Convert public key strings to integers
-        try:
-            public_key = [int(x) for x in request["public_key"]]
-        except ValueError:
-            raise handle_validation_error("Public key components must be valid integers")
+        logger.error(request)
         
         # Call the blockchain service to join as holder
         result = await blockchain_service.join_as_holder(
             election_id=election_id,
-            public_key=public_key
+            public_key=request["public_key"]
         )
         
         if not result.get("success", False):
@@ -163,4 +151,33 @@ async def join_as_holder(
         )
     except Exception as e:
         logger.error(f"Error joining as holder: {str(e)}")
-        raise handle_blockchain_error("join as holder", e) 
+        raise handle_blockchain_error("join as holder", e)
+    
+
+@router.post("/submit-secret-key/{election_id}")
+async def submit_secret_key(
+    election_id: int,
+    request: dict,
+    blockchain_service: BlockchainService = Depends(get_blockchain_service)
+):
+    logger.info(request)
+    nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
+    estimated_gas = blockchain_service.contract.functions.submitSecretKey(
+        election_id,
+        request["secert_key"]
+    ).estimate_gas({"from": WALLET_ADDRESS})
+        
+    create_election_tx = blockchain_service.contract.functions.submitSecretKey(
+        election_id,
+        request["secert_key"]
+    ).build_transaction({
+        'from': WALLET_ADDRESS,
+        'gas': estimated_gas,
+        'gasPrice': blockchain_service.w3.eth.gas_price,
+        'nonce': nonce,
+    })
+    
+    # Sign and send transaction
+    signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_election_tx, PRIVATE_KEY)
+    tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+    tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else blockchain_service.w3.to_hex(tx_hash)

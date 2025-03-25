@@ -59,13 +59,11 @@
 
     <!-- Registration section - only shown for join votes -->
     <RegisterToVote 
-      v-if="vote.status === 'join'"
       :vote-id="route.params.id"
     />
 
     <!-- Voting section - only shown for active votes -->
     <CastYourVote 
-      v-if="vote.status === 'active'"
       :vote-id="route.params.id"
       :options="vote.options"
       :endDate="vote.endDate"
@@ -119,7 +117,7 @@ const fetchVoteData = async () => {
             id: voteData.id,
             title: voteData.title || `Vote ${voteData.id}`,
             description: voteData.description || 'No description available',
-            status: "join" || 'active',
+            status: "active" || 'active',
             startDate: voteData.start_date || new Date().toISOString(),
             endDate: voteData.end_date || new Date(Date.now() + 86400000).toISOString(),
             options: voteData.options || [],

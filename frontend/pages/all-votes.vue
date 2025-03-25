@@ -129,7 +129,7 @@ const getVotes = async () => {
       id: vote.id,
       title: vote.title || `Vote ${vote.vote_id}`,
       description: vote.description || 'No description available',
-      status: vote.status || 'active',
+      status: "active" || 'active',
       startDate: new Date(vote.start_date || Date.now()).toISOString(),
       endDate: new Date(vote.end_date || Date.now() + 86400000).toISOString(),
       options: vote.options || [],

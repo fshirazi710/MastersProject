@@ -86,8 +86,8 @@
       });
 
       if (isSecretHolder.value === 'yes') {
-        const [pointX, pointY] = getG1PointsFromPublicKey(pk.value);
-        joinAsSecretHolder(props.voteId, [pointX, pointY])
+        // const [pointX, pointY] = getG1PointsFromPublicKey(pk.value);
+        joinAsSecretHolder(props.voteId, pk.value)
       }
       else {
         console.log("ERROR");
@@ -102,9 +102,7 @@
 
   const joinAsSecretHolder = async (vote_id, public_key) => {
     try {
-      console.log(public_key)
-      console.log(public_key.map(share => share.toString()))
-      const response = await holderApi.joinAsHolder(vote_id, public_key.map(share => share.toString()));
+      const response = await holderApi.joinAsHolder(vote_id, public_key);
     } catch (err) {
       console.error('Failed to join as secret holder:', err);
       error.value = err.message || 'Failed to join as secret holder. Please try again.';

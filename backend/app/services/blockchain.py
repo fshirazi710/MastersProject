@@ -54,7 +54,7 @@ class BlockchainService:
             
         return self.w3.eth.contract(address=self.contract_address, abi=abi)
     
-    async def join_as_holder(self, election_id: int, public_key: List[int]) -> dict:
+    async def join_as_holder(self, election_id: int, public_key: str) -> dict:
         """
         Allows a user to join as a secret holder by staking a deposit.
         Implements the joinAsHolder function from the smart contract.
@@ -62,11 +62,11 @@ class BlockchainService:
         try:
             nonce = self.w3.eth.get_transaction_count(WALLET_ADDRESS)
             estimated_gas = self.contract.functions.joinAsHolder(
-                election_id, public_key[0].to_bytes(48, "big") + public_key[1].to_bytes(48, "big")
+                election_id, public_key
             ).estimate_gas({"from": WALLET_ADDRESS})
 
             join_as_holder_tx = self.contract.functions.joinAsHolder(
-                election_id, public_key[0].to_bytes(48, "big") + public_key[1].to_bytes(48, "big")
+                election_id, public_key
             ).build_transaction({
                 'from': WALLET_ADDRESS,
                 'gas': estimated_gas,

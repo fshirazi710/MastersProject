@@ -1,13 +1,6 @@
 {
   "abi": [
     {
-      "inputs": [],
-      "name": "claimRewards",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
       "inputs": [
         {
           "internalType": "string",
@@ -76,31 +69,6 @@
       "type": "event"
     },
     {
-      "inputs": [],
-      "name": "exitAsHolder",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "holderAddress",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "voteId",
-          "type": "uint256"
-        }
-      ],
-      "name": "forceExitHolder",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
       "anonymous": false,
       "inputs": [
         {
@@ -137,9 +105,9 @@
       "inputs": [
         {
           "indexed": true,
-          "internalType": "bytes",
+          "internalType": "string",
           "name": "publicKey",
-          "type": "bytes"
+          "type": "string"
         },
         {
           "indexed": false,
@@ -159,9 +127,9 @@
           "type": "uint256"
         },
         {
-          "internalType": "bytes",
+          "internalType": "string",
           "name": "publicKey",
-          "type": "bytes"
+          "type": "string"
         }
       ],
       "name": "joinAsHolder",
@@ -217,6 +185,25 @@
       "anonymous": false,
       "inputs": [
         {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "electionId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "secretkey",
+          "type": "string"
+        }
+      ],
+      "name": "SecretKeyEvent",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
           "indexed": true,
           "internalType": "uint256",
           "name": "voteId",
@@ -236,21 +223,16 @@
       "inputs": [
         {
           "internalType": "uint256",
-          "name": "voteId",
+          "name": "electionId",
           "type": "uint256"
         },
         {
-          "internalType": "uint256",
-          "name": "shareIndex",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "shareValue",
-          "type": "uint256"
+          "internalType": "string",
+          "name": "secretKey",
+          "type": "string"
         }
       ],
-      "name": "submitShare",
+      "name": "submitSecretKey",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -258,24 +240,34 @@
     {
       "inputs": [
         {
-          "internalType": "bytes",
-          "name": "ciphertext",
-          "type": "bytes"
-        },
-        {
-          "internalType": "bytes",
-          "name": "nonce",
-          "type": "bytes"
-        },
-        {
           "internalType": "uint256",
-          "name": "decryptionTime",
+          "name": "electionId",
           "type": "uint256"
         },
         {
-          "internalType": "uint256[2]",
+          "internalType": "string[]",
+          "name": "publicKey",
+          "type": "string[]"
+        },
+        {
+          "internalType": "string",
+          "name": "ciphertext",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "g1r",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
           "name": "g2r",
-          "type": "uint256[2]"
+          "type": "string"
+        },
+        {
+          "internalType": "string[]",
+          "name": "alpha",
+          "type": "string[]"
         },
         {
           "internalType": "uint256",
@@ -283,20 +275,7 @@
           "type": "uint256"
         }
       ],
-      "name": "submitVote",
-      "outputs": [],
-      "stateMutability": "payable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "voteId",
-          "type": "uint256"
-        }
-      ],
-      "name": "triggerRewardDistribution",
+      "name": "submitVote2",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -324,6 +303,74 @@
         }
       ],
       "name": "VoteSubmitted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "electionId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "public_key",
+          "type": "string"
+        }
+      ],
+      "name": "VoteSubmitted2",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "electionId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "string[]",
+          "name": "publicKey",
+          "type": "string[]"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "ciphertext",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "g1r",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "g2r",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "string[]",
+          "name": "alpha",
+          "type": "string[]"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "threshold",
+          "type": "uint256"
+        }
+      ],
+      "name": "VoteSubmitted4",
       "type": "event"
     },
     {
@@ -445,62 +492,17 @@
     {
       "inputs": [
         {
-          "internalType": "address",
-          "name": "holderAddress",
-          "type": "address"
-        }
-      ],
-      "name": "getHolderPublicKey",
-      "outputs": [
-        {
-          "internalType": "uint256[2]",
-          "name": "",
-          "type": "uint256[2]"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "holderAddress",
-          "type": "address"
-        }
-      ],
-      "name": "getHolderRewards",
-      "outputs": [
-        {
           "internalType": "uint256",
-          "name": "",
+          "name": "electionId",
           "type": "uint256"
         }
       ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "getHolders",
+      "name": "getHoldersByElection",
       "outputs": [
         {
-          "internalType": "address[]",
+          "internalType": "string[]",
           "name": "",
-          "type": "address[]"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "getNumHolders",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
+          "type": "string[]"
         }
       ],
       "stateMutability": "view",
@@ -520,6 +522,32 @@
           "internalType": "uint256",
           "name": "",
           "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "electionId",
+          "type": "uint256"
+        }
+      ],
+      "name": "getSecretKeys",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "string",
+              "name": "secretkey",
+              "type": "string"
+            }
+          ],
+          "internalType": "struct TimedReleaseVoting.SecretKey[]",
+          "name": "",
+          "type": "tuple[]"
         }
       ],
       "stateMutability": "view",
@@ -592,16 +620,48 @@
       "inputs": [
         {
           "internalType": "uint256",
-          "name": "voteId",
+          "name": "electionId",
           "type": "uint256"
         }
       ],
-      "name": "getVoteReward",
+      "name": "getVotes",
       "outputs": [
         {
-          "internalType": "uint256",
+          "components": [
+            {
+              "internalType": "string[]",
+              "name": "publicKey",
+              "type": "string[]"
+            },
+            {
+              "internalType": "string",
+              "name": "ciphertext",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "g1r",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "g2r",
+              "type": "string"
+            },
+            {
+              "internalType": "string[]",
+              "name": "alpha",
+              "type": "string[]"
+            },
+            {
+              "internalType": "uint256",
+              "name": "threshold",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct TimedReleaseVoting.Vote3[]",
           "name": "",
-          "type": "uint256"
+          "type": "tuple[]"
         }
       ],
       "stateMutability": "view",
@@ -637,9 +697,9 @@
       "name": "holderAddresses2",
       "outputs": [
         {
-          "internalType": "bytes",
+          "internalType": "string",
           "name": "",
-          "type": "bytes"
+          "type": "string"
         }
       ],
       "stateMutability": "view",
@@ -648,46 +708,17 @@
     {
       "inputs": [
         {
-          "internalType": "address",
+          "internalType": "string",
           "name": "",
-          "type": "address"
-        }
-      ],
-      "name": "holders",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "deposit",
-          "type": "uint256"
-        },
-        {
-          "internalType": "bool",
-          "name": "active",
-          "type": "bool"
-        },
-        {
-          "internalType": "uint256",
-          "name": "rewards",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes",
-          "name": "",
-          "type": "bytes"
+          "type": "string"
         }
       ],
       "name": "holders2",
       "outputs": [
         {
-          "internalType": "bytes",
+          "internalType": "string",
           "name": "publicKey",
-          "type": "bytes"
+          "type": "string"
         },
         {
           "internalType": "uint256",
@@ -703,25 +734,6 @@
           "internalType": "uint256",
           "name": "rewards",
           "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "holderAddress",
-          "type": "address"
-        }
-      ],
-      "name": "isHolder",
-      "outputs": [
-        {
-          "internalType": "bool",
-          "name": "",
-          "type": "bool"
         }
       ],
       "stateMutability": "view",
@@ -755,19 +767,6 @@
     },
     {
       "inputs": [],
-      "name": "requiredDeposit",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "pure",
-      "type": "function"
-    },
-    {
-      "inputs": [],
       "name": "REWARD_PER_VOTE",
       "outputs": [
         {
@@ -780,8 +779,45 @@
       "type": "function"
     },
     {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "secret_keys",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "secretkey",
+          "type": "string"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
       "inputs": [],
       "name": "voteCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "voteCount2",
       "outputs": [
         {
           "internalType": "uint256",
@@ -831,6 +867,45 @@
           "internalType": "bool",
           "name": "rewardDistributed",
           "type": "bool"
+        },
+        {
+          "internalType": "uint256",
+          "name": "threshold",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "votes3",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "ciphertext",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "g1r",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "g2r",
+          "type": "string"
         },
         {
           "internalType": "uint256",

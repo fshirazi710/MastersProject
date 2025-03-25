@@ -28,6 +28,9 @@
           <button @click="handleVoteSubmit" type="submit" class="btn primary" :disabled="!selectedOption">
             Submit Encrypted Vote
           </button>
+          <button @click="submitSecretKey" type="submit" class="btn primary" :disabled="!selectedOption">
+            Get Secret Shares
+          </button>
         </form>
       </div>
     </div>
@@ -35,10 +38,10 @@
   
   <script setup>
   import { ref } from 'vue'
-  import { voteApi } from '@/services/api'
-  import { getPublicKeyFromPrivate } from '@/services/cryptography';
+  import { holderApi, voteApi } from '@/services/api'
+  import { getPublicKeyFromPrivate, getKAndSecretShares, AESEncrypt, generateSecret } from '@/services/cryptography';
   import Cookies from 'js-cookie';
-  
+
   const props = defineProps({
     voteId: {
       type: String,
@@ -67,8 +70,6 @@
 
       const publicKeyHex = getPublicKeyFromPrivate(privateKeyHex)
 
-      console.log(publicKeyHex)
-
       const response = await voteApi.validatePublicKey({ public_key: publicKeyHex });
       alert(response.data.message);
       return response.data.success
@@ -79,21 +80,54 @@
   }
   
   // Handle vote submission
-  const handleVoteSubmit = async (selectedOption) => {
+  const handleVoteSubmit = async () => {
     try {
       const response = await validateKeyPair()
       if (response) {
-        console.log(new Date(props.endDate).getTime() / 1000)
-        await voteApi.submitVote({
-          vote_id: props.voteId,
-          vote_data: selectedOption,
-          decryption_time: new Date(props.endDate).getTime() / 1000
-        })
+        const secret_holders = await holderApi.getAllHolders(props.voteId)
+        const threshold = 1
+        const public_keys = secret_holders.data.data
+        const total = public_keys.length
+        getKAndSecretShares(public_keys, threshold, total)
+          .then(([k, g1r, g2r, alpha]) => {
+              const ciphertext = AESEncrypt(selectedOption.value, k)
+              ciphertext.then(value => {
+                const response = voteApi.submitVote({"election_id": props.voteId, "public_keys": public_keys, "ciphertext": value, "g1r": g1r, "g2r": g2r, "alpha": alpha, "threshold": threshold});
+              });
+          })
+          .catch((error) => {
+              console.error("Error generating shares:", error);
+          });
         alert('Vote submitted successfully!')
       }
     } catch (err) {
       alert('Failed to submit vote: ' + (err.response?.data?.detail || err.message))
     }
+  }
+
+  const submitSecretKey = async () => {
+    const privateKeyHex = Cookies.get("privateKey");
+
+    if (!privateKeyHex) {
+      throw new Error("No private key found. Please register first.");
+    }
+
+    const response = await holderApi.submitSecretKey(props.voteId, privateKeyHex);
+  }
+
+
+  const getSecretShares = async () => {
+    const privateKeyHex = Cookies.get("privateKey");
+
+    if (!privateKeyHex) {
+      throw new Error("No private key found. Please register first.");
+    }
+
+    const publicKeyHex = getPublicKeyFromPrivate(privateKeyHex)
+
+    const response = await voteApi.getSecretShares(props.voteId, publicKeyHex);
+    console.log(response)
+    computeSecret(response.data.data)
   }
   </script>
   
