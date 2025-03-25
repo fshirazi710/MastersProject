@@ -32,6 +32,9 @@
           required 
           class="form-input"
         >
+        <p v-if="!isTitleValid" class="validation-error">
+          Title must be between 3 and 100 characters long.
+        </p>
       </div>
 
       <!-- Vote description textarea -->
@@ -43,6 +46,9 @@
           required 
           class="form-input"
         ></textarea>
+        <p v-if="!isDescriptionValid" class="validation-error">
+          Description must be between 10 and 1000 characters long.
+        </p>
       </div>
 
       <!-- Date selection row with two inputs -->
@@ -143,7 +149,7 @@
       </div>
 
       <!-- Form submit button -->
-      <button type="submit" class="btn primary" :disabled="loading || !walletConnected">
+      <button type="submit" class="btn primary" :disabled="loading || !walletConnected || !isTitleValid || !isDescriptionValid">
         {{ loading ? 'Creating Vote...' : 'Create Vote' }}
       </button>
     </form>
@@ -178,6 +184,16 @@ const voteData = ref({
   reward_pool: 0.003,
   required_deposit: 0.001,
 })
+
+// Computed property for description validation
+const isTitleValid = computed(() => {
+  return voteData.value.title.length >= 3 && voteData.value.description.length <= 100;
+});
+
+// Computed property for description validation
+const isDescriptionValid = computed(() => {
+  return voteData.value.description.length >= 10 && voteData.value.description.length <= 1000;
+});
 
 // Initialize Web3 and connect wallet
 const connectWallet = async () => {

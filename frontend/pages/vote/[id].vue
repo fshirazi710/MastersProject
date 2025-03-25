@@ -94,7 +94,7 @@ import { voteApi, shareApi, holderApi } from '@/services/api'
 import CastYourVote from '@/components/vote/CastYourVote.vue'
 import VoteResults from '@/components/vote/VoteResults.vue'
 import RegisterToVote from '@/components/vote/RegisterToVote.vue'
-import SubmitSecretShare from '~/components/vote/SubmitSecretShare.vue'
+// import SubmitSecretShare from '@/components/vote/SubmitSecretShare.vue'
 
 // Get route params for vote ID
 const route = useRoute()

@@ -84,7 +84,7 @@ async def create_election(data: VoteCreateRequest, blockchain_service: Blockchai
         
         # Sign and send transaction
         signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_election_tx, PRIVATE_KEY)
-        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
         tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else blockchain_service.w3.to_hex(tx_hash)
         
         return StandardResponse(
@@ -96,11 +96,19 @@ async def create_election(data: VoteCreateRequest, blockchain_service: Blockchai
                 transaction_hash=tx_hash_hex
             )
         )
-    except HTTPException:
+    except HTTPException as http_exc:
+        logger.error(f"HTTP error while creating election: {http_exc.detail}")
         raise
     except Exception as e:
-        logger.error(f"Error creating election: {str(e)}")
-        raise handle_blockchain_error("create election", e)
+        import traceback
+
+        error_details = traceback.format_exc()
+        logger.error(f"Error creating election: {str(e)}\n{error_details}")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while creating the election: {str(e)}\n{error_details}",
+        )
 
 
 @router.get("/all-elections")
