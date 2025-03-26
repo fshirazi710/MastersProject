@@ -76,7 +76,7 @@ class BlockchainService:
 
             # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(join_as_holder_tx, PRIVATE_KEY)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
             tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else self.w3.to_hex(tx_hash)
 
             # Wait for transaction receipt

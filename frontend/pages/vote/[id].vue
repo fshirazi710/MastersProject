@@ -71,10 +71,12 @@
       :endDate="vote.endDate"
     />
 
-    <!-- Submit Secret Share section - secret holders can submit their shares -->
-    <SubmitSecretShare 
+    <!-- Submit Secret Share section - secret holders can submit their shares --> 
+    <!-- to uncomment when implemented -->
+    <!-- <SubmitSecretShare  
       v-if="vote.status === 'ended'"
     />
+    -->
 
     <!-- Results section - only shown for ended votes -->
     <VoteResults
@@ -88,7 +90,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { voteApi, shareApi, holderApi } from '@/services/api'
 import CastYourVote from '@/components/vote/CastYourVote.vue'
@@ -101,6 +103,9 @@ const route = useRoute()
 const loading = ref(true)
 const error = ref(null)
 const vote = ref(null)
+
+// initialise vote refresh variable
+let intervalId = null;
 
 const fetchVoteData = async () => {
     loading.value = true
@@ -119,7 +124,7 @@ const fetchVoteData = async () => {
             id: voteData.id,
             title: voteData.title || `Vote ${voteData.id}`,
             description: voteData.description || 'No description available',
-            status: "join" || 'active',
+            status: voteData.status || 'Error',
             startDate: voteData.start_date || new Date().toISOString(),
             endDate: voteData.end_date || new Date(Date.now() + 86400000).toISOString(),
             options: voteData.options || [],
@@ -138,9 +143,33 @@ const fetchVoteData = async () => {
     }
 }
 
+// Periodically check phase changes
+const checkPhaseChange = () => {
+  if (!vote.value) return
+
+  const now = new Date()
+  const startDate = new Date(vote.value.startDate)
+  const endDate = new Date(vote.value.endDate)
+
+  // If the current time matches the start or end date, refresh the page
+  if (now >= startDate && vote.value.status === 'join') {
+    alert('Voting phase has started: Reloading!')
+    window.location.reload() // Transition from registration to voting phase
+  } else if (now >= endDate && vote.value.status === 'active') {
+    alert('Voting phase has ended: Reloading!')
+    window.location.reload() // Transition from voting to results phase
+  }
+}
+
 // Hook to execute the fetchVoteData function when the component is mounted
 onMounted(() => {
   fetchVoteData()
+  intervalId = setInterval(checkPhaseChange, 30000) // Check every 30 seconds
+})
+
+// Clear the interval timer on component unmount
+onBeforeUnmount(() => {
+  clearInterval(intervalId)
 })
 
 // Compute time remaining until vote ends

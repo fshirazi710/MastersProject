@@ -63,6 +63,9 @@
             required 
             class="form-input"
           >
+          <p v-if="!isStartDateValid" class="validation-error">
+            Start date must be in the future.
+          </p>
         </div>
 
         <!-- End date input -->
@@ -75,6 +78,9 @@
             required 
             class="form-input"
           >
+          <p v-if="!isEndDateValid" class="validation-error">
+            End date must be after the start date.
+          </p>
         </div>
       </div>
 
@@ -146,10 +152,13 @@
         >
           Add Option
         </button>
+        <p v-if="!areOptionsValid" class="validation-error">
+          At least two voting options are required.
+        </p>
       </div>
 
       <!-- Form submit button -->
-      <button type="submit" class="btn primary" :disabled="loading || !walletConnected || !isTitleValid || !isDescriptionValid">
+      <button type="submit" class="btn primary" :disabled="loading || !walletConnected || !isTitleValid || !isDescriptionValid || !isStartDateValid || !isEndDateValid || !areOptionsValid">
         {{ loading ? 'Creating Vote...' : 'Create Vote' }}
       </button>
     </form>
@@ -185,15 +194,15 @@ const voteData = ref({
   required_deposit: 0.001,
 })
 
+// Computed property for Title validation
+const isTitleValid = computed(() => { return voteData.value.title.length >= 3 && voteData.value.description.length <= 100});
 // Computed property for description validation
-const isTitleValid = computed(() => {
-  return voteData.value.title.length >= 3 && voteData.value.description.length <= 100;
-});
-
-// Computed property for description validation
-const isDescriptionValid = computed(() => {
-  return voteData.value.description.length >= 10 && voteData.value.description.length <= 1000;
-});
+const isDescriptionValid = computed(() => {return voteData.value.description.length >= 10 && voteData.value.description.length <= 1000});
+// Computed properties for start time and end time validation
+const isStartDateValid = computed(() => new Date(voteData.value.start_date) > new Date())
+const isEndDateValid = computed(() => new Date(voteData.value.end_date) > new Date(voteData.value.start_date))
+// Computed properties for options validation
+const areOptionsValid = computed(() => voteData.value.options.filter(opt => opt.trim() !== '').length >= 2);
 
 // Initialize Web3 and connect wallet
 const connectWallet = async () => {
