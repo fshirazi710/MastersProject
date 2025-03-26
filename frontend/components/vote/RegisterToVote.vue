@@ -12,9 +12,14 @@
           If you choose to become a secret holder, you will need to release your private key at the specified time.
         </p>
       </div>
+
+      <!-- Check if already a secret holder -->
+      <div v-if="alreadySecretHolder" class="alert-box">
+        You are already a secret holder for this vote.
+      </div>
     
       <!-- Voting form with radio options -->
-      <form @submit.prevent="generateKeyPair" class="voting-form">
+      <form v-else @submit.prevent="generateKeyPair" class="voting-form">
         <h3>Would you like to be a secret holder?</h3>
         <div class="options-list">
           <label class="option-item">
@@ -50,7 +55,7 @@
   </template>
   
   <script setup>
-  import { ref } from 'vue'
+  import { ref, onMounted } from 'vue'
   import { voteApi, holderApi } from '@/services/api'
   import { generateBLSKeyPair, getG1PointsFromPublicKey } from "../../services/cryptography";
   import Cookies from "js-cookie";
@@ -64,12 +69,25 @@
   
   const isSecretHolder = ref('yes')
   const pk = ref(null);
+  const alreadySecretHolder = ref(false);
+
+  // used to check if the user has already generated a keypair for this page
+  const checkExistingPrivateKey = () => {
+    const cookieLabel = `privateKey_${props.voteId}`;
+    const existingKey = Cookies.get(cookieLabel);
+    alreadySecretHolder.value = !!existingKey;  // Set to true if key exists
+  };
+
+  onMounted(checkExistingPrivateKey);
 
   const generateKeyPair = async () => {
     const { sk, pk: publicKey } = generateBLSKeyPair();
 
+    //use vote id to make cookie unique to each election
+    const cookieLabel = `privateKey_${props.voteId}`;
+
     // Store the private key in a cookie for 1 day
-    Cookies.set("privateKey", sk.toString(16), { expires: 5, secure: true, sameSite: "Strict" });
+    Cookies.set(cookieLabel, sk.toString(16), { expires: 5, secure: true, sameSite: "Strict" });
 
     // Update the reactive pk variable to trigger UI update
     pk.value = publicKey.toHex(true);
@@ -105,10 +123,7 @@
       console.log(public_key)
       console.log(public_key.map(share => share.toString()))
       const response = await holderApi.joinAsHolder(vote_id, public_key.map(share => share.toString()));
-    } catch (err) {
-      console.error('Failed to join as secret holder:', err);
-      error.value = err.message || 'Failed to join as secret holder. Please try again.';
-    }
+    } catch (err) {}
   }
   </script>
   
