@@ -17,7 +17,7 @@
 
 <script setup>
     import { voteApi } from '@/services/api'
-    import { AESDecrypt, generateShares } from '@/services/cryptography';
+    import { AESDecrypt, generateShares, recomputeKey } from '@/services/cryptography';
 
     const props = defineProps({
         voteId: {
@@ -35,7 +35,8 @@
             //     throw new Error("No private key found. Please register first.");
             // }
             const voteInformation = await fetchVoteInformation()
-            const privateKeys = ["fdc566efcde86bcca560ba552524dd84301fdda8f167196ef94db825c6288ec7", "ce420317825080e56ff92a1f9996c63b6778d8b7f3fc4471c71d8240d30ba35e", "3a060591d3b26f291508ee8bcafa230f535e5fb1fa1c0ee9861171b6c996801f", "4aea3220d822266fc9ed22299a4137f72e852926a9565227ea5b9d56f9afc81"]
+            // "3a060591d3b26f291508ee8bcafa230f535e5fb1fa1c0ee9861171b6c996801f", "4aea3220d822266fc9ed22299a4137f72e852926a9565227ea5b9d56f9afc81"
+            const privateKeys = ["fdc566efcde86bcca560ba552524dd84301fdda8f167196ef94db825c6288ec7", "ce420317825080e56ff92a1f9996c63b6778d8b7f3fc4471c71d8240d30ba35e", "4aea3220d822266fc9ed22299a4137f72e852926a9565227ea5b9d56f9afc81"]
             for (const key in privateKeys) {
                 console.log(key)
                 for (const vote in voteInformation) {
@@ -48,10 +49,11 @@
                 }
             }
             console.log(secretShares)
-            const key = await recomputeKey([1, 2, 3, 4], secretShares, voteInformation[0].alphas, voteInformation[0].threshold)
+            const key = await recomputeKey([1, 2, 4], secretShares, voteInformation[0].alphas, voteInformation[0].threshold)
 
             // const key = recomputeKey([1, 2, 3, 4], secretShares, privateKeys, voteInformation[0].g1r, voteInformation[0].alphas, voteInformation[0].threshold)
-            // const response = AESDecrypt(voteInformation[0].ciphertext, key)
+            const response = AESDecrypt(voteInformation[0].ciphertext, key)
+            console.log(response)
         } catch (error) {
             console.error("Failed to submit secret share:", error);
             alert('Error submitting secret share. Please try again.');
