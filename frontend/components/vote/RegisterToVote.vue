@@ -162,8 +162,23 @@
 
   const unRegisterHolder = async () => {
     try {
+      //unregister as a secret holder for this election
       const response = await holderApi.unJoinAsHolder(props.voteId);
-    } catch (err) {}
+      
+      // Now remove the private key cookie
+      const cookieLabel = `privateKey_${props.voteId}`;
+      Cookies.remove(cookieLabel);
+
+      // Update the UI to reflect the change (you can also reload the page if needed)
+      alreadySecretHolder.value = false; // This will re-render the UI to show the non-secret-holder view
+      pk.value = null;  // Clear the stored public key as well (if any)
+
+      alert("You have successfully unregistered as a secret holder.");
+      window.location.reload() //reload the page once sucessful
+    } catch (err) {
+      console.error('Failed to unregister as a secret holder:', err);
+      alert("Failed to unregister. Please try again.");
+    }
   }
   </script>
   
