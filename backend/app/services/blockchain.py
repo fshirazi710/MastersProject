@@ -93,6 +93,45 @@ class BlockchainService:
         except Exception as e:
             logger.error(f"Failed to join as holder: {str(e)}")
             raise handle_blockchain_error("join as holder", e)
+        
+    async def un_join_as_holder(self, election_id: int) -> dict:
+        """
+        Allows a user to join as a secret holder by staking a deposit.
+        Implements the joinAsHolder function from the smart contract.
+        """
+        try:
+            nonce = self.w3.eth.get_transaction_count(WALLET_ADDRESS)
+            estimated_gas = self.contract.functions.unJoinAsHolder(
+                election_id
+            ).estimate_gas({"from": WALLET_ADDRESS})
+
+            unjoin_as_holder_tx = self.contract.functions.unJoinAsHolder(
+                election_id
+            ).build_transaction({
+                'from': WALLET_ADDRESS,
+                'gas': estimated_gas,
+                'gasPrice': self.w3.eth.gas_price,
+                'nonce': nonce,
+            })
+
+            # Sign and send transaction
+            signed_tx = self.w3.eth.account.sign_transaction(unjoin_as_holder_tx, PRIVATE_KEY)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else self.w3.to_hex(tx_hash)
+
+            # Wait for transaction receipt
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+
+            logger.info(f"Successfully unjoined as holder. Transaction: {tx_hash_hex}")
+            return {
+                'success': True,
+                'transaction_hash': tx_hash_hex,
+                'holder_address': WALLET_ADDRESS,
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to unjoin as holder: {str(e)}")
+            raise handle_blockchain_error("unjoin as holder", e)
 
     async def submit_vote(self, vote_data: bytes, decryption_time: int, reward_amount: float = 0.1, threshold: int = None) -> dict:
         """

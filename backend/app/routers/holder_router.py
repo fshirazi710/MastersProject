@@ -164,3 +164,39 @@ async def join_as_holder(
     except Exception as e:
         logger.error(f"Error joining as holder: {str(e)}")
         raise handle_blockchain_error("join as holder", e) 
+
+@router.post("/unjoin/{election_id}", response_model=StandardResponse[TransactionResponse])
+async def un_join_as_holder(
+    election_id: int,
+    blockchain_service: BlockchainService = Depends(get_blockchain_service)
+):
+    """
+    Join as a secret holder by staking a deposit.
+    
+    Args:
+        request: Join request with public key and deposit amount
+        
+    Returns:
+        Transaction response with transaction hash
+    """
+    try:
+        # Call the blockchain service to join as holder
+        result = await blockchain_service.un_join_as_holder(
+            election_id=election_id
+        )
+        
+        if not result.get("success", False):
+            raise handle_blockchain_error("unjoin as holder", Exception(result.get("error", "Unknown error")))
+            
+        return StandardResponse(
+            success=True,
+            message="Successfully unjoined as a secret holder",
+            data=TransactionResponse(
+                success=True,
+                message="Successfully unjoined as holder",
+                transaction_hash=result["transaction_hash"]
+            )
+        )
+    except Exception as e:
+        logger.error(f"Error unjoining as holder: {str(e)}")
+        raise handle_blockchain_error("unjoin as holder", e) 

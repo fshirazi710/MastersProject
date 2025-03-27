@@ -17,6 +17,39 @@
       <div v-if="alreadySecretHolder" class="alert-box">
         You are already a secret holder for this vote.
       </div>
+
+      <form v-if="alreadySecretHolder" @submit.prevent="unRegisterHolder" class="voting-form">
+        <h3>Do you no longer want to be a secret holder for this election?</h3>
+        <div class="options-list">
+          <label class="option-item">
+            <input
+              type="radio"
+              v-model="isSecretHolder"
+              value="yes"
+              name="secret-holder-option"
+              required
+            >
+            <div class="option-content">
+              Yes
+            </div>
+          </label>
+          <label class="option-item">
+            <input
+              type="radio"
+              v-model="isSecretHolder"
+              value="no"
+              name="secret-holder-option"
+              required
+            >
+            <div class="option-content">
+              No
+            </div>
+          </label>
+        </div>
+        <button class="btn primary">
+          Unregister as a secret holder
+        </button>
+      </form>
     
       <!-- Voting form with radio options -->
       <form v-else @submit.prevent="generateKeyPair" class="voting-form">
@@ -93,6 +126,7 @@
     pk.value = publicKey.toHex(true);
 
     storePublicKey()
+    window.location.reload() //reload the page once the key has been stored
   };
 
   // Method to generate voting token
@@ -123,6 +157,12 @@
       console.log(public_key)
       console.log(public_key.map(share => share.toString()))
       const response = await holderApi.joinAsHolder(vote_id, public_key.map(share => share.toString()));
+    } catch (err) {}
+  }
+
+  const unRegisterHolder = async () => {
+    try {
+      const response = await holderApi.unJoinAsHolder(props.voteId);
     } catch (err) {}
   }
   </script>
