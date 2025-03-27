@@ -52,7 +52,7 @@
   <script setup>
   import { ref } from 'vue'
   import { voteApi, holderApi } from '@/services/api'
-  import { generateBLSKeyPair, getG1PointsFromPublicKey } from "../../services/cryptography";
+  import { generateBLSKeyPair } from "../../services/cryptography";
   import Cookies from "js-cookie";
   
   const props = defineProps({
@@ -72,7 +72,7 @@
     Cookies.set("privateKey", sk.toString(16), { expires: 5, secure: true, sameSite: "Strict" });
 
     // Update the reactive pk variable to trigger UI update
-    pk.value = publicKey.toHex(true);
+    pk.value = publicKey;
 
     storePublicKey()
   };
@@ -86,7 +86,6 @@
       });
 
       if (isSecretHolder.value === 'yes') {
-        // const [pointX, pointY] = getG1PointsFromPublicKey(pk.value);
         joinAsSecretHolder(props.voteId, pk.value)
       }
       else {

@@ -2,6 +2,7 @@
 Vote router for managing votes in the system.
 """
 from datetime import datetime, UTC
+from bson import Binary
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Dict, Any, Optional
 
@@ -31,8 +32,6 @@ from app.services.blockchain import BlockchainService
 from app.routers.auth_router import get_current_user
 
 import logging
-import random
-import string
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -204,15 +203,18 @@ async def get_election_information(election_id: int, blockchain_service: Blockch
 
 
 @router.post("/store-public-key/{vote_id}", response_model=StandardResponse[TransactionResponse])
-async def store_public_key(vote_id: int, data: PublicKeyRequest, db=Depends(get_db)):
+async def store_public_key(vote_id: int, data: dict, db=Depends(get_db)):
+    logger.error(data)
+    public_key_bytes = bytes(data["public_key"].values())
+    public_key_hex = "0x" + public_key_bytes.hex()
     public_key_data = {
         "vote_id": vote_id,
         "reward_token": 1,
-        "public_key": data.public_key,
-        "is_secret_holder": data.is_secret_holder,
+        "public_key": public_key_hex,
+        "is_secret_holder": data["is_secret_holder"],
     }
 
-    if data.is_secret_holder:
+    if data["is_secret_holder"]:
         public_key_data["reward_token"] = 0
 
     await db.public_keys.insert_one(public_key_data)
@@ -223,9 +225,35 @@ async def store_public_key(vote_id: int, data: PublicKeyRequest, db=Depends(get_
     )
 
 
+@router.post("/get-vote-information/{election_id}", response_model=StandardResponse[List[Dict[str, Any]]])
+async def get_vote_information(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+    try:
+        all_votes = []
+        votes = await blockchain_service.call_contract_function("getVotes", election_id)
+        for vote in votes:
+            all_votes.append({
+                "id": election_id,
+                "ciphertext": vote[1],
+                "g1r": vote[2],
+                "g2r": vote[3],
+                "alphas": vote[4],
+                "threshold": vote[5]
+            })
+        return StandardResponse(
+            success=True,
+            message=f"Successfully retrieved vote information for election {election_id}",
+            data=all_votes
+        )
+    except Exception as e:
+        logger.error(f"Error getting election information: {str(e)}")
+        raise handle_blockchain_error("get election information", e)
+
+
 @router.post("/validate-public-key", response_model=StandardResponse[TransactionResponse])
-async def validate_public_key(data: KeyRequest, db=Depends(get_db)):
-    key = await db.public_keys.find_one({"public_key": data.public_key})
+async def validate_public_key(data: dict, db=Depends(get_db)):
+    public_key_bytes = bytes(data["public_key"].values())
+    public_key_hex = "0x" + public_key_bytes.hex()
+    key = await db.public_keys.find_one({"public_key": public_key_hex})
     if not key:
         logger.warning(f"Public key not found: {data.public_key}")
         raise handle_validation_error("Invalid public key")
@@ -363,11 +391,18 @@ async def submit_vote(request: dict, blockchain_service: BlockchainService = Dep
         Transaction response with transaction hash and vote ID
     """
     try:
-        nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)  # Get the starting nonce
+        public_keys = []
+        for key in request["public_keys"]:
+            public_key_bytes = bytes(key.values())
+            public_key_hex = "0x" + public_key_bytes.hex()
+            public_keys.append(public_key_hex)
+            
+        logger.info(public_keys)
+        nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
 
-        estimated_gas = blockchain_service.contract.functions.submitVote2(
+        estimated_gas = blockchain_service.contract.functions.submitVote(
             int(request["election_id"]),
-            request["public_keys"],
+            public_keys,
             request["ciphertext"],
             request["g1r"],
             request["g2r"],
@@ -375,9 +410,9 @@ async def submit_vote(request: dict, blockchain_service: BlockchainService = Dep
             request["threshold"]
         ).estimate_gas({"from": WALLET_ADDRESS})
 
-        create_election_tx = blockchain_service.contract.functions.submitVote2(
+        create_election_tx = blockchain_service.contract.functions.submitVote(
             int(request["election_id"]),
-            request["public_keys"],
+            public_keys,
             request["ciphertext"],
             request["g1r"],
             request["g2r"],
@@ -388,7 +423,7 @@ async def submit_vote(request: dict, blockchain_service: BlockchainService = Dep
             
             'gas': estimated_gas,
             'gasPrice': blockchain_service.w3.eth.gas_price,
-            'nonce': nonce,  # Increment nonce for each transaction
+            'nonce': nonce,
         })
 
         # Sign and send transaction
@@ -477,22 +512,3 @@ async def decrypt_vote(
     except Exception as e:
         logger.error(f"Error decrypting vote: {str(e)}")
         raise handle_blockchain_error("decrypt vote", e)
-    
-@router.post("/get-secret-shares/{election_id}", response_model=StandardResponse[List[Dict[str, Any]]])
-async def get_secret_shares(election_id: int, request: dict, blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
-    secret_shares = []
-    votes = await blockchain_service.call_contract_function("getVotes", election_id)
-    for vote in votes:
-        secret_shares.append({
-            "id": election_id,
-            "ciphertext": vote[1],
-            "g1r": vote[2],
-            "g2r": vote[3],
-            "alphas": vote[4],
-            "threshold": vote[5]
-        })
-    return StandardResponse(
-        success=True,
-        message=f"Successfully retrieved election information for election {election_id}",
-        data=secret_shares
-    )

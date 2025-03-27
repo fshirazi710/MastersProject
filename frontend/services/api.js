@@ -90,6 +90,11 @@ export const voteApi = {
   getSecretShares: (voteId, public_key) => {
     return apiClient.post(`/api/votes/get-secret-shares/${voteId}`, {public_key: public_key});
   },
+
+  // PENDING
+  getVoteInformation: (electionId) => {
+    return apiClient.post(`/api/votes/get-vote-information/${electionId}`);
+  },
   
   // Decrypt a vote
   decryptVote: (voteId, threshold = null) => {
@@ -137,7 +142,7 @@ export const holderApi = {
 
   // Join as holder
   submitSecretKey: (election_id, privateKey) => {
-    return apiClient.post(`/api/holders/submit-secret-key/${election_id}`, { secert_key: privateKey });
+    return apiClient.post(`/api/holders/submit-secret-key/${election_id}`, { secret_key: privateKey });
   },
 };
 

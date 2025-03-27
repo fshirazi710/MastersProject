@@ -70,8 +70,8 @@
     />
 
     <!-- Submit Secret Share section - secret holders can submit their shares -->
-    <SubmitSecretShare 
-      v-if="vote.status === 'ended'"
+    <SubmitSecretShare
+      :vote-id="route.params.id"
     />
 
     <!-- Results section - only shown for ended votes -->

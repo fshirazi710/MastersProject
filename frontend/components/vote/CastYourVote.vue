@@ -31,6 +31,9 @@
           <button @click="submitSecretKey" type="submit" class="btn primary" :disabled="!selectedOption">
             Get Secret Shares
           </button>
+          <button @click="testSecretShares" type="submit" class="btn primary" :disabled="!selectedOption">
+            Get Secret Sharesdv
+          </button>
         </form>
       </div>
     </div>
@@ -39,7 +42,7 @@
   <script setup>
   import { ref } from 'vue'
   import { holderApi, voteApi } from '@/services/api'
-  import { getPublicKeyFromPrivate, getKAndSecretShares, AESEncrypt, generateSecret } from '@/services/cryptography';
+  import { getPublicKeyFromPrivate, getKAndSecretShares, AESEncrypt, hexToG1R } from '@/services/cryptography';
   import Cookies from 'js-cookie';
 
   const props = defineProps({
@@ -58,6 +61,7 @@
   })
   
   const selectedOption = ref(null)
+  const g1rValue = ref(null)
   
   // Method to validate the key pair
   const validateKeyPair = async () => {
@@ -85,15 +89,28 @@
       const response = await validateKeyPair()
       if (response) {
         const secret_holders = await holderApi.getAllHolders(props.voteId)
-        const threshold = 1
-        const public_keys = secret_holders.data.data
+        const threshold = 3
+        const data = secret_holders.data.data
+        const public_keys = [];
+
+        data.forEach(hexString => {
+          const cleanedHexString = hexString.slice(2);
+          const public_key = new Uint8Array(cleanedHexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+          public_keys.push(public_key);
+        });
+        console.log(public_keys);
+
         const total = public_keys.length
+
+        // const private_keys = ["8f252592c34ea970c594544aa3c7f4948bfc21a1016ba9e44ef1e01dc5f739cb", "2fc7a1d825c336a696373e853ef8a7f5bc5acd4226b96fcca4874d00030bf8f6", "d4f9abacc67f69c3bcf58168737509a1b96a94746c64d4545bc920dc5107b6da", "f01b4b66711ab000afaab3e259dcf9e7dff9671c56830fb9d286822aadc49e68"]
         getKAndSecretShares(public_keys, threshold, total)
           .then(([k, g1r, g2r, alpha]) => {
-              const ciphertext = AESEncrypt(selectedOption.value, k)
-              ciphertext.then(value => {
-                const response = voteApi.submitVote({"election_id": props.voteId, "public_keys": public_keys, "ciphertext": value, "g1r": g1r, "g2r": g2r, "alpha": alpha, "threshold": threshold});
-              });
+            console.log(k)
+            g1rValue.value = g1r
+            const ciphertext = AESEncrypt(selectedOption.value, k)
+            ciphertext.then(value => {
+              const response = voteApi.submitVote({"election_id": props.voteId, "public_keys": public_keys, "ciphertext": value, "g1r": g1r, "g2r": g2r, "alpha": alpha, "threshold": threshold});
+            });
           })
           .catch((error) => {
               console.error("Error generating shares:", error);
@@ -115,19 +132,13 @@
     const response = await holderApi.submitSecretKey(props.voteId, privateKeyHex);
   }
 
-
-  const getSecretShares = async () => {
-    const privateKeyHex = Cookies.get("privateKey");
-
-    if (!privateKeyHex) {
-      throw new Error("No private key found. Please register first.");
+  const testSecretShares = async () => {
+    const private_keys = "983307c5d0b149a5a71e2772909566f471e9f79d72f7acf129409cfaa5a896b4"
+    if (g1rValue.value) {
+      console.log("g1r value:", hexToG1R(g1rValue.value, private_keys));
+    } else {
+      console.error("g1r is not set.");
     }
-
-    const publicKeyHex = getPublicKeyFromPrivate(privateKeyHex)
-
-    const response = await voteApi.getSecretShares(props.voteId, publicKeyHex);
-    console.log(response)
-    computeSecret(response.data.data)
   }
   </script>
   
