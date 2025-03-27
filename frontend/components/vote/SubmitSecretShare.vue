@@ -17,8 +17,7 @@
 
 <script setup>
     import { voteApi } from '@/services/api'
-    import { recomputeKey, AESDecrypt, generateShares, getShares } from '@/services/cryptography';
-    import Cookies from 'js-cookie';
+    import { AESDecrypt, generateShares } from '@/services/cryptography';
 
     const props = defineProps({
         voteId: {
@@ -36,7 +35,7 @@
             //     throw new Error("No private key found. Please register first.");
             // }
             const voteInformation = await fetchVoteInformation()
-            const privateKeys = ["241ae400369b71889b94825a8790aa05d20711a10d4bf4cebaa6e26f8df4e7d9", "ffcad271d2b2e606839292697d7e0e7b102ee25b852a51147e6d8a05942fde1a", "76bb0ec1bb2c4027419781e3af38b0287c8f987a9f085550b6c373a20ce8b5e5", "b2d3f4a7fe81826dad4abc58a9eab526aaf976920b4c07a30d8fb9ad68ca0ac8"]
+            const privateKeys = ["fdc566efcde86bcca560ba552524dd84301fdda8f167196ef94db825c6288ec7", "ce420317825080e56ff92a1f9996c63b6778d8b7f3fc4471c71d8240d30ba35e", "3a060591d3b26f291508ee8bcafa230f535e5fb1fa1c0ee9861171b6c996801f", "4aea3220d822266fc9ed22299a4137f72e852926a9565227ea5b9d56f9afc81"]
             for (const key in privateKeys) {
                 console.log(key)
                 for (const vote in voteInformation) {
@@ -52,7 +51,7 @@
             const key = await recomputeKey([1, 2, 3, 4], secretShares, voteInformation[0].alphas, voteInformation[0].threshold)
 
             // const key = recomputeKey([1, 2, 3, 4], secretShares, privateKeys, voteInformation[0].g1r, voteInformation[0].alphas, voteInformation[0].threshold)
-            const response = AESDecrypt(voteInformation[0].ciphertext, key)
+            // const response = AESDecrypt(voteInformation[0].ciphertext, key)
         } catch (error) {
             console.error("Failed to submit secret share:", error);
             alert('Error submitting secret share. Please try again.');
