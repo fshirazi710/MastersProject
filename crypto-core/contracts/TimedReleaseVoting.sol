@@ -113,7 +113,14 @@ contract TimedReleaseVoting {
     // ======== Modifiers ========
     
     modifier onlyHolder() {
-        require(holders[msg.sender].active, "Caller is not a registered holder");
+        bool HolderCheck = false;
+        for (uint256 i = 0; i < holderAddresses2.length; i++) {
+            if (holders2[holderAddresses2[i]].walletAddress == msg.sender && holders2[holderAddresses2[i]].active) {
+                HolderCheck = true;
+                break;
+            }
+        }
+        require(HolderCheck, "Caller is not a registered holder");
         _;
     }
     
@@ -137,12 +144,10 @@ contract TimedReleaseVoting {
     function joinAsHolder(uint256 electionId, bytes memory publicKey) external payable {
         // Check if the wallet address is already a holder for this election
         for (uint256 i = 0; i < holderAddresses2.length; i++) {
-            require(
-                (holders2[holderAddresses2[i]].walletAddress != msg.sender || 
-                holders2[holderAddresses2[i]].electionId != electionId) &&
-                holders2[holderAddresses2[i]].active == true, 
-                "Account already a registered holder"
-            );
+            if (holders2[holderAddresses2[i]].walletAddress == msg.sender &&
+                holders2[holderAddresses2[i]].electionId == electionId) {
+                require(!holders2[holderAddresses2[i]].active, "Account already a registered holder");
+            }
         }
 
         holders2[publicKey] = Holder2({
@@ -163,31 +168,36 @@ contract TimedReleaseVoting {
      * @param electionId The ID of the election
      */
     function unJoinAsHolder(uint256 electionId) external onlyHolder {
-        
-        bool activeCheck = false;
+        bytes memory publicKeyToRemove;
+        bool foundActiveHolder = false;
+        uint256 indexToRemove;
 
-        // Check if the wallet address is already a holder for this election
+        // Find the holder's public key in holderAddresses2
         for (uint256 i = 0; i < holderAddresses2.length; i++) {
-            if ( holders2[holderAddresses2[i]].walletAddress == msg.sender &&
-            holders2[holderAddresses2[i]].electionId == electionId && 
-            holders2[holderAddresses2[i]].active == true) {
-                // Mark as inactive
-                holders[msg.sender].active = false;
-                holders2[holderAddresses2[i]].active = false;
-                holderAddresses2.push(holderAddresses2[i]);
-                
-                // Return deposit
-                uint256 depositAmount = holders[msg.sender].deposit;
-                holders[msg.sender].deposit = 0;
-                payable(msg.sender).transfer(depositAmount);
-                
-                emit HolderExited(msg.sender);
-
-                activeCheck = true;
+            if (
+                holders2[holderAddresses2[i]].walletAddress == msg.sender &&
+                holders2[holderAddresses2[i]].electionId == electionId &&
+                holders2[holderAddresses2[i]].active
+            ) {
+                publicKeyToRemove = holderAddresses2[i];
+                indexToRemove = i;
+                foundActiveHolder = true;
+                break;
             }
         }
-        require(activeCheck == false, "Account isn't a registered holder");
+
+        require(foundActiveHolder, "Account isn't a registered holder");
+
+        // Remove the holder from the mapping
+        delete holders2[publicKeyToRemove];
+
+        // Remove the public key from holderAddresses2 array
+        holderAddresses2[indexToRemove] = holderAddresses2[holderAddresses2.length - 1];
+        holderAddresses2.pop();
+
+        emit HolderExited(msg.sender);
     }
+
 
     
     /**

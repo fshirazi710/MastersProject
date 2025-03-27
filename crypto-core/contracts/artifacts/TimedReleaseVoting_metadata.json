@@ -1032,11 +1032,11 @@
 	},
 	"sources": {
 		"crypto-core/contracts/TimedReleaseVoting.sol": {
-			"keccak256": "0x5972ecd121a4fb3d34f166fc5ec14a873eb972417de8a70b23e6ba906bff8a08",
+			"keccak256": "0x8f97bf3a5fa48d7469a77a3b4afd6164b04104c84c1abdd7a81b384416e4c449",
 			"license": "MITelectionCount",
 			"urls": [
-				"bzz-raw://b1e32463d3f67cd3a1578831391760f3b461c38e40085ac65f2e1f7dbaf4d236",
-				"dweb:/ipfs/QmeusRyQJyDcKPNob1Z24EMrb49kqhkndaABeE1c8cRzL6"
+				"bzz-raw://bbe5ea7d971058f001fa3cde9d35f4ec232459c713199b263b7fd2c05883a10f",
+				"dweb:/ipfs/QmcHTpnZW8a4e39Sk4T9T7SkAy7rFA1gT2bJHbuXz7enDB"
 			]
 		}
 	},
