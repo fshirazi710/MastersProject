@@ -67,6 +67,7 @@ contract TimedReleaseVoting {
 
     struct Holder2 {
         bytes publicKey;  // BLS12-381 G1 point (x, y)
+        address walletAddress;
         uint256 electionId;
         bool active;
         uint256 rewards;  // Accumulated rewards for the holder
@@ -130,13 +131,23 @@ contract TimedReleaseVoting {
     
     /**
      * @dev Join as a secret holder by staking a deposit
+     * @param electionId The ID of the election
      * @param publicKey The BLS12-381 public key of the holder
      */
     function joinAsHolder(uint256 electionId, bytes memory publicKey) external payable {
-        require(!holders2[publicKey].active, "Already a holder");
+        // Check if the wallet address is already a holder for this election
+        for (uint256 i = 0; i < holderAddresses2.length; i++) {
+            require(
+                (holders2[holderAddresses2[i]].walletAddress != msg.sender || 
+                holders2[holderAddresses2[i]].electionId != electionId) &&
+                holders2[holderAddresses2[i]].active == true, 
+                "Account already a registered holder"
+            );
+        }
 
         holders2[publicKey] = Holder2({
             publicKey: publicKey,
+            walletAddress: msg.sender,
             electionId: electionId,
             active: true,
             rewards: 0
@@ -145,6 +156,37 @@ contract TimedReleaseVoting {
         holderAddresses2.push(publicKey);
 
         emit HolderJoined2(publicKey, electionId);
+    }
+
+    /**
+     * @dev Allow a holder who no longer wants to be a secret holder to deregister (assumes no pending votes)
+     * @param electionId The ID of the election
+     */
+    function unJoinAsHolder(uint256 electionId) external onlyHolder {
+        
+        bool activeCheck = false;
+
+        // Check if the wallet address is already a holder for this election
+        for (uint256 i = 0; i < holderAddresses2.length; i++) {
+            if ( holders2[holderAddresses2[i]].walletAddress == msg.sender &&
+            holders2[holderAddresses2[i]].electionId == electionId && 
+            holders2[holderAddresses2[i]].active == true) {
+                // Mark as inactive
+                holders[msg.sender].active = false;
+                holders2[holderAddresses2[i]].active = false;
+                holderAddresses2.push(holderAddresses2[i]);
+                
+                // Return deposit
+                uint256 depositAmount = holders[msg.sender].deposit;
+                holders[msg.sender].deposit = 0;
+                payable(msg.sender).transfer(depositAmount);
+                
+                emit HolderExited(msg.sender);
+
+                activeCheck = true;
+            }
+        }
+        require(activeCheck == false, "Account isn't a registered holder");
     }
 
     
