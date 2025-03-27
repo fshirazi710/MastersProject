@@ -1,7 +1,7 @@
 """
 Vote router for managing votes in the system.
 """
-from datetime import datetime, UTC
+from datetime import datetime
 from bson import Binary
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Dict, Any, Optional
