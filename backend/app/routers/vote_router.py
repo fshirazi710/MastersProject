@@ -1,7 +1,7 @@
 """
 Vote router for managing votes in the system.
 """
-from datetime import datetime, UTC
+from datetime import datetime
 from bson import Binary
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Dict, Any, Optional
@@ -82,7 +82,7 @@ async def create_election(data: VoteCreateRequest, blockchain_service: Blockchai
         
         # Sign and send transaction
         signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_election_tx, PRIVATE_KEY)
-        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
         tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else blockchain_service.w3.to_hex(tx_hash)
         
         return StandardResponse(
