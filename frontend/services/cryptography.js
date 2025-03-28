@@ -27,20 +27,6 @@ export function getPublicKeyFromPrivate(privateKey) {
     return pk;
 }
 
-export function getG1PointsFromPublicKey(publicKey) {
-    const compressedPkBytes = Uint8Array.from(Buffer.from(publicKey, "hex"));
-    const g1Point = bls12_381.G1.ProjectivePoint.fromHex(compressedPkBytes);
-    const px = g1Point.px;
-    const py = g1Point.py;
-    return [px, py];
-}
-
-export function generateEncryptionKey() {
-    const privateKey = bls12_381.utils.randomPrivateKey();
-    const privateKeyHex = Buffer.from(privateKey).toString('hex');
-    return privateKeyHex
-}
-
 export async function getKAndSecretShares(pubkeys, threshold, total) {
     const indexes = Array.from({ length: total }, (_, i) => BigInt(i + 1));
     const tIndexes = indexes.slice(0, threshold);
@@ -64,12 +50,10 @@ function getG1R(r) {
     return result.toHex();
 }
 
-export function hexToG1R(hex, privateKey) {
-    const r = BigInt("0x" + privateKey); 
-    const r2 = mod(r, FIELD_ORDER);
-    const g1r = bls12_381.G1.ProjectivePoint.fromHex(hex);
-    const result = g1r.multiply(r2);
-    return result;
+function getG2R(r) {
+    const g2 = bls12_381.G2.ProjectivePoint.BASE;
+    const result = g2.multiply(r);
+    return result.toHex();
 }
 
 export function generateShares(g1r_hex, privateKey) {
@@ -80,93 +64,51 @@ export function generateShares(g1r_hex, privateKey) {
     return pointToBigint(result)
 }
 
-// export function getShares(g1r, sk) {
-//      const scalar = Uint8Array.from(Buffer.from(sk, 'hex'));
-//      const modScalar = mod(scalar, FIELD_ORDER);
-//      const point = bls12_381.G1.ProjectivePoint.fromHex(g1r);
-//      const result = point.multiply(scalar);
-//      return result.toHex(); // Return the result as a hex string
-// }
-
-function getG2R(r) {
-    const g2 = bls12_381.G2.ProjectivePoint.BASE;
-    const result = g2.multiply(r);
-    return result.toHex();
-}
-
-function xorBytes(arr1, arr2) {
-    return arr1.map((byte, i) => byte ^ arr2[i]);
-}
-
 export async function recomputeKey(indexes, shares, alphas, threshold) {
-    // Convert indexes to BigInt for Lagrange basis computation
     const bigIntIndexes = indexes.map(index => BigInt(index));
 
-    // Step 1: Compute the Lagrange basis for x = 0 using the indexes above the threshold
-    const tIndexes = bigIntIndexes.slice(0, threshold);  // Only indexes above the threshold
-    const basis = lagrangeBasis(tIndexes, BigInt(0));  // Compute the Lagrange basis at x = 0
+    const tIndexes = bigIntIndexes.slice(0, threshold);
+    const basis = lagrangeBasis(tIndexes, BigInt(0));
     console.log("Lagrange Basis:", basis);
 
     const terms = [];
 
-    // Step 2: Only process shares above the threshold
-    for (let i = 0; i < threshold; i++) {
-        // console.log("Processing share", i);
-        // console.log("Shares[i]:", shares[i])
+    for (let i = 0; i < indexes.length; i++) {
+        if (indexes[i] <= threshold) {
+            terms.push(shares[i]);            
+        } else {
+            const alphaBigInt = stringToBigInt(alphas[(indexes[i] - 1) - threshold]);
 
-        // // const term = pointToBigint(shares[i])
-        // // console.log(pointToBigint(shares[i]))
+            const shareHex = bigIntToHex(shares[i]);
+            const alphaHex = bigIntToHex(alphaBigInt);
 
-        // const shareBytes = Uint8Array.from(Buffer.from(shares[i].toString(16), "hex"));
-        // // // const shareBytes = scalarToBytes(shares[i]);
-        // console.log("Shares[i] bytes:", shareBytes)
-        // const term = BigInt('0x' + Buffer.from(shareBytes).toString('hex'));
-        terms.push(shares[i])
-
+            const alphaBytes = hexToBytes(alphaHex);
+            const shareBytes = hexToBytes(shareHex);
+        
+            const xorResult = [];
+            for (let i = 0; i < alphaBytes.length; i++) {
+                xorResult.push(alphaBytes[i] ^ shareBytes[i]);
+            }
+                
+            const term = BigInt('0x' + Buffer.from(xorResult).toString('hex'));
+            terms.push(term);
+        }
     }
 
-    for (let i = threshold; i < shares.length; i++) {
-        console.log("Processing share", i);
-
-        // Convert Scalar (share) to bytes (we assume a function scalarToBytes exists)
-        const alphaBytes = hexToBytes(alphas[i - threshold]); // Alphas start from the threshold
-        const shareBytes = hexToBytes(shares[i]);
-
-        console.log(alphaBytes)
-        console.log(shareBytes)
-        // XOR the two byte arrays to mask/unmask the share with the alpha
-        const xorResult = xorBytes(alphaBytes, shareBytes);
-
-        // Convert XOR result back to BigInt (equivalent to Scalar::from_bytes in Rust)
-        const term = BigInt('0x' + Buffer.from(xorResult).toString('hex')); // Convert to BigInt from XORed bytes
-        terms.push(term);
-    }
-
-    console.log("Transformed Shares:", terms);
-
-    // Step 3: Perform Lagrange interpolation using the basis and transformed shares
-    const k = lagrangeInterpolate(basis, terms); // Interpolate to find the key
-    console.log("Reconstructed Key (k):", k);
+    const k = lagrangeInterpolate(basis, terms);
     const key = await importBigIntAsCryptoKey(k);
 
-    return key; // Return the reconstructed key (k)
+    return key;
 }
 
-function scalarToBytes(scalar) {
-    // Convert the scalar (BigInt) to a byte array
-    const hexString = scalar.toString(16); // Convert BigInt to a hexadecimal string
-    const hexLength = hexString.length;
+function bigIntToHex(bigInt) {
+    let hex = bigInt.toString(16);
+    if (hex.length % 2) hex = '0' + hex;
+    return hex;
+}
 
-    // Ensure the length is even by padding with a leading zero if necessary
-    const paddedHex = hexLength % 2 === 0 ? hexString : '0' + hexString;
-
-    // Convert the hex string to a byte array
-    const byteArray = new Uint8Array(paddedHex.length / 2);
-    for (let i = 0; i < paddedHex.length; i += 2) {
-        byteArray[i / 2] = parseInt(paddedHex.slice(i, i + 2), 16); // Convert each pair of hex digits to a byte
-    }
-
-    return byteArray;
+function stringToBigInt(str) {
+    return BigInt(str);
 }
 
 export async function AESEncrypt(text, key) {
@@ -200,6 +142,7 @@ export async function AESDecrypt(encryptedHex, key) {
         throw new Error("Decryption failed");
     }
 }
+
 function hexToBytes(hex) {
     const bytes = new Uint8Array(hex.length / 2);
     for (let i = 0; i < hex.length; i += 2) {

@@ -35,8 +35,7 @@
             //     throw new Error("No private key found. Please register first.");
             // }
             const voteInformation = await fetchVoteInformation()
-            // "3a060591d3b26f291508ee8bcafa230f535e5fb1fa1c0ee9861171b6c996801f", "4aea3220d822266fc9ed22299a4137f72e852926a9565227ea5b9d56f9afc81"
-            const privateKeys = ["fdc566efcde86bcca560ba552524dd84301fdda8f167196ef94db825c6288ec7", "ce420317825080e56ff92a1f9996c63b6778d8b7f3fc4471c71d8240d30ba35e", "4aea3220d822266fc9ed22299a4137f72e852926a9565227ea5b9d56f9afc81"]
+            const privateKeys = ["b564c8fb0c5c5c45ce4b6bef4020e407ada126d66effba5ecf9147f1943e7760", "29c038d48b36541e6552233bd3bf3802aee1af2b7fa7ce721f44aadea26af5e8", "fa4208ed8a42413b5c954e7aa7c8fadd80702aa65df0cd0306f9f7d5003f9ff6"]
             for (const key in privateKeys) {
                 console.log(key)
                 for (const vote in voteInformation) {
@@ -49,7 +48,7 @@
                 }
             }
             console.log(secretShares)
-            const key = await recomputeKey([1, 2, 4], secretShares, voteInformation[0].alphas, voteInformation[0].threshold)
+            const key = await recomputeKey([4, 5, 6], secretShares, voteInformation[0].alphas, voteInformation[0].threshold)
 
             // const key = recomputeKey([1, 2, 3, 4], secretShares, privateKeys, voteInformation[0].g1r, voteInformation[0].alphas, voteInformation[0].threshold)
             const response = AESDecrypt(voteInformation[0].ciphertext, key)
