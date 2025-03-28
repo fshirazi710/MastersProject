@@ -1,7 +1,7 @@
 """
 Authentication router for managing user authentication.
 """
-from datetime import datetime, UTC, timedelta
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from typing import Optional
@@ -86,9 +86,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     """Create a JWT access token."""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.now(UTC) + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(UTC) + timedelta(minutes=15)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -163,7 +163,7 @@ async def register_user(
             "name": request.name,
             "role": request.role,
             "password": hashed_password,  # Store in 'password' field
-            "created_at": datetime.now(UTC).isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()
         }
         
         # Insert user into database
@@ -226,7 +226,7 @@ async def login(
         )
         
         # Calculate expiration time
-        expires_at = datetime.now(UTC) + access_token_expires
+        expires_at = datetime.now(timezone.utc) + access_token_expires
         
         logger.info(f"User {form_data.username} logged in successfully")
         return StandardResponse(
