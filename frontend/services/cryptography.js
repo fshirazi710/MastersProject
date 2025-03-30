@@ -1,30 +1,103 @@
 import { bls12_381 } from "@noble/curves/bls12-381";
 import { mod } from "@noble/curves/abstract/modular";
 import { Buffer } from "buffer";
+import { bls } from "@noble/curves/abstract/bls";
+import { babelParse } from "vue/compiler-sfc";
 
 const FIELD_ORDER = BigInt("0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001");
-
-function randomBytes(size) {
-    return crypto.getRandomValues(new Uint8Array(size));
-}
 
 export function generateBLSKeyPair() {
     const skBytes = randomBytes(32);
     const sk = BigInt("0x" + Buffer.from(skBytes).toString("hex"));
     const pk = bls12_381.getPublicKey(sk);
-    console.log("PK:", pk);
-    const isValid = bls12_381.G1.ProjectivePoint.fromHex(pk) !== null;
-    console.log("Is valid G1 point:", isValid);
     return { sk, pk };
 }
 
 export function getPublicKeyFromPrivate(privateKey) {
     const sk = typeof privateKey === 'string' ? BigInt("0x" + privateKey) : privateKey;
     const pk = bls12_381.getPublicKey(sk);
-    console.log("PK:", pk);
-    const isValid = bls12_381.G1.ProjectivePoint.fromHex(pk) !== null;
-    console.log("Is valid G1 point:", isValid);
     return pk;
+}
+
+function genR() {
+    const randomBytes = new Uint8Array(32);
+    window.crypto.getRandomValues(randomBytes);
+    const hexString = Array.from(randomBytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    return mod(BigInt("0x" + hexString), FIELD_ORDER);
+}
+
+function getG1R(r) {
+    const g1 = bls12_381.G1.ProjectivePoint.BASE;
+    const result = g1.multiply(r);
+    return result.toHex();
+}
+
+function getG2R(r) {
+    const g2 = bls12_381.G2.ProjectivePoint.BASE;
+    const result = g2.multiply(r);
+    return result.toHex();
+}
+
+function randomBytes(size) {
+    return crypto.getRandomValues(new Uint8Array(size));
+}
+
+function bigIntToHex(bigInt) {
+    let hex = bigInt.toString(16);
+    if (hex.length % 2) hex = '0' + hex;
+    return hex;
+}
+
+function hexToBytes(hex) {
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < hex.length; i += 2) {
+        bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+    }
+    return bytes;
+}
+
+function bytesToHex(bytes) {
+    return Array.from(bytes)
+        .map(byte => byte.toString(16).padStart(2, "0"))
+        .join("");
+}
+
+function pointToBigint(point) {
+    return mod(BigInt("0x" + point.toHex()), FIELD_ORDER);
+}
+
+function stringToBigInt(str) {
+    return BigInt(str);
+}
+
+export async function AESEncrypt(text, key) {
+    try {
+        const iv = window.crypto.getRandomValues(new Uint8Array(12)); // Generate IV
+        const encodedText = new TextEncoder().encode(text);
+        const ciphertext = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encodedText);
+
+        return bytesToHex(iv) + bytesToHex(new Uint8Array(ciphertext));
+    } catch (error) {
+        console.error("Encryption failed:", error);
+        throw error;
+    }
+}
+
+export async function AESDecrypt(encryptedHex, key) {
+    const iv = hexToBytes(encryptedHex.slice(0, 24));
+    const ciphertext = hexToBytes(encryptedHex.slice(24));
+
+    try {
+        const decryptedBuffer = await window.crypto.subtle.decrypt({ 
+            name: "AES-GCM", 
+            iv 
+        }, key, ciphertext);
+
+        return new TextDecoder().decode(decryptedBuffer);
+    } catch (error) {
+        console.error("Decryption failed:", error);
+        throw new Error("Decryption failed");
+    }
 }
 
 export async function getKAndSecretShares(pubkeys, threshold, total) {
@@ -44,24 +117,38 @@ export async function getKAndSecretShares(pubkeys, threshold, total) {
     return [k, g1r, g2r, alphas];
 }
 
-function getG1R(r) {
-    const g1 = bls12_381.G1.ProjectivePoint.BASE;
-    const result = g1.multiply(r);
-    return result.toHex();
-}
-
-function getG2R(r) {
-    const g2 = bls12_381.G2.ProjectivePoint.BASE;
-    const result = g2.multiply(r);
-    return result.toHex();
-}
-
 export function generateShares(g1r_hex, privateKey) {
     const bigIntPrivateKey = BigInt("0x" + privateKey); 
     const modBigIntPrivateKey = mod(bigIntPrivateKey, FIELD_ORDER);
     const g1r_point = bls12_381.G1.ProjectivePoint.fromHex(g1r_hex);
     const result = g1r_point.multiply(modBigIntPrivateKey);
-    return pointToBigint(result)
+    return bigIntToHex(pointToBigint(result))
+}
+
+export function generateShares2(g1r_hex, privateKey) {
+    const bigIntPrivateKey = BigInt("0x" + privateKey); 
+    const modBigIntPrivateKey = mod(bigIntPrivateKey, FIELD_ORDER);
+    const g1r_point = bls12_381.G1.ProjectivePoint.fromHex(g1r_hex);
+    const result = g1r_point.multiply(modBigIntPrivateKey);
+    console.log(result.toRawBytes(true))
+    return bytesToHex(result.toRawBytes(true)); // Compressed form (48 bytes)
+}
+
+export function verifyShares(share, share2, publicKey, g2r) {
+    // const sharePoint = bls12_381.G1.ProjectivePoint.BASE.multiply(BigInt("0x" + share2))
+    // const shareBytes = hexToBytes(bigIntToHex(pointToBigint(sharePoint)))
+
+    const publicKeyAffine = bls12_381.G1.ProjectivePoint.fromHex(publicKey);
+    const shareAffine = bls12_381.G1.ProjectivePoint.fromHex(share2);
+    const g2rAffine = bls12_381.G2.ProjectivePoint.fromHex(g2r);
+
+    const pairing1 = bls12_381.pairing(shareAffine, bls12_381.G2.ProjectivePoint.BASE);
+    const pairing2 = bls12_381.pairing(publicKeyAffine, g2rAffine);
+
+    console.log(pairing1)
+    console.log(pairing2)
+
+    return pairing1 === pairing2;
 }
 
 export async function recomputeKey(indexes, shares, alphas, threshold) {
@@ -69,7 +156,6 @@ export async function recomputeKey(indexes, shares, alphas, threshold) {
 
     const tIndexes = bigIntIndexes.slice(0, threshold);
     const basis = lagrangeBasis(tIndexes, BigInt(0));
-    console.log("Lagrange Basis:", basis);
 
     const terms = [];
 
@@ -96,59 +182,10 @@ export async function recomputeKey(indexes, shares, alphas, threshold) {
     }
 
     const k = lagrangeInterpolate(basis, terms);
+    console.log(k)
     const key = await importBigIntAsCryptoKey(k);
 
     return key;
-}
-
-function bigIntToHex(bigInt) {
-    let hex = bigInt.toString(16);
-    if (hex.length % 2) hex = '0' + hex;
-    return hex;
-}
-
-function stringToBigInt(str) {
-    return BigInt(str);
-}
-
-export async function AESEncrypt(text, key) {
-    try {
-        const iv = window.crypto.getRandomValues(new Uint8Array(12)); // Generate IV
-        const encodedText = new TextEncoder().encode(text);
-        const ciphertext = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encodedText);
-
-        return bytesToHex(iv) + bytesToHex(new Uint8Array(ciphertext));
-    } catch (error) {
-        console.error("Encryption failed:", error);
-        throw error;
-    }
-}
-
-export async function AESDecrypt(encryptedHex, key) {
-    const iv = hexToBytes(encryptedHex.slice(0, 24)); // Extract IV (assuming 12-byte IV for AES-GCM)
-    const ciphertext = hexToBytes(encryptedHex.slice(24)); // Extract Ciphertext
-
-    try {
-        // Decrypting using the AES-GCM algorithm
-        const decryptedBuffer = await window.crypto.subtle.decrypt({ 
-            name: "AES-GCM", 
-            iv 
-        }, key, ciphertext);
-
-        // Decode and return the decrypted text
-        return new TextDecoder().decode(decryptedBuffer);
-    } catch (error) {
-        console.error("Decryption failed:", error);
-        throw new Error("Decryption failed");
-    }
-}
-
-function hexToBytes(hex) {
-    const bytes = new Uint8Array(hex.length / 2);
-    for (let i = 0; i < hex.length; i += 2) {
-        bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
-    }
-    return bytes;
 }
 
 function computePkRValue(pubkey, r) {
@@ -173,17 +210,9 @@ function lagrangeBasis(indexes, x) {
     });
 }
 
-// Helper function to convert bytes to hex
-function bytesToHex(bytes) {
-    return Array.from(bytes)
-        .map(byte => byte.toString(16).padStart(2, "0"))
-        .join("");
-}
-
 function modInverse(a, m) {
-    a = (a % m + m) % m; // Ensure a is positive
+    a = (a % m + m) % m;
 
-    // Find the gcd using the Extended Euclidean Algorithm
     const s = [];
     let b = m;
 
@@ -192,7 +221,6 @@ function modInverse(a, m) {
         s.push({ a, b });
     }
 
-    // Find the modular inverse
     let x = BigInt(1);
     let y = BigInt(0);
 
@@ -200,7 +228,7 @@ function modInverse(a, m) {
         [x, y] = [y, x - y * BigInt(s[i].a / s[i].b)];
     }
 
-    return (y % m + m) % m; // Ensure result is positive
+    return (y % m + m) % m;
 }
 
 function lagrangeInterpolate(basis, shares) {
@@ -210,35 +238,22 @@ function lagrangeInterpolate(basis, shares) {
     );
 }
 
-
-function genR() {
-    const randomBytes = new Uint8Array(32);
-    window.crypto.getRandomValues(randomBytes);
-    const hexString = Array.from(randomBytes, (b) => b.toString(16).padStart(2, "0")).join("");
-    return mod(BigInt("0x" + hexString), FIELD_ORDER);
-}
-
 async function getKAndAlphas(r, tIndexes, tPubkeys, restIndexes, restPubkeys) {
     const tShares = tPubkeys.map((pubkey) => {
         const pkr = computePkRValue(pubkey, r);
         return pointToBigint(pkr);
     });
-    console.log("T Shares:", tShares)
 
-
+    console.log(tShares)
     const basis = lagrangeBasis(tIndexes, BigInt(0));
-    console.log("Basis: ", basis)
-    console.log("T Indexes: ", tIndexes)
     const k = lagrangeInterpolate(basis, tShares);
-    console.log("Key:", k)
+    console.log(k)
     const key = await importBigIntAsCryptoKey(k);
 
     const restShares = restPubkeys.map((pubkey) => {
         const pkr = computePkRValue(pubkey, r);
         return pointToBigint(pkr);
     });
-    console.log("Rest Shares:", restShares)
-
 
     let alphas = [];
     for (let counter = 0; counter < restIndexes.length; counter++) {
@@ -249,7 +264,6 @@ async function getKAndAlphas(r, tIndexes, tPubkeys, restIndexes, restPubkeys) {
         const i_point_bytes = Uint8Array.from(Buffer.from(i_point.toString(16), "hex"));
         const i_share_bytes = Uint8Array.from(Buffer.from(restShares[counter].toString(16), "hex"));
 
-        // XOR the point and share
         const i_alpha = BigInt("0x" + Buffer.from(i_point_bytes.map((byte, i) => byte ^ i_share_bytes[i])).toString("hex"));
         alphas.push(i_alpha.toString());
     }
@@ -259,15 +273,10 @@ async function getKAndAlphas(r, tIndexes, tPubkeys, restIndexes, restPubkeys) {
 
 async function importBigIntAsCryptoKey(bigintKey) {
     try {
-        // Convert BigInt to a hex string and pad to at least 64 chars (256-bit)
         let hexKey = bigintKey.toString(16).padStart(64, '0'); 
         
-        // Convert hex string to a Uint8Array
         const keyBytes = new Uint8Array(hexKey.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
 
-        console.log("Generated Key Bytes:", keyBytes);
-
-        // Import key into Web Crypto API as AES-GCM key
         const cryptoKey = await window.crypto.subtle.importKey(
             "raw",
             keyBytes,
@@ -276,14 +285,9 @@ async function importBigIntAsCryptoKey(bigintKey) {
             ["encrypt", "decrypt"]
         );
 
-        console.log("CryptoKey imported successfully:", cryptoKey);
         return cryptoKey;
     } catch (error) {
         console.error("Error importing CryptoKey:", error);
         throw error;
     }
-}
-
-function pointToBigint(point) {
-    return mod(BigInt("0x" + point.toHex()), FIELD_ORDER);
 }

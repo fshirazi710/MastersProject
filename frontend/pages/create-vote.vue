@@ -153,7 +153,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { voteApi } from '@/services/api'
+import { electionApi } from '@/services/api'
 import { web3Service } from '@/services/web3'
 
 const router = useRouter();
@@ -227,19 +227,7 @@ const handleSubmit = async () => {
     };
     
     // First create the vote in the backend
-    const response = await voteApi.createVote(formattedData);
-    const voteId = response.data.data.id;
-
-    // Then submit the vote to the blockchain with reward pool
-    // await web3Service.submitVote({
-    //   ...formattedData,
-    //   vote_id: voteId,
-    //   ciphertext: '0x', // This should come from the backend
-    //   nonce: '0x', // This should come from the backend
-    //   g2r: ['0', '0'], // This should come from the backend
-    //   threshold: 2 // This should be calculated based on the number of holders
-    // });
-
+    const response = await electionApi.createElection(formattedData);
     alert(response.data.message || 'Vote created successfully!');
     router.push('/all-votes');
   } catch (err) {

@@ -3,6 +3,7 @@ Share router for managing secret shares in the system.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any
+from collections import Counter, defaultdict
 
 from app.core.dependencies import get_blockchain_service
 from app.core.error_handling import handle_blockchain_error, handle_not_found_error
@@ -13,6 +14,10 @@ from app.schemas import (
     StandardResponse,
     TransactionResponse
 )
+from app.core.config import (
+    WALLET_ADDRESS,
+    PRIVATE_KEY,
+)
 from app.services.blockchain import BlockchainService
 
 import logging
@@ -22,39 +27,85 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/shares", tags=["Shares"])
 
-@router.post("", response_model=StandardResponse[TransactionResponse])
-async def submit_share(request: ShareSubmitRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    """
-    Submit a share for a vote.
-    
-    Args:
-        request: Share submission request with vote ID and share data
-        
-    Returns:
-        Transaction response with transaction hash
-    """
+@router.post("/submit-share/{election_id}")
+async def submit_share(election_id: int, data: dict, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     try:
-        # Call the blockchain service to submit the share
-        result = await blockchain_service.submit_share(
-            vote_id=request.vote_id,
-            share=(request.share_index, request.share_value)
-        )
-        
-        if not result.get("success", False):
-            raise handle_blockchain_error("submit share", Exception(result.get("error", "Unknown error")))
+        # Fetch already submitted shares
+        submitted_shares = await blockchain_service.call_contract_function("getShares", election_id)
+        existing_shares = {(share_tuple[0], share_tuple[1]) for share_tuple in submitted_shares}  # Set of (vote_id, share)
+
+        # Filter out already submitted shares
+        filtered_shares = [
+            (share["vote_id"], share["share"]) 
+            for share in data["shares"] 
+            if (share["vote_id"], share["share"]) not in existing_shares
+        ]
+
+        # Convert public key to bytes and then to hex
+        public_key_bytes = bytes(data["public_key"].values())
+        public_key_hex = "0x" + public_key_bytes.hex()
+
+        if filtered_shares:
+            vote_id = [share[0] for share in filtered_shares]  # List of vote IDs
+            share = [share[1] for share in filtered_shares]    # List of shares
             
-        return StandardResponse(
-            success=True,
-            message="Share submitted successfully",
-            data=TransactionResponse(
-                success=True,
-                message="Share submitted successfully",
-                transaction_hash=result["transaction_hash"]
-            )
-        )
+            nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
+
+            # Estimate gas for the transaction
+            estimated_gas = blockchain_service.contract.functions.submitShares(
+                election_id,
+                vote_id,
+                public_key_hex,
+                share
+            ).estimate_gas({"from": WALLET_ADDRESS})
+
+            # Build the transaction
+            submit_share_tx = blockchain_service.contract.functions.submitShares(
+                election_id,
+                vote_id,
+                public_key_hex,
+                share
+            ).build_transaction({
+                'from': WALLET_ADDRESS,
+                'gas': estimated_gas,
+                'gasPrice': blockchain_service.w3.eth.gas_price,
+                'nonce': nonce,
+            })
+
+            # Sign and send the transaction
+            signed_tx = blockchain_service.w3.eth.account.sign_transaction(submit_share_tx, PRIVATE_KEY)
+            tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else blockchain_service.w3.to_hex(tx_hash)
+
     except Exception as e:
-        logger.error(f"Error submitting share: {str(e)}")
-        raise handle_blockchain_error("submit share", e)
+        logger.error(f"Error submitting shares: {str(e)}")
+        raise handle_blockchain_error("submit shares", e)
+
+
+@router.get("/decryption-status/{election_id}")
+async def decryption_status(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+    shares = await blockchain_service.call_contract_function("getShares", election_id)
+    
+    votes = await blockchain_service.call_contract_function("getVotes", election_id)
+
+    logger.info(shares)
+    logger.info(votes)
+    
+    vote_shares = defaultdict(list)
+    share_indexes = defaultdict(list)
+    
+    for vote_id, public_key, share, index in shares:
+        vote_shares[vote_id].append(share)
+        share_indexes[vote_id].append(index + 1)  # Optional, if you want to shift indexes by 1
+
+    # Sort the shares and indexes for each vote_id based on indexes
+    for vote_id in vote_shares:
+        sorted_shares_indexes = sorted(zip(share_indexes[vote_id], vote_shares[vote_id]))
+        sorted_indexes, sorted_shares = zip(*sorted_shares_indexes)
+
+        share_indexes[vote_id] = list(sorted_indexes)
+        vote_shares[vote_id] = list(sorted_shares)
+
 
 @router.post("/verify", response_model=StandardResponse[ShareVerificationResponse])
 async def verify_share(
@@ -84,49 +135,33 @@ async def verify_share(
         logger.error(f"Error verifying share: {str(e)}")
         raise handle_blockchain_error("verify share", e)
 
-@router.get("/by-vote/{vote_id}", response_model=StandardResponse[Dict[str, Any]])
-async def get_submitted_shares(vote_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    """
-    Get all submitted shares for a vote.
-    
-    Args:
-        vote_id: ID of the vote
-        
-    Returns:
-        List of submitted shares with holder addresses
-    """
+
+@router.get("/get-shares/{election_id}")
+async def get_shares(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     try:
-        # Check if the vote exists
-        try:
-            await blockchain_service.call_contract_function("getVote", vote_id)
-        except Exception:
-            # Re-raise HTTP exceptions (like 404) directly
-            raise handle_not_found_error("Vote", str(vote_id))
-            
-        # Call the blockchain service to get the submitted shares using the helper method
-        submitters, shares = await blockchain_service.call_contract_function("getSubmittedShares", vote_id)
+        # Call the blockchain service to decrypt the vote
+        shares = await blockchain_service.call_contract_function("getShares", election_id)
         
-        # Format the response
-        result = []
-        for i in range(len(submitters)):
-            result.append({
-                "holder_address": submitters[i],
-                "share_index": int(shares[i][0]),
-                "share_value": int(shares[i][1])
-            })
+        # Create a dictionary to store the sorted shares and their corresponding indexes for each vote_id
+        vote_shares = defaultdict(list)
+        share_indexes = defaultdict(list)
+
+        for vote_id, public_key, share, index in shares:
+            vote_shares[vote_id].append(share)
+            share_indexes[vote_id].append(index + 1)  # Optional, if you want to shift indexes by 1
+
+        # Sort the shares and indexes for each vote_id based on indexes
+        for vote_id in vote_shares:
+            sorted_shares_indexes = sorted(zip(share_indexes[vote_id], vote_shares[vote_id]))
+            sorted_indexes, sorted_shares = zip(*sorted_shares_indexes)
+
+            share_indexes[vote_id] = list(sorted_indexes)
+            vote_shares[vote_id] = list(sorted_shares)
             
-        return StandardResponse(
-            success=True,
-            message=f"Successfully retrieved {len(result)} submitted shares for vote {vote_id}",
-            data={
-                "vote_id": vote_id,
-                "submitted_shares": result,
-                "count": len(result)
-            }
-        )
+        return share_indexes, vote_shares
+
     except HTTPException:
-        # Re-raise HTTP exceptions (like 404) directly
         raise
     except Exception as e:
-        logger.error(f"Error getting submitted shares: {str(e)}")
-        raise handle_blockchain_error("get submitted shares", e) 
+        logger.error(f"Error decrypting vote: {str(e)}")
+        raise handle_blockchain_error("decrypt vote", e)

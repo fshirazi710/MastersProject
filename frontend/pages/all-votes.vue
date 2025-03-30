@@ -89,7 +89,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { voteApi } from '@/services/api'
+import { electionApi } from '@/services/api'
 
 const router = useRouter()
 const loading = ref(true)
@@ -122,10 +122,10 @@ const getVotes = async () => {
   error.value = null
   
   try {
-    const response = await voteApi.getAllVotes()
+    const response = await electionApi.getAllElections()
 
     // Transform the response data to match the expected format
-    votes.value = response.data.map(vote => ({
+    votes.value = response.data.data.map(vote => ({
       id: vote.id,
       title: vote.title || `Vote ${vote.vote_id}`,
       description: vote.description || 'No description available',

@@ -44,67 +44,39 @@ export const authApi = {
   },
 };
 
+// API service for elections
+export const electionApi = {
+  // Create a new election
+  createElection: (electionData) => {
+    return apiClient.post('/api/elections/create-election', electionData);
+  },
+  
+  // Get all elections
+  getAllElections: () => {
+    return apiClient.get('/api/elections/all-elections');
+  },
+  
+  // Get election by ID
+  getElectionById: (electionId) => {
+    return apiClient.get(`/api/elections/election/${electionId}`);
+  },
+};
+
 // API service for votes
 export const voteApi = {
-  // Get all votes
-  getAllVotes: () => {
-    return apiClient.get('/api/votes/all-elections');
-  },
-  
-  // Get vote summary
-  getVoteSummary: () => {
-    return apiClient.get('/api/votes/summary');
-  },
-  
-  // Get vote by ID
-  getVoteById: (voteId) => {
-    return apiClient.get(`/api/votes/election/${voteId}`);
-  },
-  
   // Submit a vote
   submitVote: (voteData) => {
     return apiClient.post('/api/votes', voteData);
   },
-  
-  // Create a new vote
-  createVote: (voteData) => {
-    return apiClient.post('/api/votes/create-election', voteData);
-  },
-  
-  // Generate a voting token
-  generateToken: (voteId) => {
-    return apiClient.post(`/api/votes/tokens/${voteId}`);
-  },
-  
-  // Validate a voting token
-  validateToken: (token) => {
-    return apiClient.get('/api/votes/tokens/validate', { params: { token } });
-  },
-  
-  // Get share status for a vote
-  getShareStatus: (voteId) => {
-    return apiClient.get(`/api/votes/${voteId}/shares`);
-  },
 
-  // Get share status for a vote
-  getSecretShares: (voteId, public_key) => {
-    return apiClient.post(`/api/votes/get-secret-shares/${voteId}`, {public_key: public_key});
-  },
-
-  // PENDING
+  // Retrieve vote information for a specific election
   getVoteInformation: (electionId) => {
     return apiClient.post(`/api/votes/get-vote-information/${electionId}`);
   },
-  
-  // Decrypt a vote
-  decryptVote: (voteId, threshold = null) => {
-    const payload = threshold ? { threshold } : {};
-    return apiClient.post(`/api/votes/${voteId}/decrypt`, payload);
-  },
 
   // Store Public Key
-  storePublicKey: (voteId, data) => {
-    return apiClient.post(`/api/votes/store-public-key/${voteId}`, data);
+  storePublicKey: (electionId, data) => {
+    return apiClient.post(`/api/votes/store-public-key/${electionId}`, data);
   },
 
   // Validate Public Key
@@ -125,32 +97,22 @@ export const holderApi = {
     return apiClient.get(`/api/holders/count/${election_id}`);
   },
   
-  // Check holder status
-  checkHolderStatus: (address) => {
-    return apiClient.get(`/api/holders/status/${address}`);
-  },
-  
-  // Get required deposit
-  getRequiredDeposit: () => {
-    return apiClient.get('/api/holders/deposit');
-  },
-  
   // Join as holder
   joinAsHolder: (election_id, publicKey) => {
     return apiClient.post(`/api/holders/join/${election_id}`, { public_key: publicKey });
-  },
-
-  // Join as holder
-  submitSecretKey: (election_id, privateKey) => {
-    return apiClient.post(`/api/holders/submit-secret-key/${election_id}`, { secret_key: privateKey });
   },
 };
 
 // API service for shares
 export const shareApi = {
   // Submit a share
-  submitShare: (voteId, shareIndex, shareValue) => {
-    return apiClient.post('/api/shares', { vote_id: voteId, share_index: shareIndex, share_value: shareValue });
+  submitShare: (electionId, data) => {
+    return apiClient.post(`/api/shares/submit-share/${electionId}`, data)
+  },
+
+  // 
+  decryptionStatus: (electionId) => {
+    return apiClient.get(`/api/shares/decryption-status/${electionId}`)
   },
   
   // Verify a share
@@ -159,8 +121,8 @@ export const shareApi = {
   },
   
   // Get submitted shares for a vote
-  getSubmittedShares: (voteId) => {
-    return apiClient.get(`/api/shares/by-vote/${voteId}`);
+  getShares: (voteId) => {
+    return apiClient.get(`/api/shares/get-shares/${voteId}`);
   },
 };
 
@@ -169,4 +131,5 @@ export default {
   vote: voteApi,
   holder: holderApi,
   share: shareApi,
+  election: electionApi,
 }; 

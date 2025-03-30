@@ -11,17 +11,15 @@ from app.schemas.auth import (
     TokenData,
 )
 
+# Elections schemas
+from app.schemas.election import (
+    ElectionCreateRequest,
+)
+
 # Vote schemas
 from app.schemas.vote import (
     VoteSubmitRequest,
-    VoteCreateRequest,
     VoteResponse,
-    DecryptVoteRequest,
-    DecryptVoteResponse,
-    VotingTokenRequest,
-    VotingTokenResponse,
-    TokenValidationRequest,
-    VoteStatusResponse,
     PublicKeyRequest,
     KeyRequest
 )
