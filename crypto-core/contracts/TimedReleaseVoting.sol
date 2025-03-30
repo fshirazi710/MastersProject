@@ -31,6 +31,13 @@ contract TimedReleaseVoting {
         uint256 electionDeposit;
     }
 
+    struct Shares {
+        uint256 voteIndex;
+        string publicKey;
+        string share;
+        uint256 index;
+    }
+
     struct Holder {
         string publicKey;
         uint256 electionId;
@@ -54,6 +61,7 @@ contract TimedReleaseVoting {
     mapping(string => Holder) public holders;
     mapping(uint256 => Election) public election;
     mapping(uint256 => Vote[]) public votes;
+    mapping(uint256 => Shares[]) public shares;
     mapping(uint256 => string[]) public secret_keys; 
     
     // ======== Events ========
@@ -68,6 +76,12 @@ contract TimedReleaseVoting {
         string g2r,
         string[] alpha,
         uint256 threshold
+    );
+    event ShareSubmitted (
+        uint256 electionId,
+        string publicKey,
+        string share,
+        uint256 index
     );
     event SecretKeyEvent(
         uint256 electionId,
@@ -163,7 +177,7 @@ contract TimedReleaseVoting {
         return count;
     }
     
-    function getHoldersByElection(uint256 electionId) external view returns (string[] memory) {
+    function getHoldersByElection(uint256 electionId) public view returns (string[] memory) {
         uint256 activeCount = getNumHoldersByElection(electionId);
         string[] memory activeHolders = new string[](activeCount);
 
@@ -176,5 +190,34 @@ contract TimedReleaseVoting {
         }
 
         return activeHolders;
+    }
+
+    function submitShares(
+        uint256 electionId,
+        uint256[] memory voteIndex,
+        string memory publicKey,
+        string[] memory shareList
+    ) public {
+        require(electionId < electionCount, "Election does not exist");
+
+        uint256 index;
+        string[] memory activeHolders = getHoldersByElection(electionId);
+
+        for (uint256 i = 0; i < activeHolders.length; i++) {
+            if (keccak256(abi.encodePacked(activeHolders[i])) == keccak256(abi.encodePacked(publicKey))) {
+                index = i;
+                break;
+            }
+        }
+
+        for (uint256 j = 0; j < shareList.length; j++) {
+            shares[electionId].push(Shares(voteIndex[j], publicKey, shareList[j], index));
+            emit ShareSubmitted(electionId, publicKey, shareList[j], index);
+        }
+    }
+
+    function getShares(uint256 electionId) public view returns (Shares[] memory) {
+        require(electionId < electionCount, "Election does not exist");
+        return shares[electionId];
     }
 }
