@@ -2,11 +2,10 @@
 Share router for managing secret shares in the system.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from typing import Dict, Any
-from collections import Counter, defaultdict
+from collections import defaultdict
 
-from app.core.dependencies import get_blockchain_service
-from app.core.error_handling import handle_blockchain_error, handle_not_found_error
+from app.core.dependencies import get_blockchain_service, get_db
+from app.core.error_handling import handle_blockchain_error
 from app.schemas import (
     ShareSubmitRequest, 
     ShareVerificationRequest, 
@@ -28,58 +27,61 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/shares", tags=["Shares"])
 
 @router.post("/submit-share/{election_id}")
-async def submit_share(election_id: int, data: dict, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    try:
-        # Fetch already submitted shares
-        submitted_shares = await blockchain_service.call_contract_function("getShares", election_id)
-        existing_shares = {(share_tuple[0], share_tuple[1]) for share_tuple in submitted_shares}  # Set of (vote_id, share)
+async def submit_share(election_id: int, data: dict, blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
+    # Convert public key to bytes and then to hex
+    public_key_bytes = bytes(data["public_key"].values())
+    public_key_hex = "0x" + public_key_bytes.hex()
+    
+    is_share_released = await db.public_keys.find_one({"public_key": public_key_hex})
+    if is_share_released:
+        raise HTTPException(status_code=400, detail="secret share has already been released")
+    
+    submitted_shares = await blockchain_service.call_contract_function("getShares", election_id)
+    existing_shares = {(share_tuple[0], share_tuple[1]) for share_tuple in submitted_shares}
+    filtered_shares = [
+        (share["vote_id"], share["share"]) 
+        for share in data["shares"] 
+        if (share["vote_id"], share["share"]) not in existing_shares
+    ]
 
-        # Filter out already submitted shares
-        filtered_shares = [
-            (share["vote_id"], share["share"]) 
-            for share in data["shares"] 
-            if (share["vote_id"], share["share"]) not in existing_shares
-        ]
+    if filtered_shares:
+        vote_id = [share[0] for share in filtered_shares]
+        share = [share[1] for share in filtered_shares]
+        
+        nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
 
-        # Convert public key to bytes and then to hex
-        public_key_bytes = bytes(data["public_key"].values())
-        public_key_hex = "0x" + public_key_bytes.hex()
+        estimated_gas = blockchain_service.contract.functions.submitShares(
+            election_id,
+            vote_id,
+            public_key_hex,
+            share
+        ).estimate_gas({"from": WALLET_ADDRESS})
 
-        if filtered_shares:
-            vote_id = [share[0] for share in filtered_shares]  # List of vote IDs
-            share = [share[1] for share in filtered_shares]    # List of shares
-            
-            nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
+        submit_share_tx = blockchain_service.contract.functions.submitShares(
+            election_id,
+            vote_id,
+            public_key_hex,
+            share
+        ).build_transaction({
+            'from': WALLET_ADDRESS,
+            'gas': estimated_gas,
+            'gasPrice': blockchain_service.w3.eth.gas_price,
+            'nonce': nonce,
+        })
 
-            # Estimate gas for the transaction
-            estimated_gas = blockchain_service.contract.functions.submitShares(
-                election_id,
-                vote_id,
-                public_key_hex,
-                share
-            ).estimate_gas({"from": WALLET_ADDRESS})
+        # Sign and send the transaction
+        signed_tx = blockchain_service.w3.eth.account.sign_transaction(submit_share_tx, PRIVATE_KEY)
+        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+        receipt = blockchain_service.w3.eth.wait_for_transaction_receipt(tx_hash)
 
-            # Build the transaction
-            submit_share_tx = blockchain_service.contract.functions.submitShares(
-                election_id,
-                vote_id,
-                public_key_hex,
-                share
-            ).build_transaction({
-                'from': WALLET_ADDRESS,
-                'gas': estimated_gas,
-                'gasPrice': blockchain_service.w3.eth.gas_price,
-                'nonce': nonce,
-            })
-
-            # Sign and send the transaction
-            signed_tx = blockchain_service.w3.eth.account.sign_transaction(submit_share_tx, PRIVATE_KEY)
-            tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else blockchain_service.w3.to_hex(tx_hash)
-
-    except Exception as e:
-        logger.error(f"Error submitting shares: {str(e)}")
-        raise handle_blockchain_error("submit shares", e)
+        if receipt.status == 1:
+            filter_criteria = {"public_key": public_key_hex}
+            update_field = {"$set": {"released_secret": True}}
+            await db.public_keys.update_one(filter_criteria, update_field)
+        else:
+            raise HTTPException(status_code=500, detail="secret share failed to be stored on the blockchain")
+    else:
+        raise HTTPException(status_code=400, detail="secret share has already been released")
 
 
 @router.get("/decryption-status/{election_id}")

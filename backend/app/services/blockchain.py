@@ -2,15 +2,10 @@ from web3 import Web3
 from eth_typing import Address
 from app.core.config import settings
 from app.services.crypto import CryptoService
-from app.core.error_handling import handle_blockchain_error
 import logging
 import json
 import os
 import asyncio
-from app.core.config import (
-    WALLET_ADDRESS,
-    PRIVATE_KEY,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -51,47 +46,6 @@ class BlockchainService:
             abi = []
             
         return self.w3.eth.contract(address=self.contract_address, abi=abi)
-    
-    async def join_as_holder(self, election_id: int, public_key: str) -> dict:
-        """
-        Allows a user to join as a secret holder by staking a deposit.
-        Implements the joinAsHolder function from the smart contract.
-        """
-        try:
-            nonce = self.w3.eth.get_transaction_count(WALLET_ADDRESS)
-            estimated_gas = self.contract.functions.joinAsHolder(
-                election_id, public_key
-            ).estimate_gas({"from": WALLET_ADDRESS})
-
-            join_as_holder_tx = self.contract.functions.joinAsHolder(
-                election_id, public_key
-            ).build_transaction({
-                'from': WALLET_ADDRESS,
-                'gas': estimated_gas,
-                'gasPrice': self.w3.eth.gas_price,
-                'nonce': nonce,
-            })
-
-            # Sign and send transaction
-            signed_tx = self.w3.eth.account.sign_transaction(join_as_holder_tx, PRIVATE_KEY)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else self.w3.to_hex(tx_hash)
-
-            # Wait for transaction receipt
-            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-
-            logger.info(f"Successfully joined as holder. Transaction: {tx_hash_hex}")
-            return {
-                'success': True,
-                'transaction_hash': tx_hash_hex,
-                'holder_address': WALLET_ADDRESS,
-                'public_key': public_key
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to join as holder: {str(e)}")
-            raise handle_blockchain_error("join as holder", e)
-
 
     async def call_contract_function(self, function_name, *args):
         """

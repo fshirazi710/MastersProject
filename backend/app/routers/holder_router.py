@@ -1,10 +1,8 @@
 """
 Holder router for managing secret holders in the system.
 """
-from fastapi import APIRouter, Depends
-from typing import List, Dict, Any
-
-from app.core.dependencies import get_blockchain_service
+from fastapi import APIRouter, Depends, HTTPException
+from app.core.dependencies import get_blockchain_service, get_db
 from app.core.error_handling import handle_blockchain_error, handle_validation_error
 from app.schemas import (
     JoinHolderRequest,
@@ -14,6 +12,10 @@ from app.schemas import (
     HolderStatusResponse,
     RequiredDepositResponse,
     HolderResponse
+)
+from app.core.config import (
+    WALLET_ADDRESS,
+    PRIVATE_KEY,
 )
 from app.services.blockchain import BlockchainService
 
@@ -72,38 +74,38 @@ async def get_holder_count(election_id: int, blockchain_service: BlockchainServi
 async def join_as_holder(
     election_id: int,
     request: dict,
-    blockchain_service: BlockchainService = Depends(get_blockchain_service)
+    blockchain_service: BlockchainService = Depends(get_blockchain_service),
+    db=Depends(get_db)
 ):
-    """
-    Join as a secret holder by staking a deposit.
+    public_key_bytes = bytes(request["public_key"].values())
+    public_key_hex = "0x" + public_key_bytes.hex()
     
-    Args:
-        request: Join request with public key and deposit amount
-        
-    Returns:
-        Transaction response with transaction hash
-    """
-    try:
-        public_key_bytes = bytes(request["public_key"].values())
-        public_key_hex = "0x" + public_key_bytes.hex()
-        # Call the blockchain service to join as holder
-        result = await blockchain_service.join_as_holder(
-            election_id=election_id,
-            public_key=public_key_hex
-        )
-        
-        if not result.get("success", False):
-            raise handle_blockchain_error("join as holder", Exception(result.get("error", "Unknown error")))
-            
+    secret_holders = await blockchain_service.call_contract_function("getHoldersByElection", election_id)
+    if public_key_hex in secret_holders:
+        raise HTTPException(status_code=400, detail="this public key has already been registered")
+    
+    nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
+    estimated_gas = blockchain_service.contract.functions.joinAsHolder(
+        election_id, public_key_hex
+    ).estimate_gas({"from": WALLET_ADDRESS})
+
+    join_as_holder_tx = blockchain_service.contract.functions.joinAsHolder(
+        election_id, public_key_hex
+    ).build_transaction({
+        'from': WALLET_ADDRESS,
+        'gas': estimated_gas,
+        'gasPrice': blockchain_service.w3.eth.gas_price,
+        'nonce': nonce,
+    })
+
+    signed_tx = blockchain_service.w3.eth.account.sign_transaction(join_as_holder_tx, PRIVATE_KEY)
+    tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+    receipt = blockchain_service.w3.eth.wait_for_transaction_receipt(tx_hash)
+    
+    if receipt.status == 1:
         return StandardResponse(
             success=True,
-            message="Successfully joined as a secret holder",
-            data=TransactionResponse(
-                success=True,
-                message="Successfully joined as holder",
-                transaction_hash=result["transaction_hash"]
-            )
+            message="Successfully joined as a secret holder"
         )
-    except Exception as e:
-        logger.error(f"Error joining as holder: {str(e)}")
-        raise handle_blockchain_error("join as holder", e)
+    else:
+        raise HTTPException(status_code=500, detail="secret holder failed to be stored on the blockchain")

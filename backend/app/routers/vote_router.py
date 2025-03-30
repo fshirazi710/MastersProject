@@ -58,6 +58,7 @@ async def get_vote_information(election_id: int, blockchain_service: BlockchainS
 async def store_public_key(vote_id: int, data: dict, db=Depends(get_db)):
     public_key_bytes = bytes(data["public_key"].values())
     public_key_hex = "0x" + public_key_bytes.hex()
+    
     public_key_data = {
         "vote_id": vote_id,
         "reward_token": 1,
