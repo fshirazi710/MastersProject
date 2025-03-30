@@ -4,7 +4,6 @@ Election router for managing elections in the system.
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
-
 from app.core.dependencies import get_blockchain_service, get_db
 from app.core.error_handling import handle_blockchain_error, handle_validation_error
 from app.core.config import (
@@ -27,64 +26,56 @@ router = APIRouter(prefix="/elections", tags=["Elections"])
 
 @router.post("/create-election", response_model=StandardResponse[TransactionResponse])
 async def create_election(data: ElectionCreateRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    try:
-        start_timestamp = int(datetime.fromisoformat(data.start_date).timestamp())
-        end_timestamp = int(datetime.fromisoformat(data.end_date).timestamp())
+    start_timestamp = int(datetime.fromisoformat(data.start_date).timestamp())
+    end_timestamp = int(datetime.fromisoformat(data.end_date).timestamp())
+    
+    if end_timestamp <= start_timestamp:
+        raise handle_validation_error("End date must be after start date")
         
-        if end_timestamp <= start_timestamp:
-            raise handle_validation_error("End date must be after start date")
-            
-        if len(data.options) < 2:
-            raise handle_validation_error("At least two options are required")
-            
-        reward_pool_wei = blockchain_service.w3.to_wei(data.reward_pool, 'ether')
-        required_deposit_wei = blockchain_service.w3.to_wei(data.required_deposit, 'ether')
+    if len(data.options) < 2:
+        raise handle_validation_error("At least two options are required")
         
-        nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
-        estimated_gas = blockchain_service.contract.functions.createElection(
-            data.title,
-            data.description,
-            start_timestamp,
-            end_timestamp,
-            data.options,
-            reward_pool_wei,
-            required_deposit_wei
-        ).estimate_gas({"from": WALLET_ADDRESS})
-         
-        create_election_tx = blockchain_service.contract.functions.createElection(
-            data.title,
-            data.description,
-            start_timestamp,
-            end_timestamp,
-            data.options,
-            reward_pool_wei,
-            required_deposit_wei
-        ).build_transaction({
-            'from': WALLET_ADDRESS,
-            'gas': estimated_gas,
-            'gasPrice': blockchain_service.w3.eth.gas_price,
-            'nonce': nonce,
-        })
+    reward_pool_wei = blockchain_service.w3.to_wei(data.reward_pool, 'ether')
+    required_deposit_wei = blockchain_service.w3.to_wei(data.required_deposit, 'ether')
+    
+    nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
+    estimated_gas = blockchain_service.contract.functions.createElection(
+        data.title,
+        data.description,
+        start_timestamp,
+        end_timestamp,
+        data.options,
+        reward_pool_wei,
+        required_deposit_wei
+    ).estimate_gas({"from": WALLET_ADDRESS})
         
-        # Sign and send transaction
-        signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_election_tx, PRIVATE_KEY)
-        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-        tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else blockchain_service.w3.to_hex(tx_hash)
-        
+    create_election_tx = blockchain_service.contract.functions.createElection(
+        data.title,
+        data.description,
+        start_timestamp,
+        end_timestamp,
+        data.options,
+        reward_pool_wei,
+        required_deposit_wei
+    ).build_transaction({
+        'from': WALLET_ADDRESS,
+        'gas': estimated_gas,
+        'gasPrice': blockchain_service.w3.eth.gas_price,
+        'nonce': nonce,
+    })
+    
+    # Sign and send transaction
+    signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_election_tx, PRIVATE_KEY)
+    tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+    receipt = blockchain_service.w3.eth.wait_for_transaction_receipt(tx_hash)
+    
+    if receipt.status == 1:
         return StandardResponse(
             success=True,
             message="Successfully created election",
-            data=TransactionResponse(
-                success=True,
-                message="Successfully created election",
-                transaction_hash=tx_hash_hex
-            )
         )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating election: {str(e)}")
-        raise handle_blockchain_error("create election", e)
+    else:
+        raise HTTPException(status_code=500, detail="failed to create election")
 
 
 @router.get("/all-elections", response_model=StandardResponse[List[Dict[str, Any]]])

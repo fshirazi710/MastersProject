@@ -65,8 +65,8 @@ export const electionApi = {
 // API service for votes
 export const voteApi = {
   // Submit a vote
-  submitVote: (voteData) => {
-    return apiClient.post('/api/votes', voteData);
+  submitVote: (electionId, voteData) => {
+    return apiClient.post(`/api/votes/submit-vote/${electionId}`, voteData);
   },
 
   // Retrieve vote information for a specific election

@@ -92,17 +92,18 @@
           const public_key = new Uint8Array(cleanedHexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
           public_keys.push(public_key);
         });
-        console.log(public_keys);
 
         const total = public_keys.length
 
+        const privateKeyHex = Cookies.get("privateKey");
+        const publicKeyHex = getPublicKeyFromPrivate(privateKeyHex)
+
         getKAndSecretShares(public_keys, threshold, total)
           .then(([k, g1r, g2r, alpha]) => {
-            console.log(k)
             g1rValue.value = g1r
             const ciphertext = AESEncrypt(selectedOption.value, k)
             ciphertext.then(value => {
-              const response = voteApi.submitVote({"election_id": props.voteId, "public_keys": public_keys, "ciphertext": value, "g1r": g1r, "g2r": g2r, "alpha": alpha, "threshold": threshold});
+              const response = voteApi.submitVote(props.voteId, {"election_id": props.voteId, "voter": publicKeyHex ,"public_keys": public_keys, "ciphertext": value, "g1r": g1r, "g2r": g2r, "alpha": alpha, "threshold": threshold});
             });
           })
           .catch((error) => {

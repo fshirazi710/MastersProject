@@ -86,7 +86,7 @@ const decryptVotes = async () => {
     }
 
     const decryptedResults = [];
-    const voteOptions = [...props.options]; // Creates a normal array copy
+    const voteOptions = [...props.options];
 
     for (let voteId in shares) {
       const shareArray = shares[voteId].slice(0, votes[voteId].threshold);
@@ -98,6 +98,7 @@ const decryptVotes = async () => {
       
       const decryptedResponse = await AESDecrypt(vote.ciphertext, key);
       decryptedResults.push(decryptedResponse);
+      console.log(decryptedResponse)
     }
 
     const voteCounts = {};

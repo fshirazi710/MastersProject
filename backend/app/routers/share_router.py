@@ -33,7 +33,8 @@ async def submit_share(election_id: int, data: dict, blockchain_service: Blockch
     public_key_hex = "0x" + public_key_bytes.hex()
     
     is_share_released = await db.public_keys.find_one({"public_key": public_key_hex})
-    if is_share_released:
+    logger.info(is_share_released)
+    if is_share_released and "released_secret" in is_share_released:
         raise HTTPException(status_code=400, detail="secret share has already been released")
     
     submitted_shares = await blockchain_service.call_contract_function("getShares", election_id)

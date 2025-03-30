@@ -42,7 +42,8 @@ async def get_vote_information(election_id: int, blockchain_service: BlockchainS
                 "g1r": vote[2],
                 "g2r": vote[3],
                 "alphas": vote[4],
-                "threshold": vote[5]
+                "voter": vote[5],
+                "threshold": vote[6]
             })
         return StandardResponse(
             success=True,
@@ -92,64 +93,58 @@ async def validate_public_key(data: dict, db=Depends(get_db)):
         )
 
 
-@router.post("", response_model=StandardResponse[TransactionResponse])
-async def submit_vote(request: dict, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    """
-    Submit an encrypted vote to the blockchain.
+@router.post("/submit-vote/{election_id}", response_model=StandardResponse[TransactionResponse])
+async def submit_vote(election_id: int, request: dict, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+    public_keys = []
     
-    Args:
-        request: Vote submission request with vote data and decryption time
+    votes = await blockchain_service.call_contract_function("getVotes", election_id)
+    voter_bytes = bytes(request["voter"].values())
+    voter_hex = "0x" + voter_bytes.hex()
+    
+    if (any(entry[5] == voter_hex for entry in votes)):
+        raise HTTPException(status_code=400, detail="public key has already cast a vote")
         
-    Returns:
-        Transaction response with transaction hash and vote ID
-    """
-    try:
-        public_keys = []
-        for key in request["public_keys"]:
-            public_key_bytes = bytes(key.values())
-            public_key_hex = "0x" + public_key_bytes.hex()
-            public_keys.append(public_key_hex)
-            
-        logger.info(public_keys)
-        nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
+    for key in request["public_keys"]:
+        public_key_bytes = bytes(key.values())
+        public_key_hex = "0x" + public_key_bytes.hex()
+        public_keys.append(public_key_hex)
+    
+    nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
+    estimated_gas = blockchain_service.contract.functions.submitVote(
+        int(request["election_id"]),
+        public_keys,
+        request["ciphertext"],
+        request["g1r"],
+        request["g2r"],
+        request["alpha"],
+        voter_hex,
+        request["threshold"]
+    ).estimate_gas({"from": WALLET_ADDRESS})
 
-        estimated_gas = blockchain_service.contract.functions.submitVote(
-            int(request["election_id"]),
-            public_keys,
-            request["ciphertext"],
-            request["g1r"],
-            request["g2r"],
-            request["alpha"],
-            request["threshold"]
-        ).estimate_gas({"from": WALLET_ADDRESS})
+    create_election_tx = blockchain_service.contract.functions.submitVote(
+        int(request["election_id"]),
+        public_keys,
+        request["ciphertext"],
+        request["g1r"],
+        request["g2r"],
+        request["alpha"],
+        voter_hex,
+        request["threshold"]
+    ).build_transaction({
+        'from': WALLET_ADDRESS,
+        'gas': estimated_gas,
+        'gasPrice': blockchain_service.w3.eth.gas_price,
+        'nonce': nonce,
+    })
 
-        create_election_tx = blockchain_service.contract.functions.submitVote(
-            int(request["election_id"]),
-            public_keys,
-            request["ciphertext"],
-            request["g1r"],
-            request["g2r"],
-            request["alpha"],
-            request["threshold"]
-        ).build_transaction({
-            'from': WALLET_ADDRESS,
-            
-            'gas': estimated_gas,
-            'gasPrice': blockchain_service.w3.eth.gas_price,
-            'nonce': nonce,
-        })
-
-        # Sign and send transaction
-        signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_election_tx, PRIVATE_KEY)
-        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-        tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, 'hex') else blockchain_service.w3.to_hex(tx_hash)
-
+    signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_election_tx, PRIVATE_KEY)
+    tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+    receipt = blockchain_service.w3.eth.wait_for_transaction_receipt(tx_hash)
+    
+    if receipt.status == 1:
         return StandardResponse(
             success=True,
-            message="Successfully submitted vote",
+            message="Successfully submitted vote"
         )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error submitting vote: {str(e)}")
-        raise handle_blockchain_error("submit vote", e)
+    else:
+        raise HTTPException(status_code=500, detail="vote failed to be submitted")
