@@ -78,7 +78,7 @@ const decryptVotes = async () => {
     const indexes = response.data[0];
     const shares = response.data[1];
 
-    if (shares[0].length === votes[0].threshold) {
+    if (shares[0].length >= votes[0].threshold) {
       isDecrypted.value = true;
     } else {
       isDecrypted.value = false;
@@ -89,11 +89,12 @@ const decryptVotes = async () => {
     const voteOptions = [...props.options]; // Creates a normal array copy
 
     for (let voteId in shares) {
-      const shareArray = shares[voteId];
+      const shareArray = shares[voteId].slice(0, votes[voteId].threshold);
       const shareBigInts = shareArray.map(share => BigInt("0x" + share));
-
+      const slicedIndexes = indexes[voteId].slice(0, votes[voteId].threshold);
       const vote = votes[voteId]; 
-      const key = await recomputeKey(indexes[voteId], shareBigInts, vote.alphas, vote.threshold);
+
+      const key = await recomputeKey(slicedIndexes, shareBigInts, vote.alphas, vote.threshold);
       
       const decryptedResponse = await AESDecrypt(vote.ciphertext, key);
       decryptedResults.push(decryptedResponse);
@@ -119,6 +120,7 @@ const decryptVotes = async () => {
     alert('Error decrypting vote. Please try again.');
   }
 };
+
 </script>
 
 <style scoped>
