@@ -26,7 +26,6 @@ class Settings(BaseSettings):
     WEB3_PROVIDER_URL: str = config["BLOCKCHAIN"].get("WEB3_PROVIDER_URL", "")
     CONTRACT_ADDRESS: str = config["BLOCKCHAIN"].get("CONTRACT_ADDRESS", "")
     WALLET_ADDRESS: str = config["BLOCKCHAIN"].get("WALLET_ADDRESS", "")
-    CONTRACT_ABI: list = json.loads(config["BLOCKCHAIN"].get("Contract ABI", "[]"))
     PRIVATE_KEY: str = config["BLOCKCHAIN"].get("PRIVATE_KEY", "")
 
     # Database
@@ -53,7 +52,6 @@ CORS_ALLOWED_ORIGINS = settings.CORS_ALLOWED_ORIGINS
 WEB3_PROVIDER_URL = settings.WEB3_PROVIDER_URL
 CONTRACT_ADDRESS = settings.CONTRACT_ADDRESS
 WALLET_ADDRESS = settings.WALLET_ADDRESS
-CONTRACT_ABI = settings.CONTRACT_ABI
 PRIVATE_KEY = settings.PRIVATE_KEY
 DATABASE_URL = settings.DATABASE_URL
 SECRET_KEY = settings.SECRET_KEY

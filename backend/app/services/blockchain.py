@@ -1,7 +1,6 @@
 from web3 import Web3
 from eth_typing import Address
 from app.core.config import settings
-from app.services.crypto import CryptoService
 import logging
 import json
 import os
@@ -19,9 +18,6 @@ class BlockchainService:
         # Initialize Web3 connection
         self.w3 = Web3(Web3.HTTPProvider(settings.WEB3_PROVIDER_URL))
         self.contract_address = Address(bytes.fromhex(settings.CONTRACT_ADDRESS[2:]))
-        
-        # Initialize crypto service
-        self.crypto_service = CryptoService()
         
         # Load contract ABI
         self.contract = self._load_contract()
