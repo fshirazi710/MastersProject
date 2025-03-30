@@ -86,13 +86,11 @@
       });
 
       if (isSecretHolder.value === 'yes') {
-        joinAsSecretHolder(props.voteId, pk.value)
+        await joinAsSecretHolder(props.voteId, pk.value)
+        alert("Successfully registered as secret holder");
+      } else {
+        alert("Failed to register user as secret holder");
       }
-      else {
-        console.log("ERROR");
-      }
-
-      alert("TEMPORARY: Success");
     } catch (err) {
       console.error('Failed to store public key:', err);
       error.value = err.message || 'Failed to store public key. Please try again.';
