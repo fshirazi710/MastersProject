@@ -9,12 +9,8 @@
             </p>
         </div>
 
-        <button @click="getSecretShare" type="submit" class="btn primary">
-          Get Secret Share
-        </button>
-        
-        <button @click="decryptVotes" type="submit" class="btn primary">
-          Decrypt Votes
+        <button @click="generateSecretShare" type="submit" class="btn primary">
+          Submit Secret Share
         </button>
     </div>
 </template>
@@ -31,7 +27,7 @@
         },
     })
 
-    const getSecretShare = async () => {
+    const generateSecretShare = async () => {
         try {
             const secretShares = []
 
@@ -47,7 +43,7 @@
             for (const vote in voteInformation) {
                 if (voteInformation[vote].g1r) {
                     const generatedShare = generateShares(voteInformation[vote].g1r, privateKey)
-                    const generatedShare2 = generateShares2(voteInformation[vote].g1r, privateKey)
+                    // const generatedShare2 = generateShares2(voteInformation[vote].g1r, privateKey)
                     // const verifiedShare = verifyShares(generatedShare, generatedShare2, publicKey, voteInformation[vote].g2r)
                     secretShares.push({vote_id: voteInformation[vote].vote_id, share: generatedShare})
                 } else {
