@@ -6,7 +6,7 @@
         <!-- Encryption notice to inform users -->
         <div class="encryption-notice">
           <i class="lock-icon">🔒</i>
-          <p>Your vote will be encrypted and remain secret until the voting period ends and all required keys are released.</p>
+          <p>Your vote will be encrypted and remain secret until the voting period ends and all required keys are released.Be sure to come back later to check the results of the vote and see if you’re one of the lucky winners of the vouchers!</p>
         </div>
         <!-- Voting form with radio options -->
         <form @submit.prevent="handleVote" class="voting-form">

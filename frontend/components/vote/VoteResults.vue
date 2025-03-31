@@ -7,7 +7,7 @@
       <div class="pending-message">
         <i class="lock-icon">🔒</i>
         <h3>Results are still encrypted</h3>
-        <p>Waiting for secret holders to release their keys...</p>
+        <p>Waiting for secret holders to release their secrets...</p>
       </div>
     </div>
 
@@ -27,19 +27,20 @@
           {{ ((votes / totalVotes) * 100).toFixed(1) }}% ({{ votes }} votes)
         </div>
       </div>
-    </div>
-
-    <!-- Optionally, show a loading message until decryption is complete -->
-    <div v-else class="loading-message">
-      <p>Decrypting results...</p>
+      <div class="encryption-notice">
+        <i class="lock-icon">🎉</i>
+        <p>To check if you've won, click the button below. If you're a winner, enter your email to claim your prize!</p>
+        <button class="btn primary" @click="checkWinners">See If I’m a Winner</button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { voteApi, shareApi } from '@/services/api';
-import { recomputeKey, AESDecrypt } from '@/services/cryptography';
+import { voteApi, shareApi, electionApi } from '@/services/api';
+import { getPublicKeyFromPrivate, recomputeKey, AESDecrypt } from '@/services/cryptography';
+import Cookies from 'js-cookie';
 
 const props = defineProps({
   options: {
@@ -60,6 +61,23 @@ onMounted(async () => {
   await decryptVotes();
 })
 
+const checkWinners = async () => {
+  try {
+    const privateKeyHex = Cookies.get("privateKey");
+
+    if (!privateKeyHex) {
+      throw new Error("No private key found. Please register first.");
+    }
+
+    const publicKeyHex = getPublicKeyFromPrivate(privateKeyHex)
+
+    const response = await electionApi.checkWinners(props.voteId, {public_key: publicKeyHex});
+  } catch (error) {
+    console.error("Failed to retrieve vote information:", error);
+    alert('Error retrieving vote information. Please try again.');
+  }
+}
+
 const fetchVoteInformation = async () => {
   try {
     const response = await voteApi.getVoteInformation(props.voteId);
@@ -78,7 +96,7 @@ const decryptVotes = async () => {
     const indexes = response.data[0];
     const shares = response.data[1];
 
-    if (shares[0].length >= votes[0].threshold) {
+    if (shares[0] && shares[0].length >= votes[0].threshold) {
       isDecrypted.value = true;
     } else {
       isDecrypted.value = false;

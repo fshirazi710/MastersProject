@@ -3,13 +3,14 @@
       <h2>Register To Vote</h2>
       <!-- Encryption notice to inform users -->
       <div class="encryption-notice">
-        <i class="lock-icon">🔒</i>
+        <i class="lock-icon">📝</i>
         <p>The key pair generated here is essential for casting your vote. Your key is stored in your browser, return here to cast your vote.</p>
       </div>
       <div class="encryption-notice">
-        <i class="lock-icon">🔒</i>
-        <p>You can choose to be a secret holder, which means you are a part of making sure your vote remains secure.
-          If you choose to become a secret holder, you will need to release your private key at the specified time.
+        <i class="lock-icon">📝</i>
+        <p>You can choose to be a secret holder, which means you are a part of making sure votes remain secure.
+          If you choose to become a secret holder, you will need to release your private key at the end of the vote: {{props.endDate}}.
+          Note: You will only have 15 minutes to release your secrets.
         </p>
       </div>
     
@@ -57,6 +58,11 @@
   
   const props = defineProps({
     voteId: {
+      type: String,
+      required: true
+    },
+
+    endDate: {
       type: String,
       required: true
     }

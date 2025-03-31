@@ -4,9 +4,7 @@
         <!-- Encryption notice to inform users -->
         <div class="encryption-notice">
             <i class="lock-icon">🔒</i>
-            <p>You can choose to be a secret holder, which means you are a part of making sure your vote remains secure.
-            If you choose to become a secret holder, you will need to release your private key at the specified time.
-            </p>
+            <p>Clicking the button below will release your secret share. Be sure to come back later to check the results of the vote and see if you’re one of the lucky winners of the vouchers!</p>
         </div>
 
         <button @click="generateSecretShare" type="submit" class="btn primary">

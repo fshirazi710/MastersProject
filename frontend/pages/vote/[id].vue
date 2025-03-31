@@ -60,6 +60,7 @@
     <!-- Registration section - only shown for join votes -->
     <RegisterToVote 
       :vote-id="route.params.id"
+      :endDate="vote.endDate"
     />
 
     <!-- Voting section - only shown for active votes -->
@@ -115,7 +116,7 @@
               id: voteData.id,
               title: voteData.title || `Vote ${voteData.id}`,
               description: voteData.description || 'No description available',
-              status: "active" || 'active',
+              status: voteData.status || 'active',
               startDate: voteData.start_date || new Date().toISOString(),
               endDate: voteData.end_date || new Date(Date.now() + 86400000).toISOString(),
               options: voteData.options || [],
@@ -166,6 +167,28 @@
       minute: '2-digit'
     })
   }
+
+  // Compute if the current time is within the submission window
+  const isWithinSubmissionTime = computed(() => {
+    if (!vote.value) return false
+    
+    const end = new Date(vote.value.endDate)
+    const now = new Date()
+    const fifteenMinutesAfterEnd = new Date(end.getTime() + 15 * 60000)
+
+    return now >= end && now <= fifteenMinutesAfterEnd
+  })
+
+  // Compute if the current time is at least 20 minutes after the end of the vote
+  const isResultTime = computed(() => {
+    if (!vote.value) return false
+    
+    const end = new Date(vote.value.endDate)
+    const now = new Date()
+    const twentyMinutesAfterEnd = new Date(end.getTime() + 20 * 60000) // 20 minutes in milliseconds
+
+    return now >= twentyMinutesAfterEnd
+  })
 </script>
 
 <style lang="scss" scoped>

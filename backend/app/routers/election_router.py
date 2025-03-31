@@ -10,7 +10,7 @@ from app.schemas import (
     StandardResponse,
     TransactionResponse
 )
-from app.helpers.election_helper import get_election_status, election_information_response, create_election_transaction
+from app.helpers.election_helper import get_election_status, election_information_response, create_election_transaction, check_winners_already_selected, check_winners, generate_winners
 from app.services.blockchain import BlockchainService
 import logging
 
@@ -101,3 +101,17 @@ async def get_election_information(election_id: int, blockchain_service: Blockch
         logger.error(f"Error getting election information: {str(e)}")
         raise HTTPException(status_code=500, detail="failed to get election information")
 
+
+@router.post("/get-winners/{election_id}")
+async def get_winners(election_id: int, data: dict, db=Depends(get_db)):
+    
+    winners_already_selected = await check_winners_already_selected(election_id, db)
+    
+    if winners_already_selected:
+        is_a_winner = await check_winners(election_id, data["public_key"], db)
+        return is_a_winner
+    else:
+        await generate_winners(election_id, )
+
+        is_a_winner = await check_winners(election_id, data["public_key"], db)
+        return is_a_winner

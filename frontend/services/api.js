@@ -55,6 +55,11 @@ export const electionApi = {
   getAllElections: () => {
     return apiClient.get('/api/elections/all-elections');
   },
+
+  // 
+  checkWinners: (election_id, data) => {
+    return apiClient.post(`/api/elections/get-winners/${election_id}`, data);
+  },
   
   // Get election by ID
   getElectionById: (electionId) => {
