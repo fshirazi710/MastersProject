@@ -59,12 +59,14 @@
 
     <!-- Registration section - only shown for join votes -->
     <RegisterToVote 
+      v-if="vote.status === 'join'"
       :vote-id="route.params.id"
       :endDate="vote.endDate"
     />
 
     <!-- Voting section - only shown for active votes -->
     <CastYourVote 
+      v-if="vote.status === 'active'"
       :vote-id="route.params.id"
       :options="vote.options"
       :endDate="vote.endDate"
@@ -72,11 +74,13 @@
 
     <!-- Submit Secret Share section - secret holders can submit their shares -->
     <SubmitSecretShare
+      v-if="isSubmissionTime"
       :vote-id="route.params.id"
     />
 
     <!-- Results section - only shown for ended votes -->
     <VoteResults
+      v-if="isResultTime"
       :options="vote.options"
       :voteId="route.params.id"
     />
@@ -169,7 +173,7 @@
   }
 
   // Compute if the current time is within the submission window
-  const isWithinSubmissionTime = computed(() => {
+  const isSubmissionTime = computed(() => {
     if (!vote.value) return false
     
     const end = new Date(vote.value.endDate)
