@@ -183,15 +183,15 @@
     return now >= end && now <= fifteenMinutesAfterEnd
   })
 
-  // Compute if the current time is at least 20 minutes after the end of the vote
+  // Compute if the current time is at least 15 minutes after the end of the vote
   const isResultTime = computed(() => {
     if (!vote.value) return false
     
     const end = new Date(vote.value.endDate)
     const now = new Date()
-    const twentyMinutesAfterEnd = new Date(end.getTime() + 20 * 60000) // 20 minutes in milliseconds
+    const fifteenMinutesAfterEnd = new Date(end.getTime() + 15 * 60000)
 
-    return now >= twentyMinutesAfterEnd
+    return now >= fifteenMinutesAfterEnd
   })
 </script>
 

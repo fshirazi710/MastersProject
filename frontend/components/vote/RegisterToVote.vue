@@ -72,6 +72,12 @@
   const pk = ref(null);
 
   const generateKeyPair = async () => {
+    const privateKeyHex = Cookies.get("privateKey");
+
+    if (privateKeyHex) {
+      throw new Error("You have already signed up for this vote");
+    }
+
     const { sk, pk: publicKey } = generateBLSKeyPair();
 
     // Store the private key in a cookie for 1 day
@@ -94,8 +100,10 @@
       if (isSecretHolder.value === 'yes') {
         await joinAsSecretHolder(props.voteId, pk.value)
         alert("Successfully registered as secret holder");
+      } else if (isSecretHolder.value === 'no') {
+        alert("Successfully registered as voter");
       } else {
-        alert("Failed to register user as secret holder");
+        alert("Failed to register user. Please try again.")
       }
     } catch (err) {
       console.error('Failed to store public key:', err);

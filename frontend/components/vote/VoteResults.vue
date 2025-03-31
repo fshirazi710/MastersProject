@@ -110,13 +110,12 @@ const decryptVotes = async () => {
       const shareArray = shares[voteId].slice(0, votes[voteId].threshold);
       const shareBigInts = shareArray.map(share => BigInt("0x" + share));
       const slicedIndexes = indexes[voteId].slice(0, votes[voteId].threshold);
-      const vote = votes[voteId]; 
+      const vote = votes[voteId];
 
       const key = await recomputeKey(slicedIndexes, shareBigInts, vote.alphas, vote.threshold);
       
       const decryptedResponse = await AESDecrypt(vote.ciphertext, key);
       decryptedResults.push(decryptedResponse);
-      console.log(decryptedResponse)
     }
 
     const voteCounts = {};

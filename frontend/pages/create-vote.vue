@@ -219,13 +219,27 @@ const handleSubmit = async () => {
       throw new Error('Insufficient balance for reward pool');
     }
 
-    // Format dates to ISO strings
+    // Convert to BST before sending
+    const toBSTISOString = (date) => {
+      const bstDate = new Date(date).toLocaleString("en-GB", {
+        timeZone: "Europe/London",
+      });
+
+      // Convert back to an ISO format string (YYYY-MM-DDTHH:MM)
+      const [day, month, year, hour, minute, second] = bstDate.match(/\d+/g);
+      return `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+    };
+
+    // Format dates correctly in BST
     const formattedData = {
       ...voteData.value,
-      start_date: new Date(voteData.value.start_date).toISOString(),
-      end_date: new Date(voteData.value.end_date).toISOString(),
+      start_date: toBSTISOString(voteData.value.start_date),
+      end_date: toBSTISOString(voteData.value.end_date),
     };
-    
+
+    console.log("BST Start Date:", formattedData.start_date);
+    console.log("BST End Date:", formattedData.end_date);
+
     // First create the vote in the backend
     const response = await electionApi.createElection(formattedData);
     alert(response.data.message || 'Vote created successfully!');

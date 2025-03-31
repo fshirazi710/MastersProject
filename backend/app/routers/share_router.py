@@ -32,10 +32,12 @@ async def submit_share(election_id: int, data: dict, blockchain_service: Blockch
     public_key_bytes = bytes(data["public_key"].values())
     public_key_hex = "0x" + public_key_bytes.hex()
     
-    is_share_released = await db.public_keys.find_one({"public_key": public_key_hex})
-    logger.info(is_share_released)
-    if is_share_released and "released_secret" in is_share_released:
+    user = await db.public_keys.find_one({"public_key": public_key_hex})
+    if user and "released_secret" in user:
         raise HTTPException(status_code=400, detail="secret share has already been released")
+    
+    if not user.get("is_secret_holder", False):
+        raise HTTPException(status_code=400, detail="user is not a secret holder")
     
     submitted_shares = await blockchain_service.call_contract_function("getShares", election_id)
     existing_shares = {(share_tuple[0], share_tuple[1]) for share_tuple in submitted_shares}
@@ -160,7 +162,7 @@ async def get_shares(election_id: int, blockchain_service: BlockchainService = D
 
             share_indexes[vote_id] = list(sorted_indexes)
             vote_shares[vote_id] = list(sorted_shares)
-            
+
         return share_indexes, vote_shares
 
     except HTTPException:
