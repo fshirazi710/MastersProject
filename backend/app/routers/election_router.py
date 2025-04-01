@@ -104,14 +104,36 @@ async def get_election_information(election_id: int, blockchain_service: Blockch
 
 @router.post("/get-winners/{election_id}")
 async def get_winners(election_id: int, data: dict, db=Depends(get_db)):
+    public_key_bytes = bytes(data["public_key"].values())
+    public_key_hex = "0x" + public_key_bytes.hex()
     
     winners_already_selected = await check_winners_already_selected(election_id, db)
     
     if winners_already_selected:
-        is_a_winner = await check_winners(election_id, data["public_key"], db)
+        is_a_winner = await check_winners(election_id, public_key_hex, db)
         return is_a_winner
     else:
-        await generate_winners(election_id, )
+        await generate_winners(election_id, db)
 
-        is_a_winner = await check_winners(election_id, data["public_key"], db)
+        is_a_winner = await check_winners(election_id, public_key_hex, db)
         return is_a_winner
+    
+
+@router.post("/submit-email/{election_id}")
+async def submit_email(election_id: int, data: dict, db=Depends(get_db)):
+    try:
+        
+        existing_entry = await db.winner_emails.find_one({"election_id": election_id, "winner_email": data["email"]})
+
+        if existing_entry:
+            return {"message": "Email already submitted."}
+        
+        result = await db.winner_emails.insert_one({"election_id": election_id, "winner_email": data["email"]})
+        
+        if not result.acknowledged:
+            raise HTTPException(status_code=500, detail="Failed to store email in database.")
+        
+        return {"message": "Email submitted successfully."}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -7,8 +7,8 @@
             <p>Clicking the button below will release your secret share. Be sure to come back later to check the results of the vote and see if you’re one of the lucky winners of the vouchers!</p>
         </div>
 
-        <button @click="generateSecretShare" type="submit" class="btn primary">
-          Submit Secret Share
+        <button @click="generateSecretShare" type="submit" class="btn primary" :disabled="loading">
+          {{ loading ? 'Submitting Share...' : 'Submit Secret Share' }}
         </button>
     </div>
 </template>
@@ -17,6 +17,8 @@
     import { voteApi, shareApi } from '@/services/api'
     import { getPublicKeyFromPrivate, generateShares, generateShares2 } from '@/services/cryptography';
     import Cookies from "js-cookie";
+
+    const loading = ref(false);
 
     const props = defineProps({
         voteId: {
@@ -27,6 +29,9 @@
 
     const generateSecretShare = async () => {
         try {
+            if (loading.value) return;
+            loading.value = true;
+
             const secretShares = [];
             const privateKey = Cookies.get("privateKey");
 
@@ -54,6 +59,8 @@
         } catch (error) {
             console.error("Failed to generate secret share:", error);
             alert('Error generating secret share. Please try again.');
+        } finally {
+            loading.value = false;
         }
     };
 

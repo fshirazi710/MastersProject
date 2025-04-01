@@ -237,9 +237,6 @@ const handleSubmit = async () => {
       end_date: toBSTISOString(voteData.value.end_date),
     };
 
-    console.log("BST Start Date:", formattedData.start_date);
-    console.log("BST End Date:", formattedData.end_date);
-
     // First create the vote in the backend
     const response = await electionApi.createElection(formattedData);
     alert(response.data.message || 'Vote created successfully!');

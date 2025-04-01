@@ -27,12 +27,32 @@
           {{ ((votes / totalVotes) * 100).toFixed(1) }}% ({{ votes }} votes)
         </div>
       </div>
-      <div class="encryption-notice">
+      <div v-if="!isWinner && !emailSent" class="encryption-notice">
         <i class="lock-icon">🎉</i>
-        <p>To check if you've won, click the button below. If you're a winner, enter your email to claim your prize!</p>
-        <button class="btn primary" @click="checkWinners">See If I’m a Winner</button>
+        <p>To check if you've won, click the button. If you're a winner, enter your email to claim your prize!</p>
+        <button @click="checkWinners" type="submit" class="btn primary" :disabled="loading">
+          {{ loading ? 'Checking...' : 'See If I’m a Winner' }}
+        </button>
       </div>
     </div>
+
+    <div v-if="isWinner && !emailSent" class="winner-form">
+        <p>Congratulations! Enter your email below to claim your prize.</p>
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input 
+            type="email" 
+            id="email" 
+            v-model="formData.email" 
+            required 
+            class="form-input"
+            placeholder="Enter your email"
+          >
+        </div>
+        <button @click="submitEmail" class="btn primary" :disabled="loading">
+          {{ loading ? 'Submitting...' : 'Claim Prize' }}
+        </button>
+      </div>
   </div>
 </template>
 
@@ -53,16 +73,42 @@ const props = defineProps({
   }
 })
 
+const loading = ref(false);
 const isDecrypted = ref(false);  // Reactive state for isDecrypted
+const isWinner = ref(false);  // Tracks if the user is a winner
+const emailSent = ref(false);  // Track whether the email has been submitted
 const decryptedVoteCounts = ref({});  // Store decrypted results
 const totalVotes = ref(0);  // Total number of votes
+const formData = ref({ email: '' });
 
 onMounted(async () => {
   await decryptVotes();
 })
 
+const submitEmail = async () => {
+  try {
+    if (!formData.value.email) {
+      alert("Please enter your email.");
+      return;
+    }
+
+    const response = await electionApi.submitEmail(props.voteId, {
+      email: formData.value.email,
+    });
+    console.log(response)
+    alert(response.data.message)
+    emailSent.value = true;
+  } catch (error) {
+    console.error("Error submitting email:", error);
+    alert("An error occurred. Please try again.");
+  }
+};
+
 const checkWinners = async () => {
   try {
+    if (loading.value) return;
+    loading.value = true;
+
     const privateKeyHex = Cookies.get("privateKey");
 
     if (!privateKeyHex) {
@@ -70,11 +116,19 @@ const checkWinners = async () => {
     }
 
     const publicKeyHex = getPublicKeyFromPrivate(privateKeyHex)
-
+    
     const response = await electionApi.checkWinners(props.voteId, {public_key: publicKeyHex});
+
+    if (response.data === true) {
+      isWinner.value = true;
+    } else {
+      alert("Unfortunately, you didn't win this time.");
+    }
   } catch (error) {
     console.error("Failed to retrieve vote information:", error);
     alert('Error retrieving vote information. Please try again.');
+  } finally {
+    loading.value = false;
   }
 }
 

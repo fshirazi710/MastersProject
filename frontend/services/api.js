@@ -60,6 +60,11 @@ export const electionApi = {
   checkWinners: (election_id, data) => {
     return apiClient.post(`/api/elections/get-winners/${election_id}`, data);
   },
+
+  // 
+  submitEmail: (election_id, data) => {
+    return apiClient.post(`/api/elections/submit-email/${election_id}`, data);
+  },
   
   // Get election by ID
   getElectionById: (electionId) => {

@@ -25,9 +25,9 @@
               </div>
             </label>
           </div>
-          <button @click="handleVoteSubmit" type="submit" class="btn primary" :disabled="!selectedOption">
-            Submit Encrypted Vote
-          </button>
+          <button @click="handleVoteSubmit" type="submit" class="btn primary" :disabled="loading || !selectedOption">
+          {{ loading ? 'Submitting Vote...' : 'Submit Encrypted Vote' }}
+        </button>
         </form>
       </div>
     </div>
@@ -54,6 +54,7 @@
     }
   })
   
+  const loading = ref(false);
   const selectedOption = ref(null)
   const g1rValue = ref(null)
   
@@ -79,6 +80,8 @@
   // Handle vote submission
   const handleVoteSubmit = async () => {
     try {
+      if (loading.value) return;
+      loading.value = true;
       const response = await validateKeyPair();
       if (!response) return;
 
@@ -122,6 +125,8 @@
       } else {
         alert('Failed to submit vote: ' + (err.response?.data?.detail || err.message));
       }
+    } finally {
+      loading.value = false;
     }
   }
   </script>

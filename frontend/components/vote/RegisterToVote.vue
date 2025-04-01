@@ -44,7 +44,7 @@
           </label>
         </div>
         <button class="btn primary">
-          Generate Key Pair
+          Register To Vote
         </button>
       </form>
     </div>
