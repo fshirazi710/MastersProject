@@ -81,6 +81,10 @@ async def submit_share(election_id: int, data: dict, blockchain_service: Blockch
             filter_criteria = {"public_key": public_key_hex}
             update_field = {"$set": {"released_secret": True}}
             await db.public_keys.update_one(filter_criteria, update_field)
+            return StandardResponse(
+                success=True,
+                message="Successfully submitted share"
+            )
         else:
             raise HTTPException(status_code=500, detail="secret share failed to be stored on the blockchain")
     else:
