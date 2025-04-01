@@ -69,7 +69,6 @@
       const publicKeyHex = getPublicKeyFromPrivate(privateKeyHex)
 
       const response = await voteApi.validatePublicKey({ public_key: publicKeyHex });
-      alert(response.data.message);
       return response.data.success
     } catch (error) {
       console.error("Failed to validate key pair:", error);
@@ -80,39 +79,49 @@
   // Handle vote submission
   const handleVoteSubmit = async () => {
     try {
-      const response = await validateKeyPair()
-      if (response) {
-        const secret_holders = await holderApi.getAllHolders(props.voteId)
-        const threshold = 3
-        const data = secret_holders.data.data
-        const public_keys = [];
+      const response = await validateKeyPair();
+      if (!response) return;
 
-        data.forEach(hexString => {
-          const cleanedHexString = hexString.slice(2);
-          const public_key = new Uint8Array(cleanedHexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-          public_keys.push(public_key);
-        });
+      const secret_holders = await holderApi.getAllHolders(props.voteId);
+      const threshold = 3;
+      const data = secret_holders.data.data;
+      const public_keys = [];
 
-        const total = public_keys.length
+      data.forEach(hexString => {
+        const cleanedHexString = hexString.slice(2);
+        const public_key = new Uint8Array(cleanedHexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+        public_keys.push(public_key);
+      });
 
-        const privateKeyHex = Cookies.get("privateKey");
-        const publicKeyHex = getPublicKeyFromPrivate(privateKeyHex)
+      const total = public_keys.length;
+      const privateKeyHex = Cookies.get("privateKey");
+      const publicKeyHex = getPublicKeyFromPrivate(privateKeyHex);
 
-        getKAndSecretShares(public_keys, threshold, total)
-          .then(([k, g1r, g2r, alpha]) => {
-            g1rValue.value = g1r
-            const ciphertext = AESEncrypt(selectedOption.value, k)
-            ciphertext.then(value => {
-              const response = voteApi.submitVote(props.voteId, {"election_id": props.voteId, "voter": publicKeyHex ,"public_keys": public_keys, "ciphertext": value, "g1r": g1r, "g2r": g2r, "alpha": alpha, "threshold": threshold});
-            });
-          })
-          .catch((error) => {
-              console.error("Error generating shares:", error);
-          });
-        alert('Vote submitted successfully!')
-      }
+      const [k, g1r, g2r, alpha] = await getKAndSecretShares(public_keys, threshold, total);
+      g1rValue.value = g1r;
+
+      const ciphertext = await AESEncrypt(selectedOption.value, k);
+      
+      // Submit the vote and directly read the response
+      const voteResponse = await voteApi.submitVote(props.voteId, {
+        election_id: props.voteId,
+        voter: publicKeyHex,
+        public_keys: public_keys,
+        ciphertext: ciphertext,
+        g1r: g1r,
+        g2r: g2r,
+        alpha: alpha,
+        threshold: threshold
+      });
+
+      alert(voteResponse.data.message || 'Vote submitted successfully!');
+
     } catch (err) {
-      alert('Failed to submit vote: ' + (err.response?.data?.detail || err.message))
+      if (err.response?.status === 400) {
+        alert('You have already voted.');
+      } else {
+        alert('Failed to submit vote: ' + (err.response?.data?.detail || err.message));
+      }
     }
   }
   </script>
