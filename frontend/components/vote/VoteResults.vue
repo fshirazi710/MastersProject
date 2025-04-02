@@ -5,9 +5,33 @@
     <!-- Show pending state if not enough keys released -->
     <div v-if="!isDecrypted" class="decryption-pending">
       <div class="pending-message">
-        <i class="lock-icon">🔒</i>
+        <div class="lock-container">
+          <i class="lock-icon">🔒</i>
+        </div>
         <h3>Results are still encrypted</h3>
-        <p>Waiting for secret holders to release their secrets...</p>
+        <p>Results will be available once:</p>
+        <ul class="requirements-list">
+          <li>
+            <span class="requirement-label">Voting period:</span>
+            <div class="requirement-status-container">
+              <span class="requirement-status" :class="{ 'completed': votingEnded }">
+                {{ votingEnded ? 'Ended' : 'In progress' }}
+              </span>
+            </div>
+          </li>
+          <li>
+            <span class="requirement-label">Secret shares:</span>
+            <div class="requirement-status-container">
+              <span class="requirement-status" :class="{ 'completed': releasedSharesCount >= requiredSharesCount }">
+                {{ releasedSharesCount }}/{{ requiredSharesCount }} released
+              </span>
+              <div class="shares-progress">
+                <div class="shares-progress-bar" :style="{ width: `${(releasedSharesCount / requiredSharesCount) * 100}%` }"></div>
+              </div>
+            </div>
+          </li>
+        </ul>
+        <p class="check-back">Please check back later to see the final results.</p>
       </div>
     </div>
 
@@ -75,6 +99,11 @@ const props = defineProps({
   voteId: {
     type: String,
     required: true
+  },
+  endDate: {
+    type: String,
+    required: false,
+    default: null
   }
 })
 
@@ -90,8 +119,13 @@ const winnerInfo = ref('');
 const error = ref(null);
 const showEmailForm = ref(false); // Control visibility of email form
 const winnerCheckStatusMessage = ref(''); // Message to display after checking
+const releasedSharesCount = ref(0);
+const requiredSharesCount = ref(0);
+const votingEnded = ref(false);
 
 onMounted(async () => {
+  // Check if voting period has ended
+  checkVotingPeriodStatus();
   await decryptVotes();
 })
 
@@ -190,6 +224,12 @@ const decryptVotes = async () => {
     const indexes = response.data[0];
     const shares = response.data[1];
 
+    // Update share count information
+    if (shares[0]) {
+      releasedSharesCount.value = shares[0].length;
+      requiredSharesCount.value = votes[0].threshold;
+    }
+
     if (shares[0] && shares[0].length >= votes[0].threshold) {
       isDecrypted.value = true;
     } else {
@@ -232,6 +272,28 @@ const decryptVotes = async () => {
     alert('Error decrypting vote. Please try again.');
   }
 };
+
+// Add method to check voting status
+const checkVotingPeriodStatus = () => {
+  if (props.endDate) {
+    const endDateTime = new Date(props.endDate);
+    const currentTime = new Date();
+    votingEnded.value = currentTime >= endDateTime;
+  } else {
+    // If end date not available, fetch from API
+    electionApi.getElection(props.voteId)
+      .then(response => {
+        if (response.data && response.data.data && response.data.data.end_date) {
+          const endDateTime = new Date(response.data.data.end_date);
+          const currentTime = new Date();
+          votingEnded.value = currentTime >= endDateTime;
+        }
+      })
+      .catch(error => {
+        console.error("Failed to fetch election end date:", error);
+      });
+  }
+}
 
 </script>
 
@@ -301,5 +363,91 @@ const decryptVotes = async () => {
 .error-message {
   color: var(--danger);
   margin-top: 10px;
+}
+
+.requirements-list {
+  text-align: left;
+  margin: 15px auto;
+  padding-left: 0;
+  list-style: none;
+  max-width: 360px;
+}
+
+.requirements-list li {
+  margin-bottom: 15px;
+  line-height: 1.4;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.requirement-label {
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.requirement-status-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-grow: 1;
+}
+
+.requirement-status {
+  color: var(--warning);
+  text-align: right;
+}
+
+.requirement-status.completed {
+  color: var(--success);
+  font-weight: 500;
+}
+
+.shares-progress {
+  height: 6px;
+  background-color: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 5px;
+  width: 100px;
+}
+
+.shares-progress-bar {
+  height: 100%;
+  background-color: var(--primary-color);
+  transition: width 0.5s ease;
+}
+
+.lock-container {
+  margin-bottom: 15px;
+}
+
+.lock-icon {
+  font-size: 40px;
+  display: inline-block;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+.check-back {
+  margin-top: 15px;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.decryption-pending {
+  background-color: var(--light-bg);
+  border-radius: var(--border-radius);
+  padding: 30px 20px;
+  text-align: center;
+  max-width: 500px;
+  margin: 0 auto;
 }
 </style>

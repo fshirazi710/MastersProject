@@ -2,21 +2,22 @@
     <div class="voting-section">
       <h2>Cast Your Vote</h2>
   
-      <div>
-        <!-- Encryption notice to inform users -->
-        <div class="encryption-notice">
-          <i class="lock-icon">🔒</i>
-          <p>Your vote will be encrypted and remain secret until the voting period ends and all required keys are released.Be sure to come back later to check the results of the vote and see if you're one of the lucky winners of the vouchers!</p>
-        </div>
-
-        <!-- Message shown if voting hasn't started -->
+      <!-- Encryption notice (shown regardless of registration) -->
+      <div class="encryption-notice">
+        <i class="lock-icon">🔒</i>
+        <p>Your vote will be encrypted and remain secret until the voting period ends and all required keys are released. Be sure to come back later to check the results of the vote and see if you're one of the lucky winners of the vouchers!</p>
+      </div>
+  
+      <!-- Check if user is registered VIA PROP -->
+      <div v-if="props.isRegistered">
+        <!-- Message shown if voting hasn't started yet (but user is registered) -->
         <div v-if="status === 'join'" class="status-message warning">
           Voting has not started yet. Please come back when the election is active.
         </div>
-
-        <!-- Voting form with radio options -->
-        <form @submit.prevent="handleVote" class="voting-form">
-          <fieldset :disabled="status === 'join'">
+  
+        <!-- Voting form (shown only if registered AND voting is active AND user hasn't voted yet) -->
+        <form v-else-if="status === 'active' && !hasVoted" @submit.prevent="handleVoteSubmit" class="voting-form">
+          <fieldset>
             <legend class="sr-only">Vote Options</legend>
             <div class="options-list">
               <label v-for="(option, index) in options" :key="index" class="option-item">
@@ -27,7 +28,6 @@
                   :value="option"
                   name="vote-option"
                   required
-                  :disabled="status === 'join'"
                 />
                 <div class="option-content">
                   {{ option }}
@@ -36,20 +36,44 @@
             </div>
           </fieldset>
           <button 
-            @click="handleVoteSubmit" 
             type="submit" 
             class="btn primary" 
-            :disabled="loading || !selectedOption || status === 'join'"
+            :disabled="loading || !selectedOption"
           >
-          {{ loading ? 'Submitting Vote...' : (status === 'join' ? 'Voting Not Active' : 'Submit Encrypted Vote') }}
-        </button>
+            {{ loading ? 'Submitting Vote...' : 'Submit Encrypted Vote' }}
+          </button>
         </form>
+  
+        <!-- Message shown if user HAS voted -->
+        <div v-else-if="status === 'active' && hasVoted" class="status-message success">
+          <i class="icon check">✔️</i> Thank you for casting your vote!
+        </div>
+  
+        <!-- Optional: Message if voting ended (but user is registered) -->
+        <div v-else-if="status === 'ended'" class="status-message info">
+          Voting has ended.
+        </div>
+  
+      </div>
+  
+      <!-- Message shown if user is NOT registered VIA PROP -->
+      <div v-else class="status-message warning">
+        <span v-if="status === 'join'">
+          You must be registered for this election to cast a vote. Please register first.
+        </span>
+        <span v-else-if="status === 'active' || status === 'ended'">
+          You are not registered for this election. Registration is closed.
+        </span>
+        <!-- Fallback message if status is unexpected -->
+        <span v-else>
+          You are not registered for this election.
+        </span>
       </div>
     </div>
   </template>
   
   <script setup>
-  import { ref } from 'vue'
+  import { ref, computed, onMounted } from 'vue'
   import { holderApi, voteApi } from '@/services/api'
   import { getPublicKeyFromPrivate, getKAndSecretShares, AESEncrypt } from '@/services/cryptography';
   import Cookies from 'js-cookie';
@@ -70,12 +94,17 @@
     status: {
       type: String,
       required: true,
+    },
+    isRegistered: {
+      type: Boolean,
+      required: true
     }
   })
   
   const loading = ref(false);
   const selectedOption = ref(null)
   const g1rValue = ref(null)
+  const hasVoted = ref(false);
   
   // Method to validate the key pair
   const validateKeyPair = async () => {
@@ -140,6 +169,9 @@
         threshold: threshold
       });
 
+      // Update state on SUCCESS (cookie logic removed)
+      hasVoted.value = true;
+
       alert(voteResponse.data.message || 'Vote submitted successfully!');
 
     } catch (error) {
@@ -186,6 +218,26 @@
     color: var(--warning-dark);
   }
 
+  .info {
+    background-color: var(--info-light);
+    border: 1px solid var(--info);
+    color: var(--info-dark);
+  }
+
+  .success {
+    background-color: var(--success-light);
+    border: 1px solid var(--success);
+    color: var(--success-dark);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .icon.check {
+    font-style: normal;
+  }
+
   .sr-only {
     position: absolute;
     width: 1px;
@@ -198,8 +250,18 @@
     border-width: 0;
   }
 
+  fieldset {
+    border: none;
+    margin: 0;
+    padding: 0;
+  }
+  
   fieldset[disabled] .option-item {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+  
+  .voting-form {
+    border: none;
   }
   </style>

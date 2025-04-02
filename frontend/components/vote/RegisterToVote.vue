@@ -71,6 +71,8 @@
   const isSecretHolder = ref('yes')
   const pk = ref(null);
 
+  const emit = defineEmits(['registration-successful']);
+
   const generateKeyPair = async () => {
     const privateKeyCookie = `vote_${props.voteId}_privateKey`;
     const publicKeyCookie = `vote_${props.voteId}_publicKey`;
@@ -141,7 +143,9 @@
       } else {
         alert("Successfully registered as voter.");
       }
-      // Potentially emit an event or update parent state upon successful registration
+      
+      // Emit event upon successful registration
+      emit('registration-successful');
 
     } catch (err) {
       console.error('Failed during registration:', err);

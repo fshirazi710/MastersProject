@@ -141,7 +141,7 @@ class SubmittedSharesResponse(BaseModel):
         ..., 
         description="Number of submitted shares",
         examples=[2]
-    )
+    ) 
 
 # Schema for the request body sent by the frontend
 class ShareItem(BaseModel):

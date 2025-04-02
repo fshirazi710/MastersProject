@@ -21,17 +21,19 @@
       <div class="info-card">
         <h3>Timeline</h3>
         <div class="timeline">
-          <div class="time-item">
+          <div class="timeline-item">
             <span class="label">Start Date:</span>
-            <span>{{ formatDate(vote.startDate) }}</span>
+            <span class="value">{{ formatDateTime(vote.startDate) }}</span>
           </div>
-          <div class="time-item">
+          <div class="timeline-item">
             <span class="label">End Date:</span>
-            <span>{{ formatDate(vote.endDate) }}</span>
+            <span class="value">{{ formatDateTime(vote.endDate) }}</span>
           </div>
-          <!-- Countdown for active votes -->
-          <div class="time-remaining" v-if="vote.status === 'active'">
-            Time Remaining: {{ timeRemaining }}
+          <div class="timeline-item">
+            <span class="label">Time Remaining:</span>
+            <span class="value" :class="{ 'ending-soon': timeRemaining && timeRemaining !== 'Ended' && !timeRemaining.includes('d') && timeRemaining.startsWith('00:') }">
+              {{ timeRemaining }}
+            </span>
           </div>
         </div>
       </div>
@@ -63,6 +65,7 @@
         v-if="!isRegisteredForVote"
         :vote-id="route.params.id"
         :endDate="vote.endDate"
+        @registration-successful="handleRegistrationSuccess"
       />
       <div v-else class="status-message info">
         You are registered for this vote.
@@ -76,6 +79,7 @@
       :options="vote.options"
       :endDate="vote.endDate"
       :status="vote.status"
+      :is-registered="isRegisteredForVote"
     />
 
     <!-- Submit Secret Share section - only shown if registered as holder and vote has ended -->
@@ -89,13 +93,14 @@
     <VoteResults
       :options="vote.options"
       :voteId="route.params.id"
+      :endDate="vote.endDate"
     />
 
   </div>
 </template>
 
 <script setup>
-  import { ref, computed, onMounted } from 'vue'
+  import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
   import { useRoute } from 'vue-router'
   import { holderApi, electionApi } from '@/services/api'
   import Cookies from 'js-cookie'
@@ -109,6 +114,11 @@
   const loading = ref(true)
   const error = ref(null)
   const vote = ref(null)
+
+  const timeRemaining = ref('');
+  const timeUpdateInterval = ref(null);
+  // Track if we've already done the "time hit zero" refresh
+  const hasRefreshedAtZero = ref(false);
 
   // Computed property to check if user is registered (checks for public key cookie)
   const isRegisteredForVote = computed(() => {
@@ -124,8 +134,8 @@
     return Cookies.get(isHolderCookie) === 'true';
   });
 
-  const fetchVoteData = async () => {
-      loading.value = true
+  const fetchVoteData = async (showLoading = true) => {
+      if (showLoading) loading.value = true
       error.value = null
       
       try {
@@ -156,41 +166,117 @@
           console.error("Failed to fetch vote data:", err)
           error.value = "Failed to load vote details. Please try again later."
       } finally {
-          loading.value = false
+          if (showLoading) loading.value = false
       }
   }
 
-  // Hook to execute the fetchVoteData function when the component is mounted
-  onMounted(() => {
-    fetchVoteData()
-  })
+  // Fetch only the dynamic data that changes frequently
+  const fetchDynamicData = async () => {
+      try {
+          // Use Promise.all to fetch multiple endpoints in parallel
+          const [voteResponse, holdersResponse] = await Promise.all([
+              electionApi.getElectionById(route.params.id),
+              holderApi.getHolderCount(route.params.id)
+          ]);
 
-  // Compute time remaining until vote ends
-  const timeRemaining = computed(() => {
-    if (!vote.value) return ''
+          const voteData = voteResponse.data.data;
+          const holderData = holdersResponse.data.data;
+          
+          // Only update the specific properties that change frequently
+          // without replacing the entire object
+          if (vote.value) {
+              // Update counts
+              vote.value.participantCount = voteData.participant_count || 0;
+              vote.value.secretHolderCount = holderData.count || 0;
+              vote.value.releasedKeys = voteData.released_keys || 0;
+              vote.value.requiredKeys = voteData.required_keys || 0;
+              
+              // Update status - important if vote phases change
+              if (vote.value.status !== voteData.status) {
+                  vote.value.status = voteData.status;
+                  // Force a full refresh if status changed
+                  fetchVoteData(false);
+              }
+          }
+      } catch (err) {
+          console.error("Background data update failed:", err);
+          // Don't show errors to user for background updates
+      }
+  }
+
+  // Calculate time remaining between now and endDate, formatted as days, hours, minutes, seconds
+  const updateTimeRemaining = () => {
+    if (!vote.value || !vote.value.endDate) {
+      timeRemaining.value = 'Not available';
+      return;
+    }
     
-    const end = new Date(vote.value.endDate)
-    const now = new Date()
-    const diff = end - now
+    const now = new Date();
+    const end = new Date(vote.value.endDate);
+    const diff = end - now;
+    
+    // Check if we just hit zero (or went negative)
+    if (diff <= 0) {
+      // If the time just hit zero and we haven't refreshed yet
+      if (timeRemaining.value !== 'Ended' && !hasRefreshedAtZero.value) {
+        console.log('Vote just ended, refreshing data...');
+        hasRefreshedAtZero.value = true;
+        // Refresh data to update the status
+        fetchVoteData(false);
+      }
+      
+      timeRemaining.value = 'Ended';
+      return;
+    }
+    
+    // If we're here, time hasn't ended yet
+    hasRefreshedAtZero.value = false;
+    
+    // Calculate days, hours, minutes, seconds
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    
+    // Format the time remaining
+    let formattedTime = '';
+    if (days > 0) formattedTime += `${days}d `;
+    formattedTime += `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    
+    timeRemaining.value = formattedTime;
+  };
 
-    if (diff <= 0) return 'Ended'
+  onMounted(async () => {
+      // Initial full data load (with loading indicator)
+      await fetchVoteData(true);
+      updateTimeRemaining();
+      
+      // Instead of a regular polling interval, check if we need to update status
+      // on specific time-based events using the existing second-by-second timer
+      
+      // Update time remaining every second
+      timeUpdateInterval.value = setInterval(updateTimeRemaining, 1000);
+  });
 
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-
-    return `${days}d ${hours}h ${minutes}m`
-  })
+  onBeforeUnmount(() => {
+    // Clean up intervals when component is unmounted
+    if (timeUpdateInterval.value) {
+      clearInterval(timeUpdateInterval.value);
+      timeUpdateInterval.value = null;
+    }
+  });
 
   // Format date strings for display
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
+  function formatDateTime(dateString) {
+    if (!dateString) return 'Not available';
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat('en-US', { 
+      year: 'numeric', 
+      month: 'short', 
       day: 'numeric',
-      year: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
-    })
+    }).format(date);
   }
 
   // Compute if the current time is within the submission window
@@ -214,49 +300,21 @@
 
     return now >= fifteenMinutesAfterEnd
   })
+
+  const handleRegistrationSuccess = () => {
+    console.log('Registration successful, refreshing vote data...');
+    // Refresh data without showing the main loading spinner
+    // We might need to update isRegisteredForVote immediately too,
+    // though a full refresh might handle that.
+    fetchVoteData(false);
+    // Optionally, force re-evaluation of computed properties if needed, 
+    // but Vue 3 reactivity should handle this if fetchVoteData updates the cookies/state.
+  };
 </script>
 
 <style lang="scss" scoped>
-// All styles moved to _vote-details.scss
-.loading {
-  text-align: center;
-  font-size: 1.2em;
-  color: #666;
+@use '@/assets/styles/components/_vote-details.scss';
 
-  // Spinner styles
-  .spinner {
-    border: 8px solid #f3f3f3; /* Light grey */
-    border-top: 8px solid #3498db; /* Blue */
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    animation: spin 1s linear infinite;
-    margin: 0 auto; /* Center the spinner */
-  }
-}
+// Styles are now fully imported from _vote-details.scss
 
-// Spinner animation
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.status-message {
-  padding: 10px 15px;
-  margin-bottom: 15px;
-  border-radius: var(--border-radius);
-  text-align: center;
-  font-weight: 500;
-  margin-top: 20px; // Give it some space like the component it replaces
-}
-
-.info {
-  background-color: var(--info-light);
-  border: 1px solid var(--info);
-  color: var(--info-dark);
-}
-
-.warning {
-// ... existing warning styles ...
-}
 </style> 

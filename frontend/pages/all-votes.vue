@@ -69,8 +69,8 @@
                 <span class="stat-label">Participants</span>
               </div>
               <div class="stat">
-                <span class="stat-value">{{ vote.options.length }}</span>
-                <span class="stat-label">Options</span>
+                <span class="stat-value">{{ vote.secretHolderCount }}</span>
+                <span class="stat-label">Secret Holders</span>
               </div>
             </div>
             
@@ -127,7 +127,7 @@ const getVotes = async () => {
     // Transform the response data to match the expected format
     votes.value = response.data.data.map(vote => ({
       id: vote.id,
-      title: vote.title || `Vote ${vote.vote_id}`,
+      title: vote.title || `Vote ${vote.id}`,
       description: vote.description || 'No description available',
       status: vote.status || 'active',
       startDate: new Date(vote.start_date || Date.now()).toISOString(),
@@ -135,7 +135,8 @@ const getVotes = async () => {
       options: vote.options || [],
       participantCount: vote.participant_count || 0,
       rewardPool: vote.reward_pool || 0,
-      requiredDeposit: vote.required_deposit || 0
+      requiredDeposit: vote.required_deposit || 0,
+      secretHolderCount: vote.secret_holder_count || 0
     }))
   } catch (err) {
     console.error("Failed to fetch votes:", err)
