@@ -30,6 +30,8 @@
           id="title" 
           v-model="voteData.title" 
           required 
+          minlength="3" 
+          maxlength="100"
           class="form-input"
         >
       </div>
@@ -41,8 +43,11 @@
           id="description" 
           v-model="voteData.description" 
           required 
+          minlength="10"
+          maxlength="1000"
           class="form-input"
         ></textarea>
+        <p class="helper-text">Minimum 10 characters</p>
       </div>
 
       <!-- Date selection row with two inputs -->
@@ -114,6 +119,7 @@
       <!-- Dynamic voting options section -->
       <div class="form-group">
         <label>Options</label>
+        <p class="helper-text">Minimum 2 options required</p>
         <!-- List of voting options with remove buttons -->
         <div v-for="(option, index) in voteData.options" :key="index" class="option-row">
           <input 
@@ -243,7 +249,9 @@ const handleSubmit = async () => {
     router.push('/all-votes');
   } catch (err) {
     console.error('Failed to create vote:', err);
-    error.value = err.message || 'Failed to create vote. Please try again.';
+    // Log the detailed validation error from the backend response
+    console.error('Validation Error:', err.response?.data); 
+    error.value = err.response?.data?.detail || err.message || 'Failed to create vote. Please check your input and try again.';
   } finally {
     loading.value = false;
   }

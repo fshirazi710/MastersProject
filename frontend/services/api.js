@@ -108,8 +108,8 @@ export const holderApi = {
   },
   
   // Join as holder
-  joinAsHolder: (election_id, publicKey) => {
-    return apiClient.post(`/api/holders/join/${election_id}`, { public_key: publicKey });
+  joinAsHolder: (election_id, data) => {
+    return apiClient.post(`/api/holders/join/${election_id}`, data);
   },
 };
 

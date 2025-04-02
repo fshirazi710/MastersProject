@@ -57,22 +57,32 @@
       </div>
     </div>
 
-    <!-- Registration section - only shown for join votes -->
-    <RegisterToVote 
-      :vote-id="route.params.id"
-      :endDate="vote.endDate"
-    />
+    <!-- Registration section OR message - only shown if vote status is 'join' -->
+    <template v-if="vote?.status === 'join'">
+      <RegisterToVote 
+        v-if="!isRegisteredForVote"
+        :vote-id="route.params.id"
+        :endDate="vote.endDate"
+      />
+      <div v-else class="status-message info">
+        You are registered for this vote.
+      </div>
+    </template>
 
-    <!-- Voting section - only shown for active votes -->
+    <!-- Voting section - shown during join and active phases -->
     <CastYourVote 
+      v-if="['join', 'active'].includes(vote?.status)"
       :vote-id="route.params.id"
       :options="vote.options"
       :endDate="vote.endDate"
+      :status="vote.status"
     />
 
-    <!-- Submit Secret Share section - secret holders can submit their shares -->
+    <!-- Submit Secret Share section - only shown if registered as holder and vote has ended -->
     <SubmitSecretShare
+      v-if="isRegisteredHolderForVote && vote?.status === 'ended'"
       :vote-id="route.params.id"
+      :is-submission-time="isSubmissionTime"
     />
 
     <!-- Results section - only shown for ended votes -->
@@ -88,6 +98,7 @@
   import { ref, computed, onMounted } from 'vue'
   import { useRoute } from 'vue-router'
   import { holderApi, electionApi } from '@/services/api'
+  import Cookies from 'js-cookie'
   import CastYourVote from '@/components/vote/CastYourVote.vue'
   import VoteResults from '@/components/vote/VoteResults.vue'
   import RegisterToVote from '@/components/vote/RegisterToVote.vue'
@@ -98,6 +109,20 @@
   const loading = ref(true)
   const error = ref(null)
   const vote = ref(null)
+
+  // Computed property to check if user is registered (checks for public key cookie)
+  const isRegisteredForVote = computed(() => {
+    if (!vote.value) return false;
+    const publicKeyCookie = `vote_${vote.value.id}_publicKey`;
+    return Cookies.get(publicKeyCookie) !== undefined;
+  });
+
+  // Computed property to check if the user is registered as a holder for this vote via cookies
+  const isRegisteredHolderForVote = computed(() => {
+    if (!vote.value) return false;
+    const isHolderCookie = `vote_${vote.value.id}_isHolder`;
+    return Cookies.get(isHolderCookie) === 'true';
+  });
 
   const fetchVoteData = async () => {
       loading.value = true
@@ -124,8 +149,8 @@
               rewardPool: voteData.reward_pool || 0,
               requiredDeposit: voteData.required_deposit || 0,
               secretHolderCount: holderData.count || 0,
-              requiredKeys: 0,
-              releasedKeys: 0,
+              requiredKeys: voteData.required_keys || 0,
+              releasedKeys: voteData.released_keys || 0,
           }
       } catch (err) {
           console.error("Failed to fetch vote data:", err)
@@ -214,5 +239,24 @@
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+.status-message {
+  padding: 10px 15px;
+  margin-bottom: 15px;
+  border-radius: var(--border-radius);
+  text-align: center;
+  font-weight: 500;
+  margin-top: 20px; // Give it some space like the component it replaces
+}
+
+.info {
+  background-color: var(--info-light);
+  border: 1px solid var(--info);
+  color: var(--info-dark);
+}
+
+.warning {
+// ... existing warning styles ...
 }
 </style> 

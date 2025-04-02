@@ -61,9 +61,30 @@ async def get_all_elections(blockchain_service: BlockchainService = Depends(get_
 
             # Calculate how many people are registered for an election
             participant_count = await db.public_keys.count_documents({"vote_id": election_id})
-
-            # Add election information to an array
-            elections.append(await election_information_response(election_info, election_status, participant_count, blockchain_service))
+            
+            # --- Fetch required_keys and released_keys (mirroring get_election_information) --- 
+            required_keys = 0
+            submitted_votes = await blockchain_service.call_contract_function("getVotes", election_id)
+            if submitted_votes and len(submitted_votes) > 0:
+                # Vote struct: publicKey[0], ciphertext[1], g1r[2], g2r[3], alpha[4], voter[5], threshold[6]
+                required_keys = submitted_votes[0][6] # Index 6 is threshold
+                
+            released_keys = await db.public_keys.count_documents({
+                "vote_id": election_id, 
+                "is_secret_holder": True, 
+                "reward_token": 5
+            })
+            # --- End fetch --- 
+            
+            # Add election information to an array, including new keys
+            elections.append(await election_information_response(
+                election_info, 
+                election_status, 
+                participant_count, 
+                required_keys, # Pass required_keys
+                released_keys, # Pass released_keys
+                blockchain_service
+            ))
 
         # Return response
         return StandardResponse(
@@ -79,7 +100,7 @@ async def get_all_elections(blockchain_service: BlockchainService = Depends(get_
 @router.get("/election/{election_id}", response_model=StandardResponse[Dict[str, Any]])
 async def get_election_information(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
     try:
-        # Call the blockchain service to get the vote data using the helper method
+        # Call the blockchain service to get the election data
         election_info = await blockchain_service.call_contract_function("getElection", election_id)
             
         # Calculate the status of the election
@@ -88,8 +109,29 @@ async def get_election_information(election_id: int, blockchain_service: Blockch
         # Calculate how many people are registered for an election
         participant_count = await db.public_keys.count_documents({"vote_id": election_id})
         
-        # Form election information
-        data = await election_information_response(election_info, election_status, participant_count, blockchain_service)
+        # Get threshold (requiredKeys) from the first submitted vote (assuming constant threshold)
+        required_keys = 0
+        submitted_votes = await blockchain_service.call_contract_function("getVotes", election_id)
+        if submitted_votes and len(submitted_votes) > 0:
+            # Vote struct: publicKey[0], ciphertext[1], g1r[2], g2r[3], alpha[4], voter[5], threshold[6]
+            required_keys = submitted_votes[0][6] # Index 6 is threshold
+            
+        # Get count of released keys (secret holders with reward_token = 5)
+        released_keys = await db.public_keys.count_documents({
+            "vote_id": election_id, 
+            "is_secret_holder": True, 
+            "reward_token": 5
+        })
+
+        # Form election information response, including the new counts
+        data = await election_information_response(
+            election_info,
+            election_status, 
+            participant_count, 
+            required_keys,  # Pass required_keys
+            released_keys,  # Pass released_keys
+            blockchain_service
+        )
 
         # Return response
         return StandardResponse(
@@ -104,20 +146,40 @@ async def get_election_information(election_id: int, blockchain_service: Blockch
 
 @router.post("/get-winners/{election_id}")
 async def get_winners(election_id: int, data: dict, db=Depends(get_db)):
-    public_key_bytes = bytes(data["public_key"].values())
-    public_key_hex = "0x" + public_key_bytes.hex()
     
-    winners_already_selected = await check_winners_already_selected(election_id, db)
+    # Get the requester's public key from the request data using the correct key name
+    requester_pk_hex = data.get("requesterPublicKey")
+    if not requester_pk_hex or not isinstance(requester_pk_hex, str):
+        raise HTTPException(status_code=422, detail="Missing or invalid 'requesterPublicKey' field.")
     
-    if winners_already_selected:
-        is_a_winner = await check_winners(election_id, public_key_hex, db)
-        return is_a_winner
-    else:
-        await generate_winners(election_id, db)
+    # Ensure 0x prefix for consistency
+    if not requester_pk_hex.startswith('0x'):
+        requester_pk_hex = '0x' + requester_pk_hex
 
-        is_a_winner = await check_winners(election_id, public_key_hex, db)
-        return is_a_winner
-    
+    try:
+        # Check if winners have already been selected for this election
+        already_selected = await check_winners_already_selected(election_id, db)
+        if already_selected:
+            results, winner_info = await check_winners(election_id, db)
+            return StandardResponse(
+                success=True,
+                message="Winners already selected",
+                data={"results": results, "winnerInfo": winner_info}
+            )
+
+        # Generate winners
+        results, winner_info = await generate_winners(election_id, db)
+
+        # Return response
+        return StandardResponse(
+            success=True,
+            message="Successfully generated and retrieved winners",
+            data={"results": results, "winnerInfo": winner_info}
+        )
+    except Exception as e:
+        logger.error(f"Error getting or generating winners: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"failed to get or generate winners: {str(e)}")
+
 
 @router.post("/submit-email/{election_id}")
 async def submit_email(election_id: int, data: dict, db=Depends(get_db)):

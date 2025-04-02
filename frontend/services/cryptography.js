@@ -7,16 +7,26 @@ import { babelParse } from "vue/compiler-sfc";
 const FIELD_ORDER = BigInt("0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001");
 
 export function generateBLSKeyPair() {
-    const skBytes = randomBytes(32);
-    const sk = BigInt("0x" + Buffer.from(skBytes).toString("hex"));
-    const pk = bls12_381.getPublicKey(sk);
-    return { sk, pk };
+    // Use the library utility to generate a cryptographically secure private key (Uint8Array)
+    // This ensures the key is valid and < CURVE_ORDER, preventing scalar errors.
+    const skBytes = bls12_381.utils.randomPrivateKey(); 
+    // Convert the valid private key bytes to a BigInt for multiplication
+    const skBigInt = BigInt("0x" + Buffer.from(skBytes).toString("hex")); 
+    // Calculate the public key Point object
+    const pkPoint = bls12_381.G1.ProjectivePoint.BASE.multiply(skBigInt); 
+    // Return the BigInt secret key and the ProjectivePoint public key object
+    // (Changed from returning raw Uint8Array public key)
+    return { sk: skBigInt, pk: pkPoint }; 
 }
 
 export function getPublicKeyFromPrivate(privateKey) {
+    // Ensure private key is a BigInt
     const sk = typeof privateKey === 'string' ? BigInt("0x" + privateKey) : privateKey;
-    const pk = bls12_381.getPublicKey(sk);
-    return pk;
+    // Calculate the public key Point object
+    const pkPoint = bls12_381.G1.ProjectivePoint.BASE.multiply(sk);
+    // Return the standard hexadecimal string representation of the public key
+    // (Changed from returning raw Uint8Array to ensure consistency)
+    return pkPoint.toHex(); 
 }
 
 function genR() {
@@ -189,8 +199,10 @@ export async function recomputeKey(indexes, shares, alphas, threshold) {
 }
 
 function computePkRValue(pubkey, r) {
-    const pkArray = Uint8Array.from(Buffer.from(pubkey, "hex"));
-    const pkPoint = bls12_381.G1.ProjectivePoint.fromHex(pkArray);
+    // Remove "0x" prefix if present, as fromHex expects raw hex digits
+    const hexString = pubkey.startsWith('0x') ? pubkey.slice(2) : pubkey;
+    // Pass the raw hex string to fromHex
+    const pkPoint = bls12_381.G1.ProjectivePoint.fromHex(hexString); 
     return pkPoint.multiply(r);
 }
 

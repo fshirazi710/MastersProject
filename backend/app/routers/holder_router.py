@@ -7,6 +7,7 @@ from app.schemas import (
     StandardResponse,
     TransactionResponse,
     HolderCountResponse,
+    JoinHolderStringRequest,
 )
 from app.helpers.holder_helper import join_as_holder_transaction
 from app.services.blockchain import BlockchainService
@@ -56,12 +57,15 @@ async def get_holder_count(election_id: int, blockchain_service: BlockchainServi
 @router.post("/join/{election_id}", response_model=StandardResponse[TransactionResponse])
 async def join_as_holder(
     election_id: int,
-    request: dict,
+    request: JoinHolderStringRequest,
     blockchain_service: BlockchainService = Depends(get_blockchain_service)
 ):
-    # Convert the public key to a hexadecimal string format
-    public_key_bytes = bytes(request["public_key"].values())
-    public_key_hex = "0x" + public_key_bytes.hex()
+    # Pydantic has already validated that request.public_key is a string
+    public_key_hex = request.public_key
+    
+    # Ensure 0x prefix
+    if not public_key_hex.startswith('0x'):
+        public_key_hex = "0x" + public_key_hex
     
     # Retrieve the list of secret holders already registered for the given election
     secret_holders = await blockchain_service.call_contract_function("getHoldersByElection", election_id)
