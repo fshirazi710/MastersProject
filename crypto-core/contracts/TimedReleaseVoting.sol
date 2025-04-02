@@ -17,6 +17,7 @@ contract TimedReleaseVoting {
         string g1r;
         string g2r;
         string[] alpha;
+        string voter;
         uint256 threshold;
     }
 
@@ -75,6 +76,7 @@ contract TimedReleaseVoting {
         string g1r,
         string g2r,
         string[] alpha,
+        string voter,
         uint256 threshold
     );
     event ShareSubmitted (
@@ -138,13 +140,14 @@ contract TimedReleaseVoting {
         string memory g1r,
         string memory g2r,
         string[] memory alpha,
+        string memory voter,
         uint256 threshold
     ) public {
         require(electionId < electionCount, "Election does not exist");
 
-        votes[electionId].push(Vote(publicKey, ciphertext, g1r, g2r, alpha, threshold));
+        votes[electionId].push(Vote(publicKey, ciphertext, g1r, g2r, alpha, voter, threshold));
 
-        emit VoteSubmitted(electionId, publicKey, ciphertext, g1r, g2r, alpha, threshold);
+        emit VoteSubmitted(electionId, publicKey, ciphertext, g1r, g2r, alpha, voter, threshold);
     }
 
     function getVotes(uint256 electionId) public view returns (Vote[] memory) {
