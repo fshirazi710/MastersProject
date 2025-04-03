@@ -35,22 +35,50 @@
       </div>
     </div>
 
-    <!-- Show results as progress bars when decrypted -->
+    <!-- Show results when decrypted -->
     <div v-if="isDecrypted" class="results-display">
-      <div v-for="(votes, option) in decryptedVoteCounts" :key="option" class="result-item">
-        <div class="result-header">
-          <span class="option-text">{{ option }}</span>
+      
+      <!-- Standard Options Results (Bar Chart) -->
+      <template v-if="!displayHint || displayHint === 'options'">
+         <h3>Vote Results</h3>
+          <div v-for="(votes, option) in decryptedVoteCounts" :key="option" class="result-item">
+            <div class="result-header">
+              <span class="option-text">{{ option }}</span>
+            </div>
+            <div class="progress-bar">
+              <div 
+                class="progress" 
+                :style="{ width: `${totalVotes > 0 ? (votes / totalVotes) * 100 : 0}%` }"
+              ></div>
+            </div>
+            <div class="percentage">
+              {{ totalVotes > 0 ? ((votes / totalVotes) * 100).toFixed(1) : '0.0' }}% ({{ votes }} votes)
+            </div>
+          </div>
+      </template>
+
+      <!-- Slider Results (Distribution Chart & Average) -->
+      <template v-if="displayHint === 'slider'">
+        <h3>Voting Distribution</h3>
+        <div v-if="distributionChartData.labels?.length > 0">
+            <Bar 
+                id="distribution-chart"
+                :options="distributionChartOptions"
+                :data="distributionChartData"
+            />
         </div>
-        <div class="progress-bar">
-          <div 
-            class="progress" 
-            :style="{ width: `${(votes / totalVotes) * 100}%` }"
-          ></div>
+        <div v-if="sliderAverage !== null" class="average-result">
+            Average Selected Value: <strong>{{ sliderAverage.toFixed(2) }}</strong>
         </div>
-        <div class="percentage">
-          {{ ((votes / totalVotes) * 100).toFixed(1) }}% ({{ votes }} votes)
+        <div v-if="totalVotes > 0" class="total-votes-slider">
+           Total Votes Cast: {{ totalVotes }}
         </div>
-      </div>
+        <div v-else>
+            <p>No votes cast yet.</p>
+        </div>
+      </template>
+
+      <!-- Winner Check Section (Common for both types) -->
       <div v-if="!isWinner && !emailSent" class="encryption-notice">
         <i class="lock-icon">🎉</i>
         <p>To check if you've won, click the button. If you're a winner, enter your email to claim your prize!</p>
@@ -64,7 +92,7 @@
       </div>
     </div>
 
-    <!-- Use showEmailForm for consistency with checkWinners logic -->
+    <!-- Email Form (Common for both types) -->
     <div v-if="showEmailForm" class="winner-form">
         <p>Congratulations! Enter your email below to claim your prize.</p>
         <div class="form-group">
@@ -86,10 +114,26 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { voteApi, shareApi, electionApi } from '@/services/api';
 import { getPublicKeyFromPrivate, recomputeKey, AESDecrypt } from '@/services/cryptography';
 import Cookies from 'js-cookie';
+
+// --- Import Chart.js components --- 
+import { Bar } from 'vue-chartjs'
+import { 
+    Chart as ChartJS, 
+    Title, 
+    Tooltip, 
+    Legend, 
+    BarElement, 
+    CategoryScale, 
+    LinearScale 
+} from 'chart.js'
+
+// --- Register Chart.js components --- 
+ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale)
+// ------------------------------------
 
 const props = defineProps({
   options: {
@@ -112,28 +156,141 @@ const props = defineProps({
   requiredKeys: {
     type: Number,
     required: true
+  },
+  // --- Add metadata props ---
+  displayHint: {
+    type: String,
+    default: null
+  },
+  sliderConfig: {
+    type: Object,
+    default: null
   }
+  // -------------------------
 })
 
 const loading = ref(false);
-const isDecrypted = ref(false);  // Reactive state for isDecrypted
-const isWinner = ref(false);  // Tracks if the user is a winner
-const emailSent = ref(false);  // Track whether the email has been submitted
-const decryptedVoteCounts = ref({});  // Store decrypted results
-const totalVotes = ref(0);  // Total number of votes
+const isDecrypted = ref(false);
+const isWinner = ref(false);
+const emailSent = ref(false);
+const decryptedVoteCounts = ref({});
+const totalVotes = ref(0);
 const formData = ref({ email: '' });
 const voteResults = ref('');
 const winnerInfo = ref('');
 const error = ref(null);
-const showEmailForm = ref(false); // Control visibility of email form
-const winnerCheckStatusMessage = ref(''); // Message to display after checking
+const showEmailForm = ref(false);
+const winnerCheckStatusMessage = ref('');
 const votingEnded = ref(false);
 
+// --- New refs for slider results --- 
+const sliderAverage = ref(null);
+const distributionData = ref({ labels: [], datasets: [] });
+// ---------------------------------
+
+// --- Chart.js Options --- 
+const distributionChartData = computed(() => {
+    if (props.displayHint !== 'slider' || !isDecrypted.value) {
+        return { labels: [], datasets: [] };
+    }
+    
+    const labels = Object.keys(decryptedVoteCounts.value).sort((a, b) => Number(a) - Number(b)); // Sort numerically
+    const data = labels.map(label => decryptedVoteCounts.value[label] || 0); // Ensure count is number
+
+    return {
+        labels: labels,
+        datasets: [
+            {
+                label: 'Votes per Value',
+                backgroundColor: '#42b983', // Example color
+                borderColor: '#42b983',
+                borderWidth: 1,
+                data: data
+            }
+        ]
+    };
+});
+
+const distributionChartOptions = ref({
+  responsive: true,
+  maintainAspectRatio: false, // Adjust as needed
+  scales: {
+      y: {
+          beginAtZero: true,
+          ticks: { // Ensure only integers are shown on y-axis
+            stepSize: 1
+          },
+          title: {
+              display: true,
+              text: 'Number of Votes'
+          }
+      },
+      x: {
+           title: {
+              display: true,
+              text: 'Selected Value'
+          }
+      }
+  },
+  plugins: {
+      legend: {
+          display: false // Hide legend for single dataset
+      },
+       tooltip: {
+            callbacks: {
+                label: function(context) {
+                    let label = context.dataset.label || '';
+                    if (label) {
+                        label += ': ';
+                    }
+                    if (context.parsed.y !== null) {
+                        label += context.parsed.y + ' votes';
+                    }
+                    return label;
+                }
+            }
+        }
+  }
+});
+// ----------------------
+
 onMounted(async () => {
-  // Check if voting period has ended
   checkVotingPeriodStatus();
   await decryptVotes();
 })
+
+// Watch for decryption completion to calculate slider average
+watch(isDecrypted, (newValue) => {
+  if (newValue && props.displayHint === 'slider') {
+    calculateSliderAverage();
+  }
+});
+
+const calculateSliderAverage = () => {
+    if (Object.keys(decryptedVoteCounts.value).length === 0 || totalVotes.value === 0) {
+        sliderAverage.value = 0; // Default to 0 if no votes
+        return;
+    }
+
+    let weightedSum = 0;
+    for (const optionStr in decryptedVoteCounts.value) {
+        const optionNum = Number(optionStr);
+        const count = decryptedVoteCounts.value[optionStr];
+        if (!isNaN(optionNum) && typeof count === 'number') {
+            weightedSum += optionNum * count;
+        }
+    }
+    sliderAverage.value = totalVotes.value > 0 ? weightedSum / totalVotes.value : 0;
+};
+
+const checkVotingPeriodStatus = () => {
+  if (props.endDate) {
+    votingEnded.value = new Date() > new Date(props.endDate);
+  } else {
+    // If no end date provided, assume not ended (or handle as error?)
+    votingEnded.value = false; 
+  }
+};
 
 const submitEmail = async () => {
   if (!formData.value.email) {
@@ -212,93 +369,124 @@ const checkWinners = async () => {
   }
 };
 
-const fetchVoteInformation = async () => {
-  try {
-    const response = await voteApi.getVoteInformation(props.voteId);
-    return response.data.data;
-  } catch (error) {
-    console.error("Failed to retrieve vote information:", error);
-    alert('Error retrieving vote information. Please try again.');
-  }
-}
-
 const decryptVotes = async () => {
+  isDecrypted.value = false; // Reset state initially
+  decryptedVoteCounts.value = {};
+  totalVotes.value = 0;
+  sliderAverage.value = null;
+  error.value = null; // Clear previous errors
+
   try {
-    const response = await shareApi.getShares(props.voteId);
-    const votes = await fetchVoteInformation();
+    const sharesResponse = await shareApi.getShares(props.voteId);
+    const votesInfoResponse = await voteApi.getVoteInformation(props.voteId);
 
-    const indexes = response.data[0];
-    const shares = response.data[1];
+    const indexes = sharesResponse.data[0];
+    const shares = sharesResponse.data[1];
+    const votesInfo = votesInfoResponse.data.data;
 
-    // Check if enough shares are available based on fetched data and required prop
-    if (shares[0] && shares[0].length >= props.requiredKeys) {
-      isDecrypted.value = true;
-    } else {
-      isDecrypted.value = false;
-      return; // Exit early if not enough shares
+    if (!indexes || !shares || !votesInfo) {
+        throw new Error("Incomplete share or vote information received from API.");
     }
 
-    const decryptedResults = [];
-    const voteOptions = [...props.options];
-
-    for (let voteId in shares) {
-      const shareArray = shares[voteId].slice(0, votes[voteId].threshold);
-      const shareBigInts = shareArray.map(share => BigInt("0x" + share));
-      const slicedIndexes = indexes[voteId].slice(0, votes[voteId].threshold);
-      const vote = votes[voteId];
-
-      const key = await recomputeKey(slicedIndexes, shareBigInts, vote.alphas, vote.threshold);
-      
-      const decryptedResponse = await AESDecrypt(vote.ciphertext, key);
-      decryptedResults.push(decryptedResponse);
+    // Check if enough shares are available based on required prop
+    // Assuming shares[0] corresponds to the first (and likely only) ciphertext set for a simple vote
+    if (!(shares[0] && shares[0].length >= props.requiredKeys)) {
+      console.warn("Not enough shares released for decryption.");
+      isDecrypted.value = false; // Keep as false
+      return; // Exit early
     }
 
-    const voteCounts = {};
+    const currentDecryptedCounts = {};
+    let currentTotalVotes = 0;
+    let decryptionErrors = 0;
 
-    voteOptions.forEach(option => {
-      voteCounts[option] = 0;
-    });
+    // Iterate through the different sets of shares (usually just one, index 0)
+    for (const voteIndexStr in shares) {
+        const voteIndex = parseInt(voteIndexStr, 10);
+        if (isNaN(voteIndex)) continue; // Skip if key is not a valid index
 
-    // Count occurrences of each option in decryptedVotes
-    decryptedResults.forEach(vote => {
-      if (voteCounts.hasOwnProperty(vote)) {
-        voteCounts[vote] += 1;
-      }
-    });
+        // Find the corresponding vote metadata (ciphertext, alphas, threshold)
+        const voteMetadata = votesInfo.find(v => v.vote_id === voteIndex);
+        if (!voteMetadata) {
+            console.warn(`Missing vote metadata for index ${voteIndex}, skipping decryption.`);
+            continue;
+        }
 
-    decryptedVoteCounts.value = voteCounts;
-    totalVotes.value = decryptedResults.length; // Calculate total votes
-  } catch (error) {
-    console.error("Failed to decrypt vote:", error);
-    alert('Error decrypting vote. Please try again.');
+        const currentShares = shares[voteIndexStr];
+        const currentIndexes = indexes[voteIndexStr];
+        
+        if (!currentShares || !currentIndexes || currentShares.length < voteMetadata.threshold) {
+             console.warn(`Insufficient shares/indexes provided for vote index ${voteIndex}, skipping.`);
+             continue;
+        }
+
+        // Use only the required number of shares
+        const shareArray = currentShares.slice(0, voteMetadata.threshold);
+        const shareBigInts = shareArray.map(share => BigInt("0x" + share));
+        const slicedIndexes = currentIndexes.slice(0, voteMetadata.threshold);
+
+        try {
+            const key = await recomputeKey(slicedIndexes, shareBigInts, voteMetadata.alphas, voteMetadata.threshold);
+            const decryptedResult = await AESDecrypt(voteMetadata.ciphertext, key);
+            
+            currentDecryptedCounts[decryptedResult] = (currentDecryptedCounts[decryptedResult] || 0) + 1;
+            currentTotalVotes++;
+        } catch (decErr) {
+            console.error(`Failed to decrypt vote at index ${voteIndex}:`, decErr);
+            decryptionErrors++;
+            // Decide how to handle individual decryption errors - skip vote?
+        }
+    }
+    
+    if (currentTotalVotes > 0 || decryptionErrors > 0) {
+       // Consider decryption successful if at least one vote decrypted, even with errors
+       isDecrypted.value = true; 
+    }
+    
+    decryptedVoteCounts.value = currentDecryptedCounts;
+    totalVotes.value = currentTotalVotes;
+
+    if (decryptionErrors > 0) {
+        error.value = `Could not decrypt ${decryptionErrors} vote(s). Results shown may be incomplete.`;
+        console.warn(error.value);
+    }
+    
+    // Average calculation is triggered by the watcher watching isDecrypted
+
+  } catch (fetchError) {
+    console.error("Failed to fetch data for vote decryption:", fetchError);
+    error.value = "Failed to load data required to show results.";
+    isDecrypted.value = false;
   }
 };
 
-// Add method to check voting status
-const checkVotingPeriodStatus = () => {
-  if (props.endDate) {
-    const endDateTime = new Date(props.endDate);
-    const currentTime = new Date();
-    votingEnded.value = currentTime >= endDateTime;
-  } else {
-    // If end date not available, fetch from API
-    electionApi.getElection(props.voteId)
-      .then(response => {
-        if (response.data && response.data.data && response.data.data.end_date) {
-          const endDateTime = new Date(response.data.data.end_date);
-          const currentTime = new Date();
-          votingEnded.value = currentTime >= endDateTime;
-        }
-      })
-      .catch(error => {
-        console.error("Failed to fetch election end date:", error);
-      });
-  }
-}
-
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
+/* Use SASS variables if defined globally, otherwise use CSS vars or fallback values */
+$spacing-xs: 5px;
+$spacing-sm: 10px;
+$spacing-md: 15px;
+$spacing-lg: 20px;
+
+:root {
+    --background-light: #f8f9fa;
+    --border-radius: 4px;
+    --text-secondary: #6c757d;
+    --info-light: #e2f3ff;
+    --info-dark: #0c5460;
+    --info: #17a2b8;
+    --success-light: #d4edda;
+    --success-dark: #155724;
+    --success: #28a745;
+    --warning-light: #fff3cd;
+    --warning-dark: #856404;
+    --warning: #ffc107;
+    --danger-light: #f8d7da;
+    --danger-dark: #721c24;
+    --danger: #dc3545;
+}
+
 .results-display {
   display: flex;
   flex-direction: column;
@@ -450,5 +638,27 @@ const checkVotingPeriodStatus = () => {
   text-align: center;
   max-width: 500px;
   margin: 0 auto;
+}
+
+.average-result {
+    margin-top: $spacing-md; /* SCSS variable */
+    font-size: 1.1em;
+    text-align: center;
+    padding: $spacing-sm; /* SCSS variable */
+    background-color: var(--background-light); /* CSS variable */
+    border-radius: var(--border-radius); /* CSS variable */
+}
+
+.total-votes-slider {
+    margin-top: $spacing-xs; /* SCSS variable */
+    font-size: 0.9em;
+    text-align: center;
+    color: var(--text-secondary); /* CSS variable */
+}
+
+/* Ensure chart has a defined height */
+#distribution-chart {
+    max-height: 400px; /* Or use a variable */
+    margin: $spacing-md 0; /* SCSS variable */
 }
 </style>

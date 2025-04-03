@@ -17,7 +17,27 @@
   
         <!-- Voting form (shown only if registered AND voting is active AND user hasn't voted yet) -->
         <form v-else-if="status === 'active' && !hasVoted" @submit.prevent="handleVoteSubmit" class="voting-form">
-          <fieldset>
+          
+          <!-- Slider Input (Conditional) -->
+          <fieldset v-if="displayHint === 'slider' && sliderConfig">
+              <legend class="form-label">Select Value: {{ selectedSliderValue !== null ? selectedSliderValue : '-' }}</legend>
+              <input 
+                type="range"
+                :min="sliderConfig.min"
+                :max="sliderConfig.max"
+                :step="sliderConfig.step"
+                v-model.number="selectedSliderValue"
+                class="slider-input"
+                required
+              />
+              <div class="slider-labels">
+                <span>{{ sliderConfig.min }}</span>
+                <span>{{ sliderConfig.max }}</span>
+              </div>
+          </fieldset>
+
+          <!-- Options Input (Conditional) -->
+          <fieldset v-else>
             <legend class="sr-only">Vote Options</legend>
             <div class="options-list">
               <label v-for="(option, index) in options" :key="index" class="option-item">
@@ -35,10 +55,11 @@
               </label>
             </div>
           </fieldset>
+          
           <button 
             type="submit" 
             class="btn primary" 
-            :disabled="loading || !selectedOption"
+            :disabled="loading || (displayHint === 'slider' ? selectedSliderValue === null : !selectedOption)"
           >
             {{ loading ? 'Submitting Vote...' : 'Submit Encrypted Vote' }}
           </button>
@@ -73,7 +94,7 @@
   </template>
   
   <script setup>
-  import { ref, computed, onMounted } from 'vue'
+  import { ref, computed, onMounted, watch } from 'vue'
   import { holderApi, voteApi } from '@/services/api'
   import { getPublicKeyFromPrivate, getKAndSecretShares, AESEncrypt } from '@/services/cryptography';
   import Cookies from 'js-cookie';
@@ -98,13 +119,31 @@
     isRegistered: {
       type: Boolean,
       required: true
+    },
+    displayHint: {
+        type: String,
+        default: null
+    },
+    sliderConfig: {
+        type: Object,
+        default: null
     }
   })
   
   const loading = ref(false);
   const selectedOption = ref(null)
+  const selectedSliderValue = ref(null)
   const g1rValue = ref(null)
   const hasVoted = ref(false);
+  
+  // Initialize slider value if applicable
+  onMounted(() => {
+      if (props.displayHint === 'slider' && props.sliderConfig) {
+          // Set initial slider value to min, or middle, or null?
+          // Setting to min seems reasonable
+          selectedSliderValue.value = props.sliderConfig.min;
+      }
+  });
   
   // Method to validate the key pair
   const validateKeyPair = async () => {
@@ -133,7 +172,45 @@
       if (loading.value) return;
       loading.value = true;
       const response = await validateKeyPair();
-      if (!response) return;
+      if (!response) {
+        loading.value = false; // Ensure loading stops if validation fails early
+        return;
+      }
+
+      // --- Determine the actual option string to encrypt --- 
+      let optionToEncrypt = null;
+      if (props.displayHint === 'slider' && selectedSliderValue.value !== null) {
+          // Find the closest valid option string in props.options
+          const targetValue = selectedSliderValue.value;
+          let closestOption = null;
+          let minDiff = Infinity;
+
+          for (const optionStr of props.options) {
+              const optionNum = Number(optionStr);
+              if (!isNaN(optionNum)) {
+                  const diff = Math.abs(optionNum - targetValue);
+                  // Prioritize exact match or closest match
+                  if (diff < minDiff || (diff === minDiff && optionNum === targetValue)) {
+                      minDiff = diff;
+                      closestOption = optionStr;
+                  }
+              }
+          }
+          if (closestOption === null) {
+              // Fallback if options array is unexpectedly invalid
+              console.error("Could not find a valid numeric option match for slider value.", props.options);
+              throw new Error("Internal error finding option for slider value.");
+          }
+          optionToEncrypt = closestOption;
+          console.log(`Slider value: ${targetValue}, Encrypting option: "${optionToEncrypt}"`); // Debug log
+      } else {
+          optionToEncrypt = selectedOption.value;
+      }
+
+      if (!optionToEncrypt) {
+          throw new Error("No option selected or determined for voting.");
+      }
+      // --- End option determination --- 
 
       const secret_holders = await holderApi.getAllHolders(props.voteId);
       const threshold = 3;
@@ -141,13 +218,11 @@
       const public_keys = [];
 
       data.forEach(hexString => {
-        // Push the hex string directly, don't convert back to Uint8Array
         public_keys.push(hexString);
       });
 
       const total = public_keys.length;
 
-      // Get the vote-specific private key cookie
       const privateKeyCookie = `vote_${props.voteId}_privateKey`;
       const privateKeyHex = Cookies.get(privateKeyCookie);
       const publicKeyHex = getPublicKeyFromPrivate(privateKeyHex);
@@ -155,9 +230,9 @@
       const [k, g1r, g2r, alpha] = await getKAndSecretShares(public_keys, threshold, total);
       g1rValue.value = g1r;
 
-      const ciphertext = await AESEncrypt(selectedOption.value, k);
+      // Encrypt the determined option string
+      const ciphertext = await AESEncrypt(optionToEncrypt, k);
       
-      // Submit the vote and directly read the response
       const voteResponse = await voteApi.submitVote(props.voteId, {
         election_id: props.voteId,
         voter: publicKeyHex,
@@ -169,13 +244,10 @@
         threshold: threshold
       });
 
-      // Update state on SUCCESS (cookie logic removed)
       hasVoted.value = true;
-
       alert(voteResponse.data.message || 'Vote submitted successfully!');
 
     } catch (error) {
-      // Log the error to the console in addition to alerting
       console.error('Failed to submit vote:', error.response?.data?.detail || error.message || error);
       alert('Failed to submit vote: ' + (error.response?.data?.detail || error.message));
     } finally {
@@ -263,5 +335,24 @@
   
   .voting-form {
     border: none;
+  }
+
+  /* Slider specific styles */
+  .slider-input {
+    width: 100%;
+    margin-top: 10px;
+    cursor: pointer;
+  }
+  .slider-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85em;
+    color: var(--text-secondary);
+    padding: 0 5px; /* Add slight padding */
+  }
+  .form-label { /* Style for the legend acting as label */
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
   }
   </style>

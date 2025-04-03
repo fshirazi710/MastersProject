@@ -14,6 +14,9 @@ from app.schemas.auth import (
 # Elections schemas
 from app.schemas.election import (
     ElectionCreateRequest,
+    ExtendedElectionCreateRequest,
+    SliderConfig,
+    ElectionMetadata,
 )
 
 # Vote schemas

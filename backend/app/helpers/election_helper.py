@@ -8,6 +8,7 @@ from app.core.dependencies import get_blockchain_service, get_db
 from app.core.config import WALLET_ADDRESS, PRIVATE_KEY
 import logging
 import random
+from typing import Optional
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -57,9 +58,19 @@ async def election_information_response(
     }
 
 
-async def create_election_transaction(data, start_timestamp, end_timestamp, reward_pool_wei, required_deposit_wei, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+async def create_election_transaction(
+    data, # This is now the core ElectionCreateRequest data 
+    start_timestamp, 
+    end_timestamp, 
+    reward_pool_wei, 
+    required_deposit_wei, 
+    blockchain_service: BlockchainService = Depends(get_blockchain_service),
+    # --- REMOVED questionType and sliderConfig params --- 
+):
     # Get the latest transaction nonce for the sender's wallet
     nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
+
+    # --- REMOVED logging and options_to_send logic --- 
     
     # Estimate gas required for the transaction execution
     estimated_gas = blockchain_service.contract.functions.createElection(
@@ -67,7 +78,7 @@ async def create_election_transaction(data, start_timestamp, end_timestamp, rewa
         data.description,
         start_timestamp,
         end_timestamp,
-        data.options,
+        data.options, # Pass options directly from core data
         reward_pool_wei,
         required_deposit_wei
     ).estimate_gas({"from": WALLET_ADDRESS})
@@ -78,7 +89,7 @@ async def create_election_transaction(data, start_timestamp, end_timestamp, rewa
         data.description,
         start_timestamp,
         end_timestamp,
-        data.options,
+        data.options, # Pass options directly from core data
         reward_pool_wei,
         required_deposit_wei
     ).build_transaction({

@@ -6,13 +6,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
 from app.core.dependencies import get_blockchain_service, get_db
 from app.schemas import (
-    ElectionCreateRequest,
     StandardResponse,
-    TransactionResponse
+    TransactionResponse,
+    ExtendedElectionCreateRequest,
+    SliderConfig,
+    ElectionMetadata
 )
 from app.helpers.election_helper import get_election_status, election_information_response, create_election_transaction, check_winners_already_selected, check_winners, generate_winners
 from app.services.blockchain import BlockchainService
 import logging
+import json
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -21,26 +24,93 @@ router = APIRouter(prefix="/elections", tags=["Elections"])
 
 
 @router.post("/create-election", response_model=StandardResponse[TransactionResponse])
-async def create_election(data: ElectionCreateRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+async def create_election(data: ExtendedElectionCreateRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
+    # Extract core data for contract interaction
+    core_data = data.election_data
+    
     # Convert start and end dates from ISO format to Unix timestamps
-    start_timestamp = int(datetime.fromisoformat(data.start_date).timestamp())
-    end_timestamp = int(datetime.fromisoformat(data.end_date).timestamp())
+    start_timestamp = int(datetime.fromisoformat(core_data.start_date.replace('Z', '+00:00')).timestamp())
+    end_timestamp = int(datetime.fromisoformat(core_data.end_date.replace('Z', '+00:00')).timestamp())
     
-    # Convert reward pool and required deposit from Ether to Wei (smallest Ethereum unit)
-    reward_pool_wei = blockchain_service.w3.to_wei(data.reward_pool, 'ether')
-    required_deposit_wei = blockchain_service.w3.to_wei(data.required_deposit, 'ether')
+    # Convert reward pool and required deposit from Ether to Wei
+    reward_pool_wei = blockchain_service.w3.to_wei(core_data.reward_pool, 'ether')
+    required_deposit_wei = blockchain_service.w3.to_wei(core_data.required_deposit, 'ether')
+
+    # Call helper function with only core data
+    receipt = await create_election_transaction(
+        core_data,
+        start_timestamp, 
+        end_timestamp, 
+        reward_pool_wei, 
+        required_deposit_wei, 
+        blockchain_service,
+    )
     
-    # Call helper function to create the election transaction and get the receipt
-    receipt = await create_election_transaction(data, start_timestamp, end_timestamp, reward_pool_wei, required_deposit_wei, blockchain_service)
-    
-    # Check the transaction status and return response
-    if receipt.status == 1:
-        return StandardResponse(
-            success=True,
-            message="Successfully created election",
-        )
-    else:
-        raise HTTPException(status_code=500, detail="failed to create election")
+    if receipt.status != 1:
+         raise HTTPException(status_code=500, detail="Failed to create election on blockchain")
+
+    # --- Store Metadata in DB --- 
+    election_id = None
+    try:
+        # --- Parse ElectionCreated event from logs --- 
+        event_signature_hash = blockchain_service.w3.keccak(text="ElectionCreated(uint256,string)").hex()
+        election_id = None
+        for log in receipt.logs:
+            if log['topics'] and log['topics'][0].hex() == event_signature_hash:
+                event_abi = next((item for item in blockchain_service.contract.abi if item.get('type') == 'event' and item.get('name') == 'ElectionCreated'), None)
+                if event_abi:
+                    try:
+                        # Extract just the type strings from the ABI inputs
+                        types_list = [inp['type'] for inp in event_abi['inputs']]
+                        # Decode using the list of type strings
+                        decoded_data = blockchain_service.w3.codec.decode(
+                            types_list, 
+                            log['data']
+                        )
+                        # Arguments are returned as a tuple in order (id, title)
+                        election_id = decoded_data[0] 
+                        logger.info(f"Parsed election ID {election_id} from ElectionCreated event.")
+                        break # Found and parsed successfully
+                    except Exception as decode_err:
+                        # Log error specifically related to decoding
+                        logger.error(f"Error decoding ElectionCreated event data: {decode_err}")
+                        break # Stop trying if decoding fails
+                else:
+                    logger.error("Could not find ElectionCreated event ABI to decode logs.")
+                    break
+        
+        if election_id is None:
+             logger.warning(f"Could not find or parse ElectionCreated event in transaction logs (tx: {receipt.transactionHash.hex()}). Metadata storage will be skipped.")
+
+        if election_id is not None and (data.displayHint or data.sliderConfig):
+            slider_config_json = json.dumps(data.sliderConfig.model_dump()) if data.sliderConfig else None
+            
+            metadata_to_store = {
+                "election_id": election_id,
+                "displayHint": data.displayHint,
+                "sliderConfig": slider_config_json
+            }
+            # Add debug log before DB call
+            logger.debug(f"Attempting to store metadata: {metadata_to_store}") 
+            
+            await db.election_metadata.update_one(
+                {"election_id": election_id},
+                {"$set": metadata_to_store},
+                upsert=True
+            )
+            logger.info(f"Stored/Updated metadata for election ID {election_id}")
+            
+    except Exception as meta_err:
+        # Simplify error logging
+        logger.error(f"Exception occurred during metadata processing/storage for tx {receipt.transactionHash.hex()}. Error type: {type(meta_err).__name__}")
+        # Optionally log the full traceback if needed for deeper debugging
+        # logger.exception("Full traceback for metadata error:") 
+    # --- End Metadata Storage --- 
+
+    return StandardResponse(
+        success=True,
+        message="Successfully created election"
+    )
 
 
 @router.get("/all-elections", response_model=StandardResponse[List[Dict[str, Any]]])
@@ -199,3 +269,56 @@ async def submit_email(election_id: int, data: dict, db=Depends(get_db)):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/election/{election_id}/metadata", response_model=StandardResponse[ElectionMetadata])
+async def get_election_metadata(election_id: int, db=Depends(get_db)):
+    """Retrieve display hint and slider configuration metadata for a specific election."""
+    try:
+        metadata_doc = await db.election_metadata.find_one({"election_id": election_id})
+        
+        if metadata_doc:
+            # Parse sliderConfig from JSON string if it exists and is a string
+            slider_config_data = metadata_doc.get('sliderConfig')
+            parsed_slider_config = None
+            if isinstance(slider_config_data, str):
+                try:
+                    parsed_slider_config = json.loads(slider_config_data)
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse sliderConfig JSON for election {election_id}: {slider_config_data}")
+                    # Keep it None or handle as error?
+            elif isinstance(slider_config_data, dict): # Handle case where it might already be dict
+                 parsed_slider_config = slider_config_data
+
+            # Prepare the final data, ensuring _id is removed
+            final_metadata = {
+                "election_id": metadata_doc.get('election_id'),
+                "displayHint": metadata_doc.get('displayHint'),
+                "sliderConfig": parsed_slider_config
+            }
+
+            # Pydantic will validate final_metadata against ElectionMetadata via StandardResponse
+            return StandardResponse(
+                success=True,
+                message="Election metadata retrieved successfully",
+                data=final_metadata 
+            )
+        else:
+            # Return default/empty metadata if none found in DB
+            default_metadata = ElectionMetadata(
+                election_id=election_id, 
+                displayHint=None,
+                sliderConfig=None
+            )
+            return StandardResponse(
+                success=True,
+                message="No specific metadata found for this election",
+                data=default_metadata.model_dump() 
+            )
+            
+    except Exception as e:
+        logger.error(f"Error retrieving metadata for election {election_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve metadata for election {election_id}"
+        )

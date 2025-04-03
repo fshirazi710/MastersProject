@@ -70,6 +70,12 @@ export const electionApi = {
   getElectionById: (electionId) => {
     return apiClient.get(`/api/elections/election/${electionId}`);
   },
+
+  // --- Add function to get metadata --- 
+  getElectionMetadata: (electionId) => {
+    return apiClient.get(`/api/elections/election/${electionId}/metadata`);
+  }
+  // -----------------------------------
 };
 
 // API service for votes

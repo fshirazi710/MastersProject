@@ -80,6 +80,8 @@
       :endDate="vote.endDate"
       :status="vote.status"
       :is-registered="isRegisteredForVote"
+      :displayHint="displayHint"
+      :sliderConfig="sliderConfig"
     />
 
     <!-- Submit Secret Share section - only shown if registered as holder and vote has ended -->
@@ -96,13 +98,15 @@
       :endDate="vote.endDate"
       :releasedKeys="vote.releasedKeys"
       :requiredKeys="vote.requiredKeys"
+      :displayHint="displayHint"
+      :sliderConfig="sliderConfig"
     />
 
   </div>
 </template>
 
 <script setup>
-  import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+  import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
   import { useRoute } from 'vue-router'
   import { holderApi, electionApi } from '@/services/api'
   import Cookies from 'js-cookie'
@@ -122,6 +126,20 @@
   const timerLabel = ref('Time Remaining:');
   const isLocallyRegistered = ref(false); // Add local registration state
 
+  // Add state for metadata
+  const displayHint = ref(null);
+  const sliderConfig = ref(null);
+
+  // --- onBeforeUnmount Hook --- 
+  // Clear the main timer interval on unmount
+  onBeforeUnmount(() => {
+    if (timeUpdateInterval.value) {
+        clearInterval(timeUpdateInterval.value);
+        timeUpdateInterval.value = null; 
+    }
+  });
+  // ---------------------------
+
   // Computed property to check if user is registered (checks for public key cookie)
   const isRegisteredForVote = computed(() => {
     if (isLocallyRegistered.value) return true; // Check local state first
@@ -138,18 +156,42 @@
   });
 
   const fetchVoteData = async (showLoading = true) => {
+      // --- Guard for voteId (kept for safety, though watch should prevent invalid calls mostly) --- 
+      const voteId = route.params.id;
+      if (!voteId || voteId === 'undefined' || voteId === ':id') { 
+          console.warn("fetchVoteData called with invalid voteId:", voteId);
+          error.value = "Invalid or missing vote ID.";
+          loading.value = false; 
+          vote.value = null; 
+          displayHint.value = null;
+          sliderConfig.value = null;
+          if (timeUpdateInterval.value) { 
+              clearInterval(timeUpdateInterval.value);
+              timeUpdateInterval.value = null;
+          }
+          return; 
+      }
+      // -------------------------
+
       if (showLoading) loading.value = true
-      error.value = null
+      error.value = null 
       
       try {
-          // Fetch vote details
-          const voteResponse = await electionApi.getElectionById(route.params.id)
-          const voteData = voteResponse.data.data
-
-          const holdersResponse = await holderApi.getHolderCount(route.params.id)
-          const holderData = holdersResponse.data.data
+          const [voteResponse, holdersResponse, metadataResponse] = await Promise.all([
+              electionApi.getElectionById(voteId),
+              holderApi.getHolderCount(voteId),
+              electionApi.getElectionMetadata(voteId) 
+          ]);
           
-          // Transform the response data to match the expected format
+          const metadata = metadataResponse.data.data; 
+          let parsedSliderConfig = null;
+          if (metadata && typeof metadata.sliderConfig === 'string') {
+              try { parsedSliderConfig = JSON.parse(metadata.sliderConfig); } catch (e) { console.error("Failed to parse sliderConfig JSON:", e); }
+          } else if (metadata && typeof metadata.sliderConfig === 'object') { parsedSliderConfig = metadata.sliderConfig; }
+
+          const voteData = voteResponse.data.data;
+          const holderData = holdersResponse.data.data;
+          
           vote.value = {
               id: voteData.id,
               title: voteData.title || `Vote ${voteData.id}`,
@@ -157,7 +199,7 @@
               status: voteData.status || 'active',
               startDate: voteData.start_date || new Date().toISOString(),
               endDate: voteData.end_date || new Date(Date.now() + 86400000).toISOString(),
-              options: voteData.options || [],
+              options: voteData.options || [], 
               participantCount: voteData.participant_count || 0,
               rewardPool: voteData.reward_pool || 0,
               requiredDeposit: voteData.required_deposit || 0,
@@ -165,48 +207,30 @@
               requiredKeys: voteData.required_keys || 0,
               releasedKeys: voteData.released_keys || 0,
           }
+          
+          displayHint.value = metadata?.displayHint; 
+          sliderConfig.value = parsedSliderConfig;
+          
+          console.log("Fetched Data:", { vote: vote.value }); 
+          console.log("Fetched Metadata:", { hint: displayHint.value, config: sliderConfig.value }); 
+          
       } catch (err) {
-          console.error("Failed to fetch vote data:", err)
-          error.value = "Failed to load vote details. Please try again later."
+          console.error("Failed to fetch vote data or metadata:", err)
+          const detail = err.response?.data?.detail || err.message || 'Unknown error';
+          error.value = `Failed to load details for vote ${voteId}. Error: ${detail}`;
+          vote.value = null;
+          displayHint.value = null;
+          sliderConfig.value = null;
       } finally {
           if (showLoading) loading.value = false
-          startTimerUpdates();
-      }
-  }
-
-  // Fetch only the dynamic data that changes frequently
-  const fetchDynamicData = async () => {
-      try {
-          // Use Promise.all to fetch multiple endpoints in parallel
-          const [voteResponse, holdersResponse] = await Promise.all([
-              electionApi.getElectionById(route.params.id),
-              holderApi.getHolderCount(route.params.id)
-          ]);
-
-          const voteData = voteResponse.data.data;
-          const holderData = holdersResponse.data.data;
-          
-          // Only update the specific properties that change frequently
-          // without replacing the entire object
           if (vote.value) {
-              // Update counts
-              vote.value.participantCount = voteData.participant_count || 0;
-              vote.value.secretHolderCount = holderData.count || 0;
-              vote.value.releasedKeys = voteData.released_keys || 0;
-              vote.value.requiredKeys = voteData.required_keys || 0;
-              
-              // Update status - important if vote phases change
-              if (vote.value.status !== voteData.status) {
-                  vote.value.status = voteData.status;
-                  // Force a full refresh if status changed
-                  fetchVoteData(false);
-              }
+            startTimerUpdates();
+          } else {
+             if (timeUpdateInterval.value) {
+                 clearInterval(timeUpdateInterval.value);
+                 timeUpdateInterval.value = null;
+             }
           }
-      } catch (err) {
-          console.error("Background data update failed:", err);
-          // Don't show errors to user for background updates
-      } finally {
-          updateTimerState();
       }
   }
 
@@ -323,17 +347,41 @@
       }
   };
 
-  onMounted(async () => {
-      // Initial full data load triggers startTimerUpdates in its finally block
-      await fetchVoteData(true);
-
-      // Ensure background interval is cleared on unmount
-      onBeforeUnmount(() => {
-          // Clear the main timer interval as well (already handled in updateTimerState when ended)
+  // --- Watch route parameter for changes --- 
+  watch(() => route.params.id, (newId, oldId) => {
+      console.log(`Route ID changed from ${oldId} to ${newId}`);
+      // Check if the new ID is valid before fetching
+      if (newId && newId !== 'undefined' && newId !== ':id') {
+          // Clear old data before fetching new, show loading
+          vote.value = null; 
+          displayHint.value = null;
+          sliderConfig.value = null;
+          error.value = null;
+          // Stop timer associated with old vote ID
           if (timeUpdateInterval.value) {
               clearInterval(timeUpdateInterval.value);
+              timeUpdateInterval.value = null;
           }
-      });
+          // Fetch data for the new valid ID
+          fetchVoteData(true); 
+      } else {
+          // Handle cases where the route changes to an invalid ID
+          // (e.g., navigating away or to a placeholder)
+          error.value = "Invalid vote ID in route.";
+          vote.value = null;
+          displayHint.value = null;
+          sliderConfig.value = null;
+          loading.value = false;
+          if (timeUpdateInterval.value) {
+              clearInterval(timeUpdateInterval.value);
+              timeUpdateInterval.value = null;
+          }
+      }
+  }, { immediate: true }); // immediate: true runs the watcher once on component mount
+  // ----------------------------------------
+
+  onMounted(() => {
+    console.log("Vote detail component mounted.");
   });
 
   // Format date strings for display
@@ -374,7 +422,7 @@
   const handleRegistrationSuccess = () => {
     isLocallyRegistered.value = true; // Set local flag on successful registration
     // Re-fetch dynamic data (like participant count) after registration
-    fetchDynamicData();
+    fetchVoteData();
     // No need to explicitly update isRegisteredForVote, computed property handles it
   };
 </script>
