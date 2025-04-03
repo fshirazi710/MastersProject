@@ -68,6 +68,7 @@ contract TimedReleaseVoting {
     // ======== Events ========
     
     event HolderJoined(string indexed publicKey, uint256 electionId);
+    event HolderLeft(string indexed publicKey, uint256 electionId);
     event ElectionCreated(uint256 id, string title);
     event VoteSubmitted(
         uint256 electionId,
@@ -168,6 +169,23 @@ contract TimedReleaseVoting {
         holderAddresses.push(publicKey);
 
         emit HolderJoined(publicKey, electionId);
+    }
+
+    function unjoinAsHolder(string memory publicKey) external {
+        require(holders[publicKey].active, "Not an active holder");
+        
+        uint256 electionId = holders[publicKey].electionId;
+        holders[publicKey].active = false;
+        
+        for (uint256 i = 0; i < holderAddresses.length; i++) {
+            if (keccak256(abi.encodePacked(holderAddresses[i])) == keccak256(abi.encodePacked(publicKey))) {
+                holderAddresses[i] = holderAddresses[holderAddresses.length - 1];
+                holderAddresses.pop();
+                break;
+            }
+        }
+        
+        emit HolderLeft(publicKey, electionId);
     }
     
     function getNumHoldersByElection(uint256 electionId) public view returns (uint256) {
