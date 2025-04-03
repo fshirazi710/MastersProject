@@ -111,6 +111,11 @@ export const holderApi = {
   joinAsHolder: (election_id, publicKey) => {
     return apiClient.post(`/api/holders/join/${election_id}`, { public_key: publicKey });
   },
+
+  // unJoin as holder
+  unjoinAsHolder: (election_id, publicKey) => {
+    return apiClient.post(`/api/holders/unjoin/${election_id}`, { public_key: publicKey });
+  },
 };
 
 // API service for shares

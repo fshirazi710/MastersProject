@@ -110,7 +110,7 @@ const filteredVotes = computed(() => {
     const matchesStatus = statusFilter.value === 'all' || vote.status === statusFilter.value;
 
     return matchesSearch && matchesStatus;
-  });
+  }).sort((a, b) => new Date(b.endDate) - new Date(a.endDate)) //sort by end time
 })
 
 // Reactive reference for votes

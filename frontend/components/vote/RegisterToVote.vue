@@ -15,7 +15,7 @@
       </div>
     
       <!-- Voting form with radio options -->
-      <form @submit.prevent="generateKeyPair" class="voting-form">
+      <form class="voting-form">
         <h3>Would you like to be a secret holder?</h3>
         <div class="options-list">
           <label class="option-item">
@@ -43,8 +43,11 @@
             </div>
           </label>
         </div>
-        <button class="btn primary">
+        <button type="button" class="btn primary" @click="generateKeyPair" :disabled="isSecretHolder === 'no'">
           Register To Vote
+        </button>
+        <button type="button" class="btn primary" @click="unjoinAsSecretHolder" :disabled="isSecretHolder === 'yes'">
+          Unregister To Vote
         </button>
       </form>
     </div>
@@ -53,7 +56,7 @@
   <script setup>
   import { ref } from 'vue'
   import { voteApi, holderApi } from '@/services/api'
-  import { generateBLSKeyPair } from "../../services/cryptography";
+  import { generateBLSKeyPair, getPublicKeyFromPrivate } from "../../services/cryptography";
   import Cookies from "js-cookie";
   
   const props = defineProps({
@@ -71,22 +74,36 @@
   const isSecretHolder = ref('yes')
   const pk = ref(null);
 
-  const generateKeyPair = async () => {
-    const privateKeyHex = Cookies.get("privateKey");
+  // used to check if the user has already generated a keypair for this page
+  const checkExistingPrivateKey = () => {
+    const cookieLabel = `privateKey_${props.voteId}`;
+    const existingKey = Cookies.get(cookieLabel);
 
-    if (privateKeyHex) {
+    if (existingKey) {
+        // Convert stored private key back to a usable format
+        const skRestored = BigInt("0x" + existingKey);  
+        pk.value = getPublicKeyFromPrivate(skRestored);
+    }
+  };
+
+  onMounted(checkExistingPrivateKey);
+
+  const generateKeyPair = async () => {
+    if (pk.value != null) {
+      alert("You have already signed up for this vote");
       throw new Error("You have already signed up for this vote");
     }
+    else {
+      const { sk, pk: publicKey } = generateBLSKeyPair();
 
-    const { sk, pk: publicKey } = generateBLSKeyPair();
+      // Store the private key in a cookie for 1 day
+      Cookies.set(`privateKey_${props.voteId}`, sk.toString(16), { expires: 5, secure: true, sameSite: "Strict" });
 
-    // Store the private key in a cookie for 1 day
-    Cookies.set("privateKey", sk.toString(16), { expires: 5, secure: true, sameSite: "Strict" });
+      // Update the reactive pk variable to trigger UI update
+      pk.value = publicKey;
 
-    // Update the reactive pk variable to trigger UI update
-    pk.value = publicKey;
-
-    storePublicKey()
+      storePublicKey()
+    }
   };
 
   // Method to generate voting token
@@ -117,6 +134,29 @@
     } catch (err) {
       console.error('Failed to join as secret holder:', err);
       error.value = err.message || 'Failed to join as secret holder. Please try again.';
+    }
+  }
+
+  const unjoinAsSecretHolder = async () => {
+    try {
+      if (!pk.value) {
+            alert("Error: Your public key could not be found. Please try again.");
+            return;
+      }
+
+      const response = await holderApi.unjoinAsHolder(props.voteId, pk.value);
+      
+      // Now remove the private key cookie
+      const cookieLabel = `privateKey_${props.voteId}`;
+      Cookies.remove(cookieLabel);
+
+      // Update the UI to reflect the change (you can also reload the page if needed)
+      pk.value = null;  // Clear the stored public key as well (if any)
+
+      alert("You have successfully unregistered as a secret holder.");
+    } catch (err) {
+      console.error('Failed to unregister as a secret holder:', err);
+      alert("Failed to unregister. Please try again.");
     }
   }
   </script>

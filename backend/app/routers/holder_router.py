@@ -8,7 +8,7 @@ from app.schemas import (
     TransactionResponse,
     HolderCountResponse,
 )
-from app.helpers.holder_helper import join_as_holder_transaction
+from app.helpers.holder_helper import join_as_holder_transaction, unjoin_as_holder_transaction
 from app.services.blockchain import BlockchainService
 
 import logging
@@ -72,6 +72,35 @@ async def join_as_holder(
     
     # Call helper function to execute the transaction for joining as a holder   
     receipt = await join_as_holder_transaction(election_id, public_key_hex, blockchain_service)
+    
+    # Check the transaction status and return response
+    if receipt.status == 1:
+        return StandardResponse(
+            success=True,
+            message="Successfully joined as a secret holder"
+        )
+    else:
+        raise HTTPException(status_code=500, detail="secret holder failed to be stored on the blockchain")
+    
+@router.post("/unjoin/{election_id}", response_model=StandardResponse[TransactionResponse])
+async def unjoin_as_holder(
+    election_id: int,
+    request: dict,
+    blockchain_service: BlockchainService = Depends(get_blockchain_service)
+):
+    # Convert the public key to a hexadecimal string format
+    public_key_bytes = bytes(request["public_key"].values())
+    public_key_hex = "0x" + public_key_bytes.hex()
+    
+    # Retrieve the list of secret holders already registered for the given election
+    secret_holders = await blockchain_service.call_contract_function("getHoldersByElection", election_id)
+    
+    # Check if the public key isn't already registered; if so, raise an error
+    if public_key_hex not in secret_holders:
+        raise HTTPException(status_code=400, detail="this public key hasn't already been registered")
+    
+    # Call helper function to execute the transaction for joining as a holder   
+    receipt = await unjoin_as_holder_transaction(public_key_hex, blockchain_service)
     
     # Check the transaction status and return response
     if receipt.status == 1:

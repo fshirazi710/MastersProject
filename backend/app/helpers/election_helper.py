@@ -81,7 +81,7 @@ async def create_election_transaction(data, start_timestamp, end_timestamp, rewa
     
     # Sign and send transaction
     signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_election_tx, PRIVATE_KEY)
-    tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+    tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
     receipt = blockchain_service.w3.eth.wait_for_transaction_receipt(tx_hash)
     
     # Return response
