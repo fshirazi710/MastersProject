@@ -123,21 +123,40 @@ const getVotes = async () => {
   
   try {
     const response = await electionApi.getAllElections()
+    const electionData = response.data.data
 
-    // Transform the response data to match the expected format
-    votes.value = response.data.data.map(vote => ({
-      id: vote.id,
-      title: vote.title || `Vote ${vote.id}`,
-      description: vote.description || 'No description available',
-      status: vote.status || 'active',
-      startDate: new Date(vote.start_date || Date.now()).toISOString(),
-      endDate: new Date(vote.end_date || Date.now() + 86400000).toISOString(),
-      options: vote.options || [],
-      participantCount: vote.participant_count || 0,
-      rewardPool: vote.reward_pool || 0,
-      requiredDeposit: vote.required_deposit || 0,
-      secretHolderCount: vote.secret_holder_count || 0
-    }))
+    // Asynchronously fetch holder counts for each vote
+    const votesWithCounts = await Promise.all(electionData.map(async (vote) => {
+      let holderCount = 0;
+      try {
+        // Assuming holderApi exists and has getHolderCount method
+        // Import holderApi if not already imported
+        const { holderApi } = await import('@/services/api');
+        const holderResponse = await holderApi.getHolderCount(vote.id);
+        holderCount = holderResponse.data.data.count || 0;
+      } catch (holderErr) {
+        console.error(`Failed to fetch holder count for vote ${vote.id}:`, holderErr);
+        // Keep holderCount as 0 if fetch fails
+      }
+
+      // Transform the response data, including the fetched holder count
+      return {
+        id: vote.id,
+        title: vote.title || `Vote ${vote.id}`,
+        description: vote.description || 'No description available',
+        status: vote.status || 'active',
+        startDate: new Date(vote.start_date || Date.now()).toISOString(),
+        endDate: new Date(vote.end_date || Date.now() + 86400000).toISOString(),
+        options: vote.options || [],
+        participantCount: vote.participant_count || 0, // This still comes from the main election data
+        rewardPool: vote.reward_pool || 0,
+        requiredDeposit: vote.required_deposit || 0,
+        secretHolderCount: holderCount // Use the fetched count
+      }
+    }));
+
+    votes.value = votesWithCounts;
+
   } catch (err) {
     console.error("Failed to fetch votes:", err)
     error.value = "Failed to load votes. Please try again later."

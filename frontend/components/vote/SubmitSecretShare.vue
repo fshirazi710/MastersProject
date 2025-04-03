@@ -7,9 +7,19 @@
             <p>Clicking the button below will release your secret share. Be sure to come back later to check the results of the vote and see if you're one of the lucky winners of the vouchers!</p>
         </div>
 
-        <button @click="generateSecretShare" type="submit" class="btn primary" :disabled="loading || !isSubmissionTime">
-          {{ loading ? 'Submitting Share...' : 'Submit Secret Share' }}
-        </button>
+        <!-- Show submission UI only if share hasn't been submitted -->
+        <template v-if="!hasSubmittedShare">
+            <button @click="generateSecretShare" type="submit" class="btn primary" :disabled="loading || !isSubmissionTime">
+              {{ loading ? 'Submitting Share...' : 'Submit Secret Share' }}
+            </button>
+            <p v-if="error" class="error-message">{{ error }}</p>
+        </template>
+
+        <!-- Show thank you message if share has been submitted -->
+        <div v-if="hasSubmittedShare" class="submitted-message">
+            <i class="success-icon">✅</i>
+            <p>Thank you! Your secret share has been successfully submitted.</p>
+        </div>
     </div>
 </template>
 
@@ -17,7 +27,7 @@
     import { voteApi, shareApi } from '@/services/api'
     import { getPublicKeyFromPrivate, generateShares, generateShares2 } from '@/services/cryptography';
     import Cookies from "js-cookie";
-    import { ref } from 'vue';
+    import { ref, onMounted } from 'vue';
 
     const props = defineProps({
         voteId: {
@@ -33,8 +43,18 @@
     const loading = ref(false);
     const error = ref(null);
     const successMessage = ref('');
+    const hasSubmittedShare = ref(false);
+
+    const shareSubmittedCookie = `vote_${props.voteId}_shareSubmitted`;
+
+    onMounted(() => {
+        if (Cookies.get(shareSubmittedCookie) === 'true') {
+            hasSubmittedShare.value = true;
+        }
+    });
 
     const generateSecretShare = async () => {
+        error.value = null;
         try {
             if (loading.value) return;
             loading.value = true;
@@ -62,11 +82,11 @@
             if (secretShares.length > 0) {
                 await submitSecretShares(secretShares, publicKey);
             } else {
-                alert("No valid secret shares to submit.");
+                error.value = "No valid secret shares generated.";
             }
-        } catch (error) {
-            console.error("Failed to generate secret share:", error);
-            alert('Error generating secret share. Please try again.');
+        } catch (err) {
+            console.error("Failed to generate or submit secret share:", err);
+            error.value = err.message || 'Error generating or submitting secret share. Please try again.';
         } finally {
             loading.value = false;
         }
@@ -84,17 +104,12 @@
     };
 
     const submitSecretShares = async (secretShares, publicKey) => {
-        try {
-            const response = await shareApi.submitShare(props.voteId, { shares: secretShares, public_key: publicKey });
-            alert(response.data.message || 'Secret share submitted successfully!');
-        } catch (error) {
-            if (error.response?.status === 400) {
-                alert(error.response.data.detail);
-            } else {
-                console.error("Failed to submit secret shares:", error);
-                alert('Error submitting secret shares. Please try again.');
-            }
-        }
+        const response = await shareApi.submitShare(props.voteId, { shares: secretShares, public_key: publicKey });
+        
+        console.log("Submission response:", response.data);
+
+        hasSubmittedShare.value = true;
+        Cookies.set(shareSubmittedCookie, 'true', { expires: 365 });
     };
 </script>
 
@@ -128,5 +143,22 @@
 .error-message {
   color: var(--danger);
   margin-top: 10px;
+}
+
+/* Styles for the submitted message */
+.submitted-message {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 15px;
+  background-color: var(--success-light);
+  border: 1px solid var(--success);
+  border-radius: var(--border-radius);
+  color: var(--success-dark);
+
+  i {
+    font-size: 1.2em;
+    color: var(--success);
+  }
 }
 </style>

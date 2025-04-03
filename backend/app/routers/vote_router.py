@@ -60,26 +60,39 @@ async def store_public_key(vote_id: int, data: PublicKeyRequest, db=Depends(get_
     # The public key is already validated as a string by Pydantic
     public_key_input = data.public_key
     
-    # Prepare the key for storage: remove the "0x" prefix if present
-    public_key_to_store = public_key_input
+    # Prepare the key for storage/query: remove the "0x" prefix if present
+    public_key_processed = public_key_input
     if public_key_input.startswith('0x'):
-        public_key_to_store = public_key_input[2:] # Slice off the "0x"
+        public_key_processed = public_key_input[2:] # Slice off the "0x"
     
-    public_key_data = {
+    # Define the filter to find an existing document
+    filter_query = {
         "vote_id": vote_id,
-        "reward_token": 1,
-        "public_key": public_key_to_store, # Store the raw hex string
-        "is_secret_holder": data.is_secret_holder,
+        "public_key": public_key_processed, 
     }
 
-    if data.is_secret_holder:
-        public_key_data["reward_token"] = 0
+    # Define the data to be set on update or insert
+    update_data = {
+        "$set": {
+            "reward_token": 0 if data.is_secret_holder else 1,
+            "is_secret_holder": data.is_secret_holder,
+            # Ensure vote_id and public_key are also set on insert
+            "vote_id": vote_id, 
+            "public_key": public_key_processed 
+        }
+    }
 
-    await db.public_keys.insert_one(public_key_data)
+    # Use update_one with upsert=True
+    # This will update if found, or insert if not found.
+    result = await db.public_keys.update_one(filter_query, update_data, upsert=True)
+
+    # Optional: Check result details if needed (e.g., result.matched_count, result.upserted_id)
+    # logger.info(f"Upsert result for vote {vote_id}, key {public_key_processed}: Matched={result.matched_count}, UpsertedId={result.upserted_id}")
 
     return StandardResponse(
         success=True,
-        message="Public key stored securely",
+        # Adjust message slightly to reflect upsert logic
+        message="Public key stored or updated successfully", 
     )
 
 

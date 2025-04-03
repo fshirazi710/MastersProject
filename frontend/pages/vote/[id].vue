@@ -30,7 +30,7 @@
             <span class="value">{{ formatDateTime(vote.endDate) }}</span>
           </div>
           <div class="timeline-item">
-            <span class="label">Time Remaining:</span>
+            <span class="label">{{ timerLabel }}</span>
             <span class="value" :class="{ 'ending-soon': timeRemaining && timeRemaining !== 'Ended' && !timeRemaining.includes('d') && timeRemaining.startsWith('00:') }">
               {{ timeRemaining }}
             </span>
@@ -94,6 +94,8 @@
       :options="vote.options"
       :voteId="route.params.id"
       :endDate="vote.endDate"
+      :releasedKeys="vote.releasedKeys"
+      :requiredKeys="vote.requiredKeys"
     />
 
   </div>
@@ -117,11 +119,12 @@
 
   const timeRemaining = ref('');
   const timeUpdateInterval = ref(null);
-  // Track if we've already done the "time hit zero" refresh
-  const hasRefreshedAtZero = ref(false);
+  const timerLabel = ref('Time Remaining:');
+  const isLocallyRegistered = ref(false); // Add local registration state
 
   // Computed property to check if user is registered (checks for public key cookie)
   const isRegisteredForVote = computed(() => {
+    if (isLocallyRegistered.value) return true; // Check local state first
     if (!vote.value) return false;
     const publicKeyCookie = `vote_${vote.value.id}_publicKey`;
     return Cookies.get(publicKeyCookie) !== undefined;
@@ -167,6 +170,7 @@
           error.value = "Failed to load vote details. Please try again later."
       } finally {
           if (showLoading) loading.value = false
+          startTimerUpdates();
       }
   }
 
@@ -201,69 +205,135 @@
       } catch (err) {
           console.error("Background data update failed:", err);
           // Don't show errors to user for background updates
+      } finally {
+          updateTimerState();
       }
   }
 
-  // Calculate time remaining between now and endDate, formatted as days, hours, minutes, seconds
-  const updateTimeRemaining = () => {
-    if (!vote.value || !vote.value.endDate) {
-      timeRemaining.value = 'Not available';
-      return;
-    }
-    
-    const now = new Date();
-    const end = new Date(vote.value.endDate);
-    const diff = end - now;
-    
-    // Check if we just hit zero (or went negative)
-    if (diff <= 0) {
-      // If the time just hit zero and we haven't refreshed yet
-      if (timeRemaining.value !== 'Ended' && !hasRefreshedAtZero.value) {
-        console.log('Vote just ended, refreshing data...');
-        hasRefreshedAtZero.value = true;
-        // Refresh data to update the status
-        fetchVoteData(false);
+  // Helper function to format time difference
+  const formatTimeDifference = (diff) => {
+      if (diff <= 0) return '00:00:00'; // Handle ended/zero case
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      let formattedTime = '';
+      if (days > 0) formattedTime += `${days}d `;
+      formattedTime += `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      return formattedTime;
+  };
+
+  // Renamed and refactored function to update timer label and value based on vote state
+  const updateTimerState = () => {
+      if (!vote.value || !vote.value.startDate || !vote.value.endDate) {
+          timerLabel.value = 'Status:';
+          timeRemaining.value = 'Not available';
+          // Stop timer if running
+          if (timeUpdateInterval.value) {
+             clearInterval(timeUpdateInterval.value);
+             timeUpdateInterval.value = null;
+          }
+          return;
       }
-      
-      timeRemaining.value = 'Ended';
-      return;
-    }
-    
-    // If we're here, time hasn't ended yet
-    hasRefreshedAtZero.value = false;
-    
-    // Calculate days, hours, minutes, seconds
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-    
-    // Format the time remaining
-    let formattedTime = '';
-    if (days > 0) formattedTime += `${days}d `;
-    formattedTime += `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    
-    timeRemaining.value = formattedTime;
+
+      const now = new Date();
+      const start = new Date(vote.value.startDate);
+      const end = new Date(vote.value.endDate);
+
+      let needsDataRefresh = false;
+      let potentialStatusChange = false; // Flag to check if a refresh *might* change the state
+
+      if (now < start) {
+          // State: Pending (Before Start Date)
+          timerLabel.value = 'Starts in:';
+          const diffToStart = start - now;
+          timeRemaining.value = formatTimeDifference(diffToStart);
+
+          // Check if start time just passed in this interval tick
+          if (diffToStart <= 0) {
+               console.log('Vote start time reached or passed.');
+               potentialStatusChange = true; // Status might change to active
+               timeRemaining.value = 'Starting...'; // Temp state
+          }
+      } else if (now < end) {
+          // State: Active (Between Start and End Date)
+          timerLabel.value = 'Ends in:';
+          const diffToEnd = end - now;
+          timeRemaining.value = formatTimeDifference(diffToEnd);
+
+          // If status is still pending/join, refresh to ensure it reflects active state
+           if (['pending', 'join'].includes(vote.value.status)) {
+              console.log('Vote should be active now, ensuring status update.');
+              potentialStatusChange = true;
+           }
+
+          // Check if end time just passed in this interval tick
+          if (diffToEnd <= 0) {
+              console.log('Vote end time reached or passed.');
+              potentialStatusChange = true; // Status might change to ended
+              timeRemaining.value = 'Ending...'; // Temp state
+          }
+
+      } else {
+          // State: Ended (After End Date)
+          timerLabel.value = 'Status:';
+          timeRemaining.value = 'Ended';
+
+          // If status isn't 'ended' yet, refresh
+          if (vote.value.status !== 'ended') {
+               console.log('Vote should have ended, ensuring status update.');
+               potentialStatusChange = true;
+          }
+
+          // Stop the timer interval if it's still running
+          if (timeUpdateInterval.value) {
+              clearInterval(timeUpdateInterval.value);
+              timeUpdateInterval.value = null;
+              console.log('Vote ended, stopping timer interval.');
+          }
+      }
+
+      // If a state transition likely occurred AND status isn't already 'ended'
+      if (potentialStatusChange && vote.value.status !== 'ended') {
+          console.log('Refreshing vote data due to potential state change.');
+          // Fetch data without showing loading spinner
+          // The next tick of the timer (if still running) will use the updated data/status
+          fetchVoteData(false); // This now calls startTimerUpdates in its finally block
+      }
+  };
+
+  // Function to start/restart the timer interval
+  const startTimerUpdates = () => {
+      // Clear any existing interval first
+      if (timeUpdateInterval.value) {
+          clearInterval(timeUpdateInterval.value);
+          timeUpdateInterval.value = null; // Ensure it's cleared before setting new one
+      }
+      // Update immediately to set the initial state correctly
+      updateTimerState();
+      // Set interval only if the vote is not already ended (based on the immediate update)
+      // Use a check against the calculated state, not just vote.value.status
+      if (timeRemaining.value !== 'Ended' && timeRemaining.value !== 'Not available') {
+           console.log('Starting timer interval.');
+           timeUpdateInterval.value = setInterval(updateTimerState, 1000);
+      } else {
+           console.log('Timer not started (already ended or unavailable).');
+      }
   };
 
   onMounted(async () => {
-      // Initial full data load (with loading indicator)
+      // Initial full data load triggers startTimerUpdates in its finally block
       await fetchVoteData(true);
-      updateTimeRemaining();
-      
-      // Instead of a regular polling interval, check if we need to update status
-      // on specific time-based events using the existing second-by-second timer
-      
-      // Update time remaining every second
-      timeUpdateInterval.value = setInterval(updateTimeRemaining, 1000);
-  });
 
-  onBeforeUnmount(() => {
-    // Clean up intervals when component is unmounted
-    if (timeUpdateInterval.value) {
-      clearInterval(timeUpdateInterval.value);
-      timeUpdateInterval.value = null;
-    }
+      // Ensure background interval is cleared on unmount
+      onBeforeUnmount(() => {
+          // Clear the main timer interval as well (already handled in updateTimerState when ended)
+          if (timeUpdateInterval.value) {
+              clearInterval(timeUpdateInterval.value);
+          }
+      });
   });
 
   // Format date strings for display
@@ -302,13 +372,10 @@
   })
 
   const handleRegistrationSuccess = () => {
-    console.log('Registration successful, refreshing vote data...');
-    // Refresh data without showing the main loading spinner
-    // We might need to update isRegisteredForVote immediately too,
-    // though a full refresh might handle that.
-    fetchVoteData(false);
-    // Optionally, force re-evaluation of computed properties if needed, 
-    // but Vue 3 reactivity should handle this if fetchVoteData updates the cookies/state.
+    isLocallyRegistered.value = true; // Set local flag on successful registration
+    // Re-fetch dynamic data (like participant count) after registration
+    fetchDynamicData();
+    // No need to explicitly update isRegisteredForVote, computed property handles it
   };
 </script>
 

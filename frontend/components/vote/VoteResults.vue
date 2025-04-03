@@ -22,11 +22,11 @@
           <li>
             <span class="requirement-label">Secret shares:</span>
             <div class="requirement-status-container">
-              <span class="requirement-status" :class="{ 'completed': releasedSharesCount >= requiredSharesCount }">
-                {{ releasedSharesCount }}/{{ requiredSharesCount }} released
+              <span class="requirement-status" :class="{ 'completed': props.releasedKeys >= props.requiredKeys }">
+                {{ props.releasedKeys }}/{{ props.requiredKeys }} released
               </span>
               <div class="shares-progress">
-                <div class="shares-progress-bar" :style="{ width: `${(releasedSharesCount / requiredSharesCount) * 100}%` }"></div>
+                <div class="shares-progress-bar" :style="{ width: `${props.requiredKeys > 0 ? (props.releasedKeys / props.requiredKeys) * 100 : 0}%` }"></div>
               </div>
             </div>
           </li>
@@ -104,6 +104,14 @@ const props = defineProps({
     type: String,
     required: false,
     default: null
+  },
+  releasedKeys: {
+    type: Number,
+    required: true
+  },
+  requiredKeys: {
+    type: Number,
+    required: true
   }
 })
 
@@ -119,8 +127,6 @@ const winnerInfo = ref('');
 const error = ref(null);
 const showEmailForm = ref(false); // Control visibility of email form
 const winnerCheckStatusMessage = ref(''); // Message to display after checking
-const releasedSharesCount = ref(0);
-const requiredSharesCount = ref(0);
 const votingEnded = ref(false);
 
 onMounted(async () => {
@@ -224,17 +230,12 @@ const decryptVotes = async () => {
     const indexes = response.data[0];
     const shares = response.data[1];
 
-    // Update share count information
-    if (shares[0]) {
-      releasedSharesCount.value = shares[0].length;
-      requiredSharesCount.value = votes[0].threshold;
-    }
-
-    if (shares[0] && shares[0].length >= votes[0].threshold) {
+    // Check if enough shares are available based on fetched data and required prop
+    if (shares[0] && shares[0].length >= props.requiredKeys) {
       isDecrypted.value = true;
     } else {
       isDecrypted.value = false;
-      return;
+      return; // Exit early if not enough shares
     }
 
     const decryptedResults = [];
