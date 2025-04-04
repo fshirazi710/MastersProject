@@ -8,7 +8,6 @@ pragma solidity ^0.8.0;
  * to ensure votes remain secret until a predetermined time.
  */
 contract TimedReleaseVoting {
-
     // ======== State Variables ========
 
     struct Vote {

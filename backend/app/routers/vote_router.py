@@ -28,7 +28,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/votes", tags=["Votes"])
 
-
 @router.post("/get-vote-information/{election_id}", response_model=StandardResponse[List[Dict[str, Any]]])
 async def get_vote_information(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     try:
@@ -91,7 +90,6 @@ async def validate_public_key(data: dict, db=Depends(get_db)):
             success=True,
             message="Public key validated successfully",
         )
-
 
 @router.post("/submit-vote/{election_id}", response_model=StandardResponse[TransactionResponse])
 async def submit_vote(election_id: int, request: dict, blockchain_service: BlockchainService = Depends(get_blockchain_service)):

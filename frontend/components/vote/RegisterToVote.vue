@@ -158,7 +158,7 @@
       console.error('Failed to unregister as a secret holder:', err);
       alert("Failed to unregister. Please try again.");
     }
-  }
+}
   </script>
   
   <style lang="scss" scoped>
