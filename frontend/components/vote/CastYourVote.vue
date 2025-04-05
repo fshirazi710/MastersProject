@@ -127,6 +127,11 @@
     sliderConfig: {
         type: Object,
         default: null
+    },
+    existingThreshold: {
+        type: Number,
+        required: true,
+        default: 0
     }
   })
   
@@ -173,7 +178,7 @@
       loading.value = true;
       const response = await validateKeyPair();
       if (!response) {
-        loading.value = false; // Ensure loading stops if validation fails early
+        loading.value = false;
         return;
       }
 
@@ -212,22 +217,36 @@
       }
       // --- End option determination --- 
 
+      // Fetch holders to determine threshold if needed
       const secret_holders = await holderApi.getAllHolders(props.voteId);
-      const threshold = 3;
       const data = secret_holders.data.data;
-      const public_keys = [];
-
-      data.forEach(hexString => {
-        public_keys.push(hexString);
-      });
-
-      const total = public_keys.length;
+      const public_keys = data || []; // Ensure public_keys is an array
+      const totalHolders = public_keys.length;
+      
+      // --- Calculate threshold dynamically --- 
+      let thresholdToUse = 0;
+      if (props.existingThreshold && props.existingThreshold > 0) {
+          // Use the threshold already set on-chain
+          thresholdToUse = props.existingThreshold;
+          console.log("Using existing threshold from chain:", thresholdToUse);
+      } else if (totalHolders > 0) {
+          // Calculate threshold if none exists yet
+          thresholdToUse = Math.max(3, Math.ceil(totalHolders / 3));
+          console.log(`Calculating new threshold: totalHolders=${totalHolders}, threshold=${thresholdToUse}`);
+      } else {
+           // Should not happen if holders are required, but handle defensively
+           console.error("Cannot calculate threshold: No secret holders found.");
+           throw new Error("Cannot determine decryption threshold: No secret holders.");
+      }
+      const threshold = thresholdToUse; // Assign to variable used below
+      // --------------------------------------
 
       const privateKeyCookie = `vote_${props.voteId}_privateKey`;
       const privateKeyHex = Cookies.get(privateKeyCookie);
       const publicKeyHex = getPublicKeyFromPrivate(privateKeyHex);
 
-      const [k, g1r, g2r, alpha] = await getKAndSecretShares(public_keys, threshold, total);
+      // Pass the determined threshold to crypto function
+      const [k, g1r, g2r, alpha] = await getKAndSecretShares(public_keys, threshold, totalHolders);
       g1rValue.value = g1r;
 
       // Encrypt the determined option string

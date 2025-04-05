@@ -82,6 +82,7 @@
       :is-registered="isRegisteredForVote"
       :displayHint="displayHint"
       :sliderConfig="sliderConfig"
+      :existingThreshold="vote.requiredKeys || 0"
     />
 
     <!-- Submit Secret Share section - only shown if registered as holder and vote has ended -->
