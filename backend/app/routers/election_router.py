@@ -170,48 +170,59 @@ async def get_all_elections(blockchain_service: BlockchainService = Depends(get_
 @router.get("/election/{election_id}", response_model=StandardResponse[Dict[str, Any]])
 async def get_election_information(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
     try:
-        # Call the blockchain service to get the election data
+        # Step 1: Try to get the core election info
         election_info = await blockchain_service.call_contract_function("getElection", election_id)
-            
-        # Calculate the status of the election
-        election_status = await get_election_status(election_info[3], election_info[4])
         
-        # Calculate how many people are registered for an election
+        # If successful, proceed to get auxiliary info
+        election_status = await get_election_status(election_info[3], election_info[4])
         participant_count = await db.public_keys.count_documents({"vote_id": election_id})
         
-        # Get threshold (requiredKeys) from the first submitted vote (assuming constant threshold)
         required_keys = 0
-        submitted_votes = await blockchain_service.call_contract_function("getVotes", election_id)
-        if submitted_votes and len(submitted_votes) > 0:
-            # Vote struct: publicKey[0], ciphertext[1], g1r[2], g2r[3], alpha[4], voter[5], threshold[6]
-            required_keys = submitted_votes[0][6] # Index 6 is threshold
-            
-        # Get count of released keys (secret holders with reward_token = 5)
+        released_keys = 0
+        try:
+            # Step 2: Try to get votes (might fail if none submitted yet, even if election exists)
+            submitted_votes = await blockchain_service.call_contract_function("getVotes", election_id)
+            if submitted_votes and len(submitted_votes) > 0:
+                required_keys = submitted_votes[0][6] 
+        except Exception as vote_err:
+             # Log if getting votes fails, but don't stop the request unless it's critical
+             logger.warning(f"Could not retrieve votes for election {election_id} (might be normal if none submitted): {vote_err}")
+
+        # Step 3: Get released key count (this should be safe)
         released_keys = await db.public_keys.count_documents({
             "vote_id": election_id, 
             "is_secret_holder": True, 
             "reward_token": 5
         })
 
-        # Form election information response, including the new counts
+        # Step 4: Format the final response
         data = await election_information_response(
             election_info,
             election_status, 
             participant_count, 
-            required_keys,  # Pass required_keys
-            released_keys,  # Pass released_keys
+            required_keys,  
+            released_keys,  
             blockchain_service
         )
 
-        # Return response
         return StandardResponse(
             success=True,
             message=f"Successfully retrieved election information for election {election_id}",
             data=data
         )
+
     except Exception as e:
-        logger.error(f"Error getting election information: {str(e)}")
-        raise HTTPException(status_code=500, detail="failed to get election information")
+        error_message = str(e)
+        # Check specifically if the core getElection call failed because it doesn't exist
+        if "Election does not exist" in error_message:
+            logger.info(f"Attempted to access non-existent election with ID: {election_id}")
+            raise HTTPException(status_code=404, detail="Election does not exist")
+        else:
+            # Any other exception during the entire process is treated as a 500
+            logger.error(f"Unexpected error getting election information for ID {election_id}: {error_message}")
+            # Log traceback for detailed debugging if needed
+            # logger.exception(f"Traceback for error getting election {election_id}:") 
+            raise HTTPException(status_code=500, detail="Failed to get election information due to an internal error")
 
 
 @router.post("/get-winners/{election_id}")

@@ -18,22 +18,14 @@
         <!-- Voting form (shown only if registered AND voting is active AND user hasn't voted yet) -->
         <form v-else-if="status === 'active' && !hasVoted" @submit.prevent="handleVoteSubmit" class="voting-form">
           
-          <!-- Slider Input (Conditional) -->
-          <fieldset v-if="displayHint === 'slider' && sliderConfig">
-              <legend class="form-label">Select Value: {{ selectedSliderValue !== null ? selectedSliderValue : '-' }}</legend>
-              <input 
-                type="range"
-                :min="sliderConfig.min"
-                :max="sliderConfig.max"
-                :step="sliderConfig.step"
-                v-model.number="selectedSliderValue"
-                class="slider-input"
-                required
+          <!-- Custom Slider (Conditional) -->
+          <fieldset v-if="displayHint === 'slider' && sliderConfig && sliderSteps.length > 0">
+              <legend class="form-label">Select Value: {{ selectedSliderValue }}</legend>
+              <!-- Use the new CustomSlider component -->
+              <CustomSlider 
+                v-model="selectedSliderValue"
+                :steps="sliderSteps" 
               />
-              <div class="slider-labels">
-                <span>{{ sliderConfig.min }}</span>
-                <span>{{ sliderConfig.max }}</span>
-              </div>
           </fieldset>
 
           <!-- Options Input (Conditional) -->
@@ -98,6 +90,8 @@
   import { holderApi, voteApi } from '@/services/api'
   import { getPublicKeyFromPrivate, getKAndSecretShares, AESEncrypt } from '@/services/cryptography';
   import Cookies from 'js-cookie';
+  // Import the new custom slider component
+  import CustomSlider from '@/components/shared/CustomSlider.vue'
 
   const props = defineProps({
     voteId: {
@@ -141,12 +135,29 @@
   const g1rValue = ref(null)
   const hasVoted = ref(false);
   
+  // Compute allowed steps for the CustomSlider
+  const sliderSteps = computed(() => {
+      if (props.displayHint === 'slider' && props.options) {
+          // Map options to numbers and filter out NaN
+          const numbers = props.options.map(opt => Number(opt)).filter(num => !isNaN(num));
+          // Sort numbers just in case they aren't ordered
+          numbers.sort((a, b) => a - b);
+          return numbers;
+      }
+      return [];
+  });
+
   // Initialize slider value if applicable
   onMounted(() => {
-      if (props.displayHint === 'slider' && props.sliderConfig) {
-          // Set initial slider value to min, or middle, or null?
-          // Setting to min seems reasonable
-          selectedSliderValue.value = props.sliderConfig.min;
+      if (props.displayHint === 'slider' && props.sliderConfig && sliderSteps.value.length > 0) {
+          // Set initial value to min from config, ensure it's in the allowed steps
+          const initialValue = props.sliderConfig.min;
+          if (sliderSteps.value.includes(initialValue)) {
+              selectedSliderValue.value = initialValue;
+          } else {
+              // Fallback to the first available step if min isn't directly allowed
+              selectedSliderValue.value = sliderSteps.value[0]; 
+          }
       }
   });
   
@@ -184,30 +195,18 @@
 
       // --- Determine the actual option string to encrypt --- 
       let optionToEncrypt = null;
-      if (props.displayHint === 'slider' && selectedSliderValue.value !== null) {
-          // Find the closest valid option string in props.options
-          const targetValue = selectedSliderValue.value;
-          let closestOption = null;
-          let minDiff = Infinity;
-
-          for (const optionStr of props.options) {
-              const optionNum = Number(optionStr);
-              if (!isNaN(optionNum)) {
-                  const diff = Math.abs(optionNum - targetValue);
-                  // Prioritize exact match or closest match
-                  if (diff < minDiff || (diff === minDiff && optionNum === targetValue)) {
-                      minDiff = diff;
-                      closestOption = optionStr;
-                  }
-              }
+      if (props.displayHint === 'slider') {
+          if (selectedSliderValue.value === null) {
+              throw new Error("No slider value selected.");
           }
-          if (closestOption === null) {
-              // Fallback if options array is unexpectedly invalid
-              console.error("Could not find a valid numeric option match for slider value.", props.options);
-              throw new Error("Internal error finding option for slider value.");
+          // The v-model value IS the selected allowed number.
+          // We need to send the *string* version that exists in props.options
+          optionToEncrypt = String(selectedSliderValue.value);
+          // Double-check it exists in the original options, just in case
+          if (!props.options.includes(optionToEncrypt)) {
+              console.error(`Slider value ${optionToEncrypt} not found in original options:`, props.options);
+              throw new Error("Internal error: Selected slider value mismatch.");
           }
-          optionToEncrypt = closestOption;
-          console.log(`Slider value: ${targetValue}, Encrypting option: "${optionToEncrypt}"`); // Debug log
       } else {
           optionToEncrypt = selectedOption.value;
       }
@@ -215,7 +214,7 @@
       if (!optionToEncrypt) {
           throw new Error("No option selected or determined for voting.");
       }
-      // --- End option determination --- 
+      // -------------------------------------------------
 
       // Fetch holders to determine threshold if needed
       const secret_holders = await holderApi.getAllHolders(props.voteId);
@@ -356,22 +355,11 @@
     border: none;
   }
 
-  /* Slider specific styles */
-  .slider-input {
-    width: 100%;
-    margin-top: 10px;
-    cursor: pointer;
-  }
-  .slider-labels {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.85em;
-    color: var(--text-secondary);
-    padding: 0 5px; /* Add slight padding */
-  }
-  .form-label { /* Style for the legend acting as label */
-    display: block;
-    margin-bottom: 5px;
-    font-weight: 500;
-  }
+  /* Removed .custom-slider styles */
+
+  // Removed :deep styles for old slider component
+  </style>
+
+  <style scoped>
+  /* Removed styles for .custom-slider-vueform */
   </style>

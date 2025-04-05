@@ -342,32 +342,32 @@ const handleSubmit = async () => {
         step: Number(sliderConfig.value.step),
       };
       
-      // --- Generate options: Min, Max, and multiples of Step within range --- 
-      const optionsSet = new Set();
+      // --- Generate options: Min, Max, and multiples of Step between Min and Max --- 
+      const optionsSet = new Set(); // Use Set for unique values
 
-      // Always include min and max
+      // Always include min and max (if valid range)
       if (payloadSliderConfig.max >= payloadSliderConfig.min) {
           optionsSet.add(payloadSliderConfig.min);
           optionsSet.add(payloadSliderConfig.max);
       }
 
-      // Add multiples of step that fall within the range
-      if (payloadSliderConfig.step > 0) { // Prevent infinite loop
+      // Add multiples of step that fall BETWEEN min and max
+      if (payloadSliderConfig.step > 0) { 
           for (let currentMultiple = payloadSliderConfig.step; 
-               currentMultiple <= payloadSliderConfig.max; 
+               currentMultiple < payloadSliderConfig.max; // Strictly less than max
                currentMultiple += payloadSliderConfig.step)
           { 
-              if (currentMultiple >= payloadSliderConfig.min) {
+              if (currentMultiple > payloadSliderConfig.min) { // Strictly greater than min
                   optionsSet.add(currentMultiple);
               }
           }
-          // Also check negative multiples if range includes negatives
+          // Handle negative multiples if range allows
           if (payloadSliderConfig.min < 0) {
               for (let currentMultiple = -payloadSliderConfig.step; 
-                   currentMultiple >= payloadSliderConfig.min; 
+                   currentMultiple > payloadSliderConfig.min; // Strictly greater than min
                    currentMultiple -= payloadSliderConfig.step)
               { 
-                  if (currentMultiple <= payloadSliderConfig.max) {
+                  if (currentMultiple < payloadSliderConfig.max) { // Strictly less than max
                      optionsSet.add(currentMultiple);
                   }
               }
@@ -378,13 +378,18 @@ const handleSubmit = async () => {
       finalOptions = Array.from(optionsSet)
                           .sort((a, b) => a - b)
                           .map(String);
-      // --- End revised generation logic --- 
+      // --- End generation logic --- 
 
-      // Ensure at least two options are generated if range allows
+      // Validation checks (adjust if necessary for this logic)
       if (finalOptions.length < 2 && payloadSliderConfig.min < payloadSliderConfig.max) {
          throw new Error("Slider configuration must generate at least 2 unique options if Min != Max.");
+      } else if (finalOptions.length === 0 && payloadSliderConfig.min <= payloadSliderConfig.max) {
+           finalOptions = [String(payloadSliderConfig.min)]; 
+           if (finalOptions[0] === undefined || finalOptions[0] === null || finalOptions[0] === 'NaN') { 
+                 throw new Error("Slider configuration generated no valid options.");
+           }
       } else if (finalOptions.length === 0) {
-          throw new Error("Slider configuration generated no options.");
+           throw new Error("Slider configuration generated no options (invalid range?).");
       }
       
     } else {

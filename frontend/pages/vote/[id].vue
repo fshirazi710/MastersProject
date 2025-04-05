@@ -5,6 +5,13 @@
     <p>Loading Vote Details...</p>
   </div>
 
+  <!-- Error Message Display -->
+  <div v-else-if="error" class="error-message">
+    <h2>Error Loading Vote</h2>
+    <p>{{ error }}</p>
+    <nuxt-link to="/" class="btn">Go to Homepage</nuxt-link>
+  </div>
+
   <div class="vote-details" v-else-if="vote">
     <!-- Vote header with title, description and status -->
     <div class="vote-header">
@@ -212,13 +219,22 @@
           displayHint.value = metadata?.displayHint; 
           sliderConfig.value = parsedSliderConfig;
           
-          console.log("Fetched Data:", { vote: vote.value }); 
-          console.log("Fetched Metadata:", { hint: displayHint.value, config: sliderConfig.value }); 
-          
       } catch (err) {
           console.error("Failed to fetch vote data or metadata:", err)
-          const detail = err.response?.data?.detail || err.message || 'Unknown error';
-          error.value = `Failed to load details for vote ${voteId}. Error: ${detail}`;
+          let specificError = `Failed to load details for vote ${voteId}. Please try again later.`; // Default error
+          if (err.response) {
+            const status = err.response.status;
+            const detail = err.response.data?.detail || '';
+            // Check for 404 or specific backend error message
+            if (status === 404 || (typeof detail === 'string' && detail.includes('Election does not exist'))) {
+              specificError = `Vote with ID ${voteId} was not found. It may have been deleted or the ID is incorrect.`;
+            } else if (detail) {
+              specificError = `Error loading vote ${voteId}: ${detail}`; // Use backend detail if available and not 404
+            }
+          } else {
+            specificError = `Error loading vote ${voteId}: ${err.message || 'Network error or unknown issue'}`;
+          }
+          error.value = specificError;
           vote.value = null;
           displayHint.value = null;
           sliderConfig.value = null;
@@ -278,7 +294,6 @@
 
           // Check if start time just passed in this interval tick
           if (diffToStart <= 0) {
-               console.log('Vote start time reached or passed.');
                potentialStatusChange = true; // Status might change to active
                timeRemaining.value = 'Starting...'; // Temp state
           }
@@ -290,13 +305,11 @@
 
           // If status is still pending/join, refresh to ensure it reflects active state
            if (['pending', 'join'].includes(vote.value.status)) {
-              console.log('Vote should be active now, ensuring status update.');
               potentialStatusChange = true;
            }
 
           // Check if end time just passed in this interval tick
           if (diffToEnd <= 0) {
-              console.log('Vote end time reached or passed.');
               potentialStatusChange = true; // Status might change to ended
               timeRemaining.value = 'Ending...'; // Temp state
           }
@@ -308,7 +321,6 @@
 
           // If status isn't 'ended' yet, refresh
           if (vote.value.status !== 'ended') {
-               console.log('Vote should have ended, ensuring status update.');
                potentialStatusChange = true;
           }
 
@@ -316,41 +328,35 @@
           if (timeUpdateInterval.value) {
               clearInterval(timeUpdateInterval.value);
               timeUpdateInterval.value = null;
-              console.log('Vote ended, stopping timer interval.');
           }
       }
 
       // If a state transition likely occurred AND status isn't already 'ended'
       if (potentialStatusChange && vote.value.status !== 'ended') {
-          console.log('Refreshing vote data due to potential state change.');
           // Fetch data without showing loading spinner
           // The next tick of the timer (if still running) will use the updated data/status
           fetchVoteData(false); // This now calls startTimerUpdates in its finally block
       }
   };
 
-  // Function to start/restart the timer interval
+  // Function to start the timer updates
   const startTimerUpdates = () => {
-      // Clear any existing interval first
-      if (timeUpdateInterval.value) {
-          clearInterval(timeUpdateInterval.value);
-          timeUpdateInterval.value = null; // Ensure it's cleared before setting new one
-      }
-      // Update immediately to set the initial state correctly
-      updateTimerState();
-      // Set interval only if the vote is not already ended (based on the immediate update)
-      // Use a check against the calculated state, not just vote.value.status
-      if (timeRemaining.value !== 'Ended' && timeRemaining.value !== 'Not available') {
-           console.log('Starting timer interval.');
-           timeUpdateInterval.value = setInterval(updateTimerState, 1000);
-      } else {
-           console.log('Timer not started (already ended or unavailable).');
-      }
+    // Clear existing interval before starting a new one
+    if (timeUpdateInterval.value) {
+        clearInterval(timeUpdateInterval.value);
+    }
+    // Update time immediately and then set interval
+    updateTimerState(); 
+    timeUpdateInterval.value = setInterval(updateTimerState, 1000);
+  };
+
+  // Function to update the timer display
+  const updateTimer = () => {
+    updateTimerState();
   };
 
   // --- Watch route parameter for changes --- 
   watch(() => route.params.id, (newId, oldId) => {
-      console.log(`Route ID changed from ${oldId} to ${newId}`);
       // Check if the new ID is valid before fetching
       if (newId && newId !== 'undefined' && newId !== ':id') {
           // Clear old data before fetching new, show loading
@@ -382,7 +388,6 @@
   // ----------------------------------------
 
   onMounted(() => {
-    console.log("Vote detail component mounted.");
   });
 
   // Format date strings for display
@@ -426,11 +431,71 @@
     fetchVoteData();
     // No need to explicitly update isRegisteredForVote, computed property handles it
   };
+
+  // Function to check and update vote status if needed
+  const updateVoteStatusIfNeeded = async () => {
+    if (!vote.value) return;
+
+    const now = Date.now();
+    const startDate = new Date(vote.value.startDate).getTime();
+    const endDate = new Date(vote.value.endDate).getTime();
+    let expectedStatus = 'pending';
+
+    if (now >= endDate) {
+        expectedStatus = 'ended';
+    } else if (now >= startDate) {
+        expectedStatus = 'active';
+    } else { 
+        expectedStatus = 'join'; 
+    }
+
+    // Refresh data if the calculated status differs from the current vote status
+    if (vote.value.status !== expectedStatus) {
+        await fetchVoteData(false); // Fetch without showing the main loading spinner
+    }
+  };
 </script>
 
 <style lang="scss" scoped>
 @use '@/assets/styles/components/_vote-details.scss';
 
-// Styles are now fully imported from _vote-details.scss
+/* Styles for Error Message */
+.error-message {
+  text-align: center;
+  padding: 40px 20px;
+  background-color: #fff3f3; /* Light red background */
+  border: 1px solid #ffcccc; /* Reddish border */
+  border-radius: var(--border-radius);
+  margin: 20px auto;
+  max-width: 600px;
+}
+
+.error-message h2 {
+  color: #cc0000; /* Dark red */
+  margin-bottom: 15px;
+}
+
+.error-message p {
+  color: #333;
+  margin-bottom: 20px;
+}
+
+.error-message .btn {
+  display: inline-block;
+  padding: 10px 20px;
+  background-color: var(--primary);
+  color: white;
+  text-decoration: none;
+  border-radius: var(--border-radius);
+  transition: background-color 0.3s ease;
+}
+
+.error-message .btn:hover {
+  background-color: var(--primary-dark);
+}
+
+.vote-details {
+  /* ... */
+}
 
 </style> 

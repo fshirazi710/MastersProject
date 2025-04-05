@@ -12,9 +12,12 @@ const apiClient = axios.create({
 // Add request interceptor to include auth token if available
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    // Guard localStorage access for SSR
+    if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('token');
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
     }
     return config;
   },
