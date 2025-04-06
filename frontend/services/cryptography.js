@@ -162,40 +162,127 @@ export function verifyShares(share, share2, publicKey, g2r) {
 }
 
 export async function recomputeKey(indexes, shares, alphas, threshold) {
-    const bigIntIndexes = indexes.map(index => BigInt(index));
+    // Ensure inputs are the types we expect/need early on
+    const bigIntIndexes = indexes.map(idx => {
+        try {
+            return BigInt(idx); // Expects numbers or numeric strings
+        } catch (e) {
+            console.error(`Failed to convert index '${idx}' to BigInt:`, e);
+            throw new Error(`Invalid index format for BigInt conversion: ${idx}`);
+        }
+    });
+    const bigIntShares = shares.map(s => {
+         try {
+            // Handle potential '0x' prefix if shares are hex strings, or already BigInt
+            if (typeof s === 'bigint') return s;
+            if (typeof s === 'string' && s.startsWith('0x')) return BigInt(s);
+             // Assume it's a direct numeric representation (string or number)
+            return BigInt(s);
+        } catch (e) {
+            console.error(`Failed to convert share '${s}' to BigInt:`, e);
+            throw new Error(`Invalid share format for BigInt conversion: ${s}`);
+        }
+    });
+    const thresholdNum = Number(threshold); // Keep threshold as number for comparisons/indexing
 
-    const tIndexes = bigIntIndexes.slice(0, threshold);
-    const basis = lagrangeBasis(tIndexes, BigInt(0));
+    // Check if threshold conversion worked
+    if (isNaN(thresholdNum)) {
+         throw new Error("Invalid threshold value, cannot convert to number.");
+    }
 
-    const terms = [];
+    // --- FIX: Use the first thresholdNum *submitted* points for interpolation ---
+    if (bigIntIndexes.length < thresholdNum) {
+        throw new Error(`Insufficient shares provided (${bigIntIndexes.length}) to meet threshold (${thresholdNum}) for reconstruction.`);
+    }
 
-    for (let i = 0; i < indexes.length; i++) {
-        if (indexes[i] <= threshold) {
-            terms.push(shares[i]);            
+    const basisIndices = [];
+    const valuesForInterpolation = [];
+
+    // Iterate through the first thresholdNum submitted shares/indexes
+    for (let i = 0; i < thresholdNum; i++) {
+        const currentBigIntIndex = bigIntIndexes[i];
+        const currentBigIntShare = bigIntShares[i];
+
+        basisIndices.push(currentBigIntIndex); // Add index to basis list
+
+        // Determine the value to use for interpolation based on the index
+        if (Number(currentBigIntIndex) <= thresholdNum) {
+            // Index is within the original threshold, use the raw share
+            valuesForInterpolation.push(currentBigIntShare);
         } else {
-            const alphaBigInt = stringToBigInt(alphas[(indexes[i] - 1) - threshold]);
+            // Index is beyond the original threshold, need to use alpha
+            const alphaIndex = Number(currentBigIntIndex) - 1 - thresholdNum;
+            if (alphaIndex < 0 || alphaIndex >= alphas.length || typeof alphas[alphaIndex] !== 'string') {
+                console.error(`Invalid alpha access: alphaIndex=${alphaIndex}, alphas.length=${alphas.length}, currentBigIntIndex=${currentBigIntIndex}, thresholdNum=${thresholdNum}`);
+                throw new Error(`Invalid alpha index or alpha value at calculated index ${alphaIndex}`);
+            }
+            const alphaBigInt = stringToBigInt(alphas[alphaIndex]);
 
-            const shareHex = bigIntToHex(shares[i]);
+            // Perform XOR term calculation
+            const shareHex = bigIntToHex(currentBigIntShare);
             const alphaHex = bigIntToHex(alphaBigInt);
-
             const alphaBytes = hexToBytes(alphaHex);
             const shareBytes = hexToBytes(shareHex);
-        
-            const xorResult = [];
-            for (let i = 0; i < alphaBytes.length; i++) {
-                xorResult.push(alphaBytes[i] ^ shareBytes[i]);
+
+             if (alphaBytes.length === 0 || shareBytes.length === 0) {
+                 console.error("Cannot perform XOR on empty byte arrays. Share:", shareHex, "Alpha:", alphaHex);
+                 throw new Error("Empty byte array encountered during XOR operation in recomputeKey.");
             }
-                
+
+            const maxLength = Math.max(alphaBytes.length, shareBytes.length);
+            const paddedAlphaBytes = padBytesStart(alphaBytes, maxLength);
+            const paddedShareBytes = padBytesStart(shareBytes, maxLength);
+
+            const xorResult = [];
+            for (let j = 0; j < maxLength; j++) {
+                xorResult.push(paddedAlphaBytes[j] ^ paddedShareBytes[j]);
+            }
+
             const term = BigInt('0x' + Buffer.from(xorResult).toString('hex'));
-            terms.push(term);
+            valuesForInterpolation.push(term); // Use the XORed term for interpolation
         }
     }
 
-    const k = lagrangeInterpolate(basis, terms);
-    console.log(k)
+    // Calculate basis using the collected indices
+    const basis = lagrangeBasis(basisIndices, BigInt(0));
+
+    // Ensure lengths match before interpolation
+    if (basis.length !== valuesForInterpolation.length) {
+        console.error("Basis length:", basis.length, "Values length:", valuesForInterpolation.length);
+        throw new Error("Mismatch between basis length and interpolation values length.");
+    }
+     if (basis.length !== thresholdNum) {
+        console.error("Basis length (", basis.length, ") does not match threshold (", thresholdNum, ")");
+        // This might indicate an issue with lagrangeBasis or the input indices
+        throw new Error("Basis length does not match threshold.");
+    }
+
+    // --- Add Debugging Logs ---
+    console.log("--- Inputs to Lagrange Interpolation ---");
+    console.log("Threshold:", thresholdNum);
+    console.log("Basis Indices (BigInt):", basisIndices.map(v => v.toString()));
+    console.log("Values for Interpolation (BigInt):", valuesForInterpolation.map(v => v.toString()));
+    console.log("Calculated Basis (Lagrange Coefficients L_i(0)):", basis.map(v => v.toString()));
+    // -------------------------
+
+    // Perform interpolation
+    const k = lagrangeInterpolate(basis, valuesForInterpolation);
+    // --------------------------------------------------------------------
+
+    console.log("Recomputed k (BigInt):", k);
     const key = await importBigIntAsCryptoKey(k);
 
     return key;
+}
+
+// Helper function to pad Uint8Array with leading zeros
+function padBytesStart(bytes, length) {
+    if (bytes.length >= length) {
+        return bytes;
+    }
+    const padded = new Uint8Array(length);
+    padded.set(bytes, length - bytes.length);
+    return padded;
 }
 
 function computePkRValue(pubkey, r) {
@@ -207,6 +294,11 @@ function computePkRValue(pubkey, r) {
 }
 
 function lagrangeBasis(indexes, x) {
+    // Add check for empty indexes to prevent division by zero or unexpected behavior
+    if (!indexes || indexes.length === 0) {
+        console.error("lagrangeBasis called with empty or invalid indexes.");
+        throw new Error("Cannot calculate Lagrange basis with no indexes.");
+    }
     return indexes.map((i) => {
       let numerator = BigInt(1);
       let denominator = BigInt(1);
@@ -244,10 +336,13 @@ function modInverse(a, m) {
 }
 
 function lagrangeInterpolate(basis, shares) {
-    return shares.reduce((acc, share, i) => 
-        mod(acc + mod(share * basis[i], FIELD_ORDER), FIELD_ORDER), 
-        BigInt(0)
-    );
+    // Ensure accumulator and share are BigInt before multiplication
+    return shares.reduce((acc, share, i) => {
+        const currentShare = BigInt(share); // Ensure share is BigInt
+        const currentBasis = BigInt(basis[i]); // Ensure basis element is BigInt
+        const product = mod(currentShare * currentBasis, FIELD_ORDER);
+        return mod(BigInt(acc) + product, FIELD_ORDER); // Ensure accumulator is BigInt
+    }, BigInt(0));
 }
 
 async function getKAndAlphas(r, tIndexes, tPubkeys, restIndexes, restPubkeys) {
@@ -273,10 +368,28 @@ async function getKAndAlphas(r, tIndexes, tPubkeys, restIndexes, restPubkeys) {
         const i_basis = lagrangeBasis(tIndexes, i);
         const i_point = lagrangeInterpolate(i_basis, tShares);
 
-        const i_point_bytes = Uint8Array.from(Buffer.from(i_point.toString(16), "hex"));
-        const i_share_bytes = Uint8Array.from(Buffer.from(restShares[counter].toString(16), "hex"));
+        // Convert BigInts to byte arrays for XOR
+        const i_point_bytes = hexToBytes(bigIntToHex(i_point));
+        const i_share_bytes = hexToBytes(bigIntToHex(restShares[counter]));
 
-        const i_alpha = BigInt("0x" + Buffer.from(i_point_bytes.map((byte, i) => byte ^ i_share_bytes[i])).toString("hex"));
+        // --- Add padding before XOR, consistent with recomputeKey ---
+        if (i_point_bytes.length === 0 || i_share_bytes.length === 0) {
+            console.error("Cannot perform XOR on empty byte arrays during alpha generation. Index:", i);
+            throw new Error("Empty byte array encountered during alpha generation.");
+        }
+
+        const maxLength = Math.max(i_point_bytes.length, i_share_bytes.length);
+        const padded_i_point_bytes = padBytesStart(i_point_bytes, maxLength);
+        const padded_i_share_bytes = padBytesStart(i_share_bytes, maxLength);
+
+        const xorResultBytes = [];
+        for (let j = 0; j < maxLength; j++) {
+            xorResultBytes.push(padded_i_point_bytes[j] ^ padded_i_share_bytes[j]);
+        }
+        // -------------------------------------------------------------
+
+        // Convert padded XOR result back to BigInt
+        const i_alpha = BigInt("0x" + Buffer.from(xorResultBytes).toString("hex")); 
         alphas.push(i_alpha.toString());
     }
 

@@ -415,6 +415,15 @@ const decryptVotes = async () => {
         const currentShares = shares[voteIndexStr];
         const currentIndexes = indexes[voteIndexStr];
         
+        // --- Add Debugging Logs ---
+        console.log(`--- Processing Vote Index: ${voteIndex} ---`);
+        console.log("Raw API Indexes for this vote:", indexes[voteIndexStr]);
+        console.log("Raw API Shares for this vote:", shares[voteIndexStr]);
+        console.log("Extracted Current Indexes:", currentIndexes);
+        console.log("Extracted Current Shares:", currentShares);
+        console.log("Vote Metadata (Threshold, Alphas etc.):", voteMetadata);
+        // -------------------------
+
         if (!currentShares || !currentIndexes || currentShares.length < voteMetadata.threshold) {
              console.warn(`Insufficient shares/indexes provided for vote index ${voteIndex}, skipping.`);
              continue;
@@ -424,6 +433,14 @@ const decryptVotes = async () => {
         const shareBigInts = currentShares.map(share => BigInt("0x" + share));
 
         try {
+            // Ensure all necessary data is available before calling recomputeKey
+             if (!currentIndexes || !shareBigInts || !voteMetadata.alphas || voteMetadata.threshold === undefined) {
+                console.error("Missing critical data for recomputeKey:", 
+                    { currentIndexes, shareBigIntsExists: !!shareBigInts, alphasExist: !!voteMetadata.alphas, threshold: voteMetadata.threshold }
+                );
+                throw new Error(`Cannot recompute key for vote index ${voteIndex} due to missing data.`);
+            }
+
             const key = await recomputeKey(currentIndexes, shareBigInts, voteMetadata.alphas, voteMetadata.threshold);
             const decryptedResult = await AESDecrypt(voteMetadata.ciphertext, key);
             
