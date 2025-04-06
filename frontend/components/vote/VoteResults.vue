@@ -3,7 +3,7 @@
     <h2>Results</h2>
 
     <!-- Show pending state if not enough keys released -->
-    <div v-if="!isDecrypted" class="decryption-pending">
+    <div v-if="!isDecrypted && !submissionFailed" class="decryption-pending">
       <div class="pending-message">
         <div class="lock-container">
           <i class="lock-icon">🔒</i>
@@ -12,10 +12,10 @@
         <p>Results will be available once:</p>
         <ul class="requirements-list">
           <li>
-            <span class="requirement-label">Voting period:</span>
+            <span class="requirement-label">Status:</span>
             <div class="requirement-status-container">
-              <span class="requirement-status" :class="{ 'completed': votingEnded }">
-                {{ votingEnded ? 'Ended' : 'In progress' }}
+              <span class="requirement-status" :class="{ 'completed': votingEnded && submissionDeadlinePassed, 'warning': votingEnded && !submissionDeadlinePassed }">
+                {{ votingStatusText }}
               </span>
             </div>
           </li>
@@ -31,7 +31,26 @@
             </div>
           </li>
         </ul>
-        <p class="check-back">Please check back later to see the final results.</p>
+        <p v-if="!submissionDeadlinePassed" class="check-back">
+          Please check back after the share submission deadline ({{ submissionDeadline ? submissionDeadline.toLocaleString() : 'Calculating...' }}) to see the final results.
+        </p>
+        <p v-else class="check-back">
+          Checking for results...
+        </p>
+      </div>
+    </div>
+
+    <!-- Show failed state -->
+    <div v-if="submissionFailed && !isDecrypted" class="decryption-pending decryption-failed">
+      <div class="pending-message">
+        <div class="lock-container">
+          <i class="lock-icon">❌</i> <!-- Failure Icon -->
+        </div>
+        <h3>Decryption Failed</h3>
+        <p>The required number of secret shares ({{ props.requiredKeys }}) were not submitted before the deadline.</p>
+        <p>Released: {{ props.releasedKeys }} / {{ props.requiredKeys }}</p>
+        <p class="check-back">The results for this vote cannot be displayed.</p>
+        <p v-if="error" class="error-message">{{ error }}</p> <!-- Display specific error if available -->
       </div>
     </div>
 
@@ -78,6 +97,9 @@
         </div>
       </template>
 
+      <!-- Display error if decryption succeeded partially -->
+       <p v-if="error && isDecrypted" class="error-message" style="text-align: center;">{{ error }}</p>
+
       <!-- Winner Check Section (Common for both types) -->
       <div v-if="!isWinner && !emailSent" class="encryption-notice">
         <i class="lock-icon">🎉</i>
@@ -86,7 +108,7 @@
           {{ loading ? 'Checking...' : "See If I'm a Winner" }}
         </button>
         <!-- Display Status Message after checking -->
-        <p v-if="winnerCheckStatusMessage" :class="{ 'success-message': isWinner, 'error-message': error || !isWinner }">
+        <p v-if="winnerCheckStatusMessage" :class="{ 'success-message': isWinner, 'error-message': !isWinner && winnerCheckStatusMessage }">
           {{ winnerCheckStatusMessage }}
         </p>
       </div>
@@ -114,7 +136,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { voteApi, shareApi, electionApi } from '@/services/api';
 import { getPublicKeyFromPrivate, recomputeKey, AESDecrypt } from '@/services/cryptography';
 import Cookies from 'js-cookie';
@@ -182,11 +204,24 @@ const error = ref(null);
 const showEmailForm = ref(false);
 const winnerCheckStatusMessage = ref('');
 const votingEnded = ref(false);
+const submissionDeadlinePassed = ref(false);
+const submissionFailed = ref(false);
+const submissionDeadline = ref(null);
+let statusCheckInterval = null;
 
 // --- New refs for slider results --- 
 const sliderAverage = ref(null);
 const distributionData = ref({ labels: [], datasets: [] });
 // ---------------------------------
+
+// --- Computed Property for Status Text ---
+const votingStatusText = computed(() => {
+  if (submissionFailed.value) return 'Ended, Submission Failed (Insufficient Keys)';
+  if (!votingEnded.value) return 'In progress';
+  if (!submissionDeadlinePassed.value) return 'Ended, Share Submission Open (15 min)';
+  // If deadline passed and not failed (implies enough keys)
+  return 'Ended, Share Submission Closed';
+});
 
 // --- Chart.js Options --- 
 const distributionChartData = computed(() => {
@@ -254,12 +289,29 @@ const distributionChartOptions = ref({
 });
 // ----------------------
 
-onMounted(async () => {
-  checkVotingPeriodStatus();
-  await decryptVotes();
+onMounted(() => {
+  checkStatusAndDecrypt();
+  if (!submissionDeadlinePassed.value || (!isDecrypted.value && !submissionFailed.value)) {
+    statusCheckInterval = setInterval(checkStatusAndDecrypt, 30000);
+  }
 })
 
-// Watch for decryption completion to calculate slider average
+onUnmounted(() => {
+  if (statusCheckInterval) {
+    clearInterval(statusCheckInterval);
+  }
+})
+
+watch([() => props.releasedKeys, () => props.requiredKeys], ([newReleased, newRequired], [oldReleased, oldRequired]) => {
+    if (newReleased !== oldReleased || newRequired !== oldRequired) {
+        console.log(`Key counts changed: Released ${newReleased}/${newRequired}`);
+        if (submissionDeadlinePassed.value && !isDecrypted.value && !submissionFailed.value) {
+            console.log("Key count changed after deadline passed. Re-checking status and attempting decryption if possible.");
+            checkStatusAndDecrypt();
+        }
+    }
+});
+
 watch(isDecrypted, (newValue) => {
   if (newValue && props.displayHint === 'slider') {
     calculateSliderAverage();
@@ -283,12 +335,39 @@ const calculateSliderAverage = () => {
     sliderAverage.value = totalVotes.value > 0 ? weightedSum / totalVotes.value : 0;
 };
 
-const checkVotingPeriodStatus = () => {
+const checkStatusAndDecrypt = async () => {
   if (props.endDate) {
-    votingEnded.value = new Date() > new Date(props.endDate);
+    const now = new Date();
+    const endDateTime = new Date(props.endDate);
+    const deadlineTime = new Date(endDateTime.getTime() + 15 * 60000); // Add 15 minutes
+    submissionDeadline.value = deadlineTime; // Store it
+
+    votingEnded.value = now > endDateTime;
+    submissionDeadlinePassed.value = now > deadlineTime;
+
+    if (submissionDeadlinePassed.value) {
+      if (props.releasedKeys < props.requiredKeys && !isDecrypted.value) { // Check !isDecrypted to avoid marking failed if somehow decrypted earlier
+        submissionFailed.value = true;
+        console.warn("Submission deadline passed with insufficient keys.");
+        if (statusCheckInterval) clearInterval(statusCheckInterval); // Stop checking if failed
+      } else if (props.releasedKeys >= props.requiredKeys && !isDecrypted.value && !submissionFailed.value) {
+         // Deadline passed, enough keys, and not yet decrypted or failed
+         console.log("Submission deadline passed with enough keys. Attempting decryption...");
+         await decryptVotes(); // Attempt decryption
+         // Stop checking interval regardless of decryption outcome (it either worked or failed definitively)
+         if (statusCheckInterval) clearInterval(statusCheckInterval);
+      } else {
+         // Conditions met earlier or already decrypted/failed, clear interval
+          if (statusCheckInterval) clearInterval(statusCheckInterval);
+      }
+    }
+    // If deadline hasn't passed yet, the interval will continue checking
   } else {
-    // If no end date provided, assume not ended (or handle as error?)
-    votingEnded.value = false; 
+    // No end date, treat as not ended.
+    votingEnded.value = false;
+    submissionDeadlinePassed.value = false;
+    submissionFailed.value = false;
+    if (statusCheckInterval) clearInterval(statusCheckInterval); // Stop checking if no date
   }
 };
 
@@ -370,11 +449,22 @@ const checkWinners = async () => {
 };
 
 const decryptVotes = async () => {
-  isDecrypted.value = false; // Reset state initially
+  if (props.releasedKeys < props.requiredKeys) {
+      console.warn("Attempted decryption without enough keys.");
+      error.value = "Cannot decrypt results: Not enough secret shares have been released.";
+      submissionFailed.value = true; // Mark as failed if attempted under threshold
+      return;
+  }
+  if (isDecrypted.value) {
+    console.log("Already decrypted, skipping redundant attempt.");
+    return;
+  }
+
+  console.log("Starting decryption process...");
   decryptedVoteCounts.value = {};
   totalVotes.value = 0;
   sliderAverage.value = null;
-  error.value = null; // Clear previous errors
+  error.value = null;
 
   try {
     const sharesResponse = await shareApi.getShares(props.voteId);
@@ -388,54 +478,61 @@ const decryptVotes = async () => {
         throw new Error("Incomplete share or vote information received from API.");
     }
 
-    // Check if enough shares are available based on required prop
-    // Assuming shares[0] corresponds to the first (and likely only) ciphertext set for a simple vote
     if (!(shares[0] && shares[0].length >= props.requiredKeys)) {
-      console.warn("Not enough shares released for decryption.");
-      isDecrypted.value = false; // Keep as false
-      return; // Exit early
-    }
+       console.warn("Not enough shares released for decryption (checked again inside decryptVotes).");
+       error.value = "Cannot decrypt results: Not enough secret shares have been released.";
+       submissionFailed.value = true; // Mark as failed
+       return;
+     }
 
     const currentDecryptedCounts = {};
     let currentTotalVotes = 0;
     let decryptionErrors = 0;
 
-    // Iterate through the different sets of shares (usually just one, index 0)
     for (const voteIndexStr in shares) {
         const voteIndex = parseInt(voteIndexStr, 10);
         if (isNaN(voteIndex)) continue; // Skip if key is not a valid index
 
-        // Find the corresponding vote metadata (ciphertext, alphas, threshold)
         const voteMetadata = votesInfo.find(v => v.vote_id === voteIndex);
         if (!voteMetadata) {
             console.warn(`Missing vote metadata for index ${voteIndex}, skipping decryption.`);
+            decryptionErrors++; // Count missing metadata as an error for this vote index
             continue;
         }
 
         const currentShares = shares[voteIndexStr];
         const currentIndexes = indexes[voteIndexStr];
         
-        // --- Add Debugging Logs ---
-        console.log(`--- Processing Vote Index: ${voteIndex} ---`);
-        console.log("Raw API Indexes for this vote:", indexes[voteIndexStr]);
-        console.log("Raw API Shares for this vote:", shares[voteIndexStr]);
-        console.log("Extracted Current Indexes:", currentIndexes);
-        console.log("Extracted Current Shares:", currentShares);
-        console.log("Vote Metadata (Threshold, Alphas etc.):", voteMetadata);
+
+        // --- Remove Debugging Logs ---
+        // console.log(`--- Processing Vote Index: ${voteIndex} ---`);
+        // console.log("Raw API Indexes for this vote:", indexes[voteIndexStr]);
+        // console.log("Raw API Shares for this vote:", shares[voteIndexStr]);
+        // console.log("Extracted Current Indexes:", currentIndexes);
+        // console.log("Extracted Current Shares:", currentShares);
+        // console.log("Vote Metadata (Threshold, Alphas etc.):", voteMetadata);
         // -------------------------
 
         if (!currentShares || !currentIndexes || currentShares.length < voteMetadata.threshold) {
              console.warn(`Insufficient shares/indexes provided for vote index ${voteIndex}, skipping.`);
+             decryptionErrors++; // Count insufficient data as an error
              continue;
         }
 
-        // Use only the required number of shares
-        const shareBigInts = currentShares.map(share => BigInt("0x" + share));
+        const shareBigInts = currentShares.map(share => {
+             try {
+                // Handle potential '0x' prefix
+                return BigInt(share.startsWith('0x') ? share : '0x' + share);
+            } catch(e) {
+                console.error(`Failed to convert share '${share}' to BigInt for index ${voteIndex}:`, e);
+                // Throw error or handle? For now, throw to make it clear
+                throw new Error(`Invalid share format '${share}' for BigInt conversion.`);
+            }
+        });
 
         try {
-            // Ensure all necessary data is available before calling recomputeKey
              if (!currentIndexes || !shareBigInts || !voteMetadata.alphas || voteMetadata.threshold === undefined) {
-                console.error("Missing critical data for recomputeKey:", 
+                console.error("Missing critical data for recomputeKey:",
                     { currentIndexes, shareBigIntsExists: !!shareBigInts, alphasExist: !!voteMetadata.alphas, threshold: voteMetadata.threshold }
                 );
                 throw new Error(`Cannot recompute key for vote index ${voteIndex} due to missing data.`);
@@ -443,35 +540,47 @@ const decryptVotes = async () => {
 
             const key = await recomputeKey(currentIndexes, shareBigInts, voteMetadata.alphas, voteMetadata.threshold);
             const decryptedResult = await AESDecrypt(voteMetadata.ciphertext, key);
-            
+
             currentDecryptedCounts[decryptedResult] = (currentDecryptedCounts[decryptedResult] || 0) + 1;
             currentTotalVotes++;
         } catch (decErr) {
             console.error(`Failed to decrypt vote at index ${voteIndex}:`, decErr);
             decryptionErrors++;
-            // Decide how to handle individual decryption errors - skip vote?
         }
-    }
-    
-    if (currentTotalVotes > 0 || decryptionErrors > 0) {
-       // Consider decryption successful if at least one vote decrypted, even with errors
-       isDecrypted.value = true; 
-    }
-    
+    } // End for loop
+
+    // --- Final Result Handling ---
     decryptedVoteCounts.value = currentDecryptedCounts;
     totalVotes.value = currentTotalVotes;
 
-    if (decryptionErrors > 0) {
-        error.value = `Could not decrypt ${decryptionErrors} vote(s). Results shown may be incomplete.`;
-        console.warn(error.value);
-    }
-    
-    // Average calculation is triggered by the watcher watching isDecrypted
+    if (currentTotalVotes > 0 && decryptionErrors === 0) {
+         // Only consider fully successful if all votes decrypted (or attempted) without error
+         isDecrypted.value = true;
+         console.log("Decryption successful.");
+         error.value = null; // Clear any previous error messages if now successful
+     } else if (decryptionErrors > 0) {
+         // Handle partial or total failure
+         const totalVoteSets = Object.keys(shares).length;
+         error.value = `Could not decrypt ${decryptionErrors} out of ${totalVoteSets} vote set(s). Results shown may be incomplete.`;
+         console.warn(error.value);
+         isDecrypted.value = false; // Explicitly set to false on error
+         // If any decryption failed, consider the overall submission failed if we reached this point after deadline
+         if (submissionDeadlinePassed.value) {
+            submissionFailed.value = true;
+         }
+     } else if (currentTotalVotes === 0 && decryptionErrors === 0) {
+         // No votes cast, but no errors?
+         console.log("Decryption process completed, but no votes were found/decrypted.");
+         isDecrypted.value = true; // Consider it "decrypted" in the sense that the process finished.
+         error.value = null;
+     }
+
 
   } catch (fetchError) {
     console.error("Failed to fetch data for vote decryption:", fetchError);
     error.value = "Failed to load data required to show results.";
     isDecrypted.value = false;
+    submissionFailed.value = true; // Mark failed on fetch error too
   }
 };
 
@@ -675,5 +784,14 @@ $spacing-lg: 20px;
 #distribution-chart {
     max-height: 400px; /* Or use a variable */
     margin: $spacing-md 0; /* SCSS variable */
+}
+
+.decryption-failed .lock-icon {
+  color: var(--danger); /* Use danger color for failed state */
+  animation: none; /* Optional: disable animation for failed state */
+}
+
+.requirement-status.warning {
+    color: var(--warning); /* Indicate submission window open */
 }
 </style>

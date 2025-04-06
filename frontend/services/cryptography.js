@@ -257,19 +257,19 @@ export async function recomputeKey(indexes, shares, alphas, threshold) {
         throw new Error("Basis length does not match threshold.");
     }
 
-    // --- Add Debugging Logs ---
-    console.log("--- Inputs to Lagrange Interpolation ---");
-    console.log("Threshold:", thresholdNum);
-    console.log("Basis Indices (BigInt):", basisIndices.map(v => v.toString()));
-    console.log("Values for Interpolation (BigInt):", valuesForInterpolation.map(v => v.toString()));
-    console.log("Calculated Basis (Lagrange Coefficients L_i(0)):", basis.map(v => v.toString()));
+    // --- Remove Debugging Logs ---
+    // console.log("--- Inputs to Lagrange Interpolation ---");
+    // console.log("Threshold:", thresholdNum);
+    // console.log("Basis Indices (BigInt):", basisIndices.map(v => v.toString()));
+    // console.log("Values for Interpolation (BigInt):", valuesForInterpolation.map(v => v.toString()));
+    // console.log("Calculated Basis (Lagrange Coefficients L_i(0)):", basis.map(v => v.toString()));
     // -------------------------
 
     // Perform interpolation
     const k = lagrangeInterpolate(basis, valuesForInterpolation);
     // --------------------------------------------------------------------
 
-    console.log("Recomputed k (BigInt):", k);
+    // console.log("Recomputed k (BigInt):", k); // Removed log
     const key = await importBigIntAsCryptoKey(k);
 
     return key;

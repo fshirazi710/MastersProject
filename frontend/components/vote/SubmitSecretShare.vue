@@ -4,15 +4,24 @@
         <!-- Encryption notice to inform users -->
         <div class="encryption-notice">
             <i class="lock-icon">🔒</i>
-            <p>Clicking the button below will release your secret share. Be sure to come back later to check the results of the vote and see if you're one of the lucky winners of the vouchers!</p>
+            <p>Clicking the button below will release your secret share. The deadline for submission is {{ submissionDeadline?.toLocaleString() }}.</p>
         </div>
 
         <!-- Show submission UI only if share hasn't been submitted -->
         <template v-if="!hasSubmittedShare">
-            <button @click="generateSecretShare" type="submit" class="btn primary" :disabled="loading || !isSubmissionTime">
-              {{ loading ? 'Submitting Share...' : 'Submit Secret Share' }}
-            </button>
-            <p v-if="error" class="error-message">{{ error }}</p>
+            <!-- Message/Button before deadline -->
+            <div v-if="!isDeadlinePassed">
+                <button @click="generateSecretShare" type="submit" class="btn primary" :disabled="loading">
+                  {{ loading ? 'Submitting Share...' : 'Submit Secret Share' }}
+                </button>
+                <p v-if="error" class="error-message">{{ error }}</p>
+            </div>
+
+            <!-- Message after deadline -->
+            <div v-else class="deadline-passed-message">
+                 <i class="late-icon">⏳</i>
+                 <p>The deadline for submitting secret shares ({{ submissionDeadline?.toLocaleString() }}) has passed. You can no longer submit your share for this vote.</p>
+            </div>
         </template>
 
         <!-- Show thank you message if share has been submitted -->
@@ -27,17 +36,18 @@
     import { voteApi, shareApi } from '@/services/api'
     import { getPublicKeyFromPrivate, generateShares, generateShares2 } from '@/services/cryptography';
     import Cookies from "js-cookie";
-    import { ref, onMounted } from 'vue';
+    import { ref, onMounted, computed } from 'vue';
 
     const props = defineProps({
         voteId: {
         type: String,
         required: true
         },
-        isSubmissionTime: {
-            type: Boolean,
+        endDate: {
+            type: String, // Assuming ISO string format
             required: true,
-        },
+            default: null
+        }
     })
 
     const loading = ref(false);
@@ -46,6 +56,28 @@
     const hasSubmittedShare = ref(false);
 
     const shareSubmittedCookie = `vote_${props.voteId}_shareSubmitted`;
+
+    // --- Deadline Calculation ---
+    const submissionDeadline = computed(() => {
+        if (!props.endDate) return null;
+        try {
+            const endDateTime = new Date(props.endDate);
+            // Ensure valid date before calculation
+            if (isNaN(endDateTime.getTime())) {
+                throw new Error('Invalid endDate provided');
+            }
+            return new Date(endDateTime.getTime() + 15 * 60000); // Add 15 minutes
+        } catch (e) {
+            console.error("Error calculating submission deadline:", e);
+            return null;
+        }
+    });
+
+    const isDeadlinePassed = computed(() => {
+        if (!submissionDeadline.value) return true; // Treat as passed if deadline can't be calculated
+        return new Date() > submissionDeadline.value;
+    });
+    // ------------------------
 
     onMounted(() => {
         if (Cookies.get(shareSubmittedCookie) === 'true') {
@@ -100,16 +132,21 @@
         } catch (error) {
             console.error("Failed to retrive vote information:", error);
             alert('Error retrieving vote information. Please try again.');
+            return []; // Return empty array on error
         }
     };
 
     const submitSecretShares = async (secretShares, publicKey) => {
-        const response = await shareApi.submitShare(props.voteId, { shares: secretShares, public_key: publicKey });
-        
-        console.log("Submission response:", response.data);
-
-        hasSubmittedShare.value = true;
-        Cookies.set(shareSubmittedCookie, 'true', { expires: 365 });
+        try {
+            const response = await shareApi.submitShare(props.voteId, { shares: secretShares, public_key: publicKey });
+            console.log("Submission response:", response.data);
+            hasSubmittedShare.value = true;
+            Cookies.set(shareSubmittedCookie, 'true', { expires: 365 });
+        } catch (submitError) {
+             console.error("Failed to submit secret shares:", submitError);
+             error.value = submitError.response?.data?.message || submitError.message || 'Failed to submit shares to the server.';
+             // Do not set hasSubmittedShare to true on error
+        }
     };
 </script>
 
@@ -159,6 +196,23 @@
   i {
     font-size: 1.2em;
     color: var(--success);
+  }
+}
+
+/* Styles for the deadline passed message */
+.deadline-passed-message {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 15px;
+  background-color: var(--warning-light); /* Or another appropriate color */
+  border: 1px solid var(--warning);
+  border-radius: var(--border-radius);
+  color: var(--warning-dark);
+
+  i.late-icon {
+    font-size: 1.2em;
+    color: var(--warning);
   }
 }
 </style>

@@ -97,6 +97,7 @@
       v-if="isRegisteredHolderForVote && vote?.status === 'ended'"
       :vote-id="route.params.id"
       :is-submission-time="isSubmissionTime"
+      :endDate="vote.endDate"
     />
 
     <!-- Results section - only shown for ended votes -->
