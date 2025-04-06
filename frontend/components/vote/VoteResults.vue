@@ -421,12 +421,10 @@ const decryptVotes = async () => {
         }
 
         // Use only the required number of shares
-        const shareArray = currentShares.slice(0, voteMetadata.threshold);
-        const shareBigInts = shareArray.map(share => BigInt("0x" + share));
-        const slicedIndexes = currentIndexes.slice(0, voteMetadata.threshold);
+        const shareBigInts = currentShares.map(share => BigInt("0x" + share));
 
         try {
-            const key = await recomputeKey(slicedIndexes, shareBigInts, voteMetadata.alphas, voteMetadata.threshold);
+            const key = await recomputeKey(currentIndexes, shareBigInts, voteMetadata.alphas, voteMetadata.threshold);
             const decryptedResult = await AESDecrypt(voteMetadata.ciphertext, key);
             
             currentDecryptedCounts[decryptedResult] = (currentDecryptedCounts[decryptedResult] || 0) + 1;
