@@ -13,7 +13,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 import time
-import datetime
+from datetime import datetime, timedelta
 from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
 from selenium.common.exceptions import StaleElementReferenceException,NoSuchElementException, ElementNotInteractableException, NoAlertPresentException
 
@@ -215,7 +215,7 @@ def create_election(driver):
     # This function assumes on your browser you are logged into metamask
     homepage_url = "http://localhost:3000/"
     driver.get(homepage_url)
-
+    
     # Navigate to create election page from homepage
     create_vote_btn = driver.find_element(By.LINK_TEXT, "Create Vote")  # or By.ID, etc.
     create_vote_btn.click()
@@ -239,23 +239,32 @@ def create_election(driver):
     driver.switch_to.window(handles[1])
 
     # Input form data to create election
-    suffix = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
+    current_time = datetime.now()
+    suffix = current_time.strftime('%m/%d/%Y_%H%M')
+    election_start_time = (current_time + timedelta(minutes=5)).strftime('%m/%d/%Y_%H%M')
+    election_end_time = (current_time + timedelta(minutes=10)).strftime('%m/%d/%Y_%H%M')
+    election_shares_reveal_deadline =(current_time + timedelta(minutes = 10 + 15)).strftime('%m/%d/%Y_%H%M')
+    print("election start time")
+    print(election_start_time)
+    print("election_end_time")
+    print(election_end_time)
+    print("election_shares_reveal_deadline")
+    print(election_shares_reveal_deadline)
+
     test_title = f"My Test Election {suffix}"
     test_description = f"My Test Election Description {suffix}"
 
     # Test should start within 5 minutes of the current time
-    current_date_time = suffix
-    test_start_time = "04-04-2025T19:30"
-    test_end_time = "05-05-2025T19:30"
+
     id_box = obtain_element(driver, (By.ID, "title"), timeout) 
     id_box.send_keys(test_title)
 
     obtain_element(driver, (By.ID, "description"), timeout).send_keys(test_description)
 
     start_time_box = obtain_element(driver, (By.ID, "startDate"), timeout)
-    start_time_box.send_keys(test_start_time)
+    start_time_box.send_keys(election_start_time)
 
-    obtain_element(driver, (By.ID, "endDate"), timeout).send_keys(test_end_time)
+    obtain_element(driver, (By.ID, "endDate"), timeout).send_keys(election_end_time)
 
     optionA = driver.find_element(By.XPATH, '//input[@placeholder="Option 1"]')
     optionA.send_keys("10")
