@@ -211,7 +211,7 @@ def get_extension_uuid(driver, extension_name):
     
     return uuid
 
-def create_election(driver):
+def create_election(driver, title, description, start_time, end_time):
     # This function assumes on your browser you are logged into metamask
     homepage_url = "http://localhost:3000/"
     driver.get(homepage_url)
@@ -239,32 +239,10 @@ def create_election(driver):
     driver.switch_to.window(handles[1])
 
     # Input form data to create election
-    current_time = datetime.now()
-    suffix = current_time.strftime('%m/%d/%Y_%H%M')
-    election_start_time = (current_time + timedelta(minutes=5)).strftime('%m/%d/%Y_%H%M')
-    election_end_time = (current_time + timedelta(minutes=10)).strftime('%m/%d/%Y_%H%M')
-    election_shares_reveal_deadline =(current_time + timedelta(minutes = 10 + 15)).strftime('%m/%d/%Y_%H%M')
-    print("election start time")
-    print(election_start_time)
-    print("election_end_time")
-    print(election_end_time)
-    print("election_shares_reveal_deadline")
-    print(election_shares_reveal_deadline)
-
-    test_title = f"My Test Election {suffix}"
-    test_description = f"My Test Election Description {suffix}"
-
-    # Test should start within 5 minutes of the current time
-
-    id_box = obtain_element(driver, (By.ID, "title"), timeout) 
-    id_box.send_keys(test_title)
-
-    obtain_element(driver, (By.ID, "description"), timeout).send_keys(test_description)
-
-    start_time_box = obtain_element(driver, (By.ID, "startDate"), timeout)
-    start_time_box.send_keys(election_start_time)
-
-    obtain_element(driver, (By.ID, "endDate"), timeout).send_keys(election_end_time)
+    obtain_element(driver, (By.ID, "title"), timeout).send_keys(title)
+    obtain_element(driver, (By.ID, "description"), timeout).send_keys(description)
+    obtain_element(driver, (By.ID, "startDate"), timeout).send_keys(start_time)
+    obtain_element(driver, (By.ID, "endDate"), timeout).send_keys(end_time)
 
     optionA = driver.find_element(By.XPATH, '//input[@placeholder="Option 1"]')
     optionA.send_keys("10")
@@ -272,8 +250,7 @@ def create_election(driver):
     optionB = driver.find_element(By.XPATH, '//input[@placeholder="Option 2"]')
     optionB.send_keys("20")
 
-    submitButton = driver.find_element(By.XPATH, '//button[@type="submit"]')
-    submitButton.click()
+    driver.find_element(By.XPATH, '//button[@type="submit"]').click()
 
     # At this point a popup should come up. Accept it.
     # Wait until alert is visible then accept it.
@@ -328,7 +305,37 @@ if __name__ == '__main__':
         print("Failed to login")
         quit()
 
-    create_election(driver)
+    current_time = datetime.now()
+    start_time = (current_time + timedelta(minutes=7)).strftime('%m/%d/%Y_%H%M')
+    end_time = (current_time + timedelta(minutes=10)).strftime('%m/%d/%Y_%H%M')
+    election_shares_reveal_deadline = (current_time + timedelta(minutes = 10 + 15)).strftime('%m/%d/%Y_%H%M')
+    title = f"My_Test_Election_{start_time}"
+    description = f"My_Test_Election_Description_{start_time}"
+
+    print(f"election start time {start_time}")
+    print(f"election_end_time {end_time}")
+    print(f"election_shares_reveal_deadline {election_shares_reveal_deadline}")
+    create_election(driver, title, description, start_time, end_time)
+
+    # now that the election is created, we should try registering a few secret holders
+    # then double checking the functionality works as it should. 
+    all_votes_url = "http://localhost:3000/all-votes"
+    driver.get(all_votes_url)
+
+    print(f"Looking for description: '{description}'")
+
+    # Get the element containing the election description, then the parent div vote card
+    # all-votes can take a while to load, give a generous timeout.
+    election_description_p = election_description_p = WebDriverWait(driver, timeout*6).until(
+    EC.presence_of_element_located((By.XPATH, f"//p[contains(text(), '{description}')]"))
+)
+    election_description_p_parent = election_description_p.parent
+
+    # get the link to the election page.
+    election_page_a = election_description_p_parent.find_element(By.XPATH, "//a[contains(text(), 'Signup To Vote')]")
+    election_page_href = election_page_a.get_attribute('href')
+    print(election_page_href)
+    driver.get(election_page_href)
     #driver.quit()
     
 
