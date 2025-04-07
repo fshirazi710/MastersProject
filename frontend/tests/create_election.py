@@ -308,7 +308,7 @@ if __name__ == '__main__':
     current_time = datetime.now()
     start_time = (current_time + timedelta(minutes=10)).strftime('%m/%d/%Y_%H%M')
     end_time = (current_time + timedelta(minutes=20)).strftime('%m/%d/%Y_%H%M')
-    election_shares_reveal_deadline = (current_time + timedelta(minutes = 30 + 15)).strftime('%m/%d/%Y_%H%M')
+    election_shares_reveal_deadline = (current_time + timedelta(minutes = 20 + 15)).strftime('%m/%d/%Y_%H%M')
     title = f"My_Test_Election_{start_time}"
     description = f"My_Test_Election_Description_{start_time}"
 
