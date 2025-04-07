@@ -1,25 +1,11 @@
 
-import os
-import re
-root = "C:/Users/fshir/AppData/Roaming/Mozilla/Firefox/Profiles/"
-dirs = [ item for item in os.listdir(root) if os.path.isdir(os.path.join(root, item)) ]
-valid_profiles = []
+from pathlib import Path
+import subprocess
 
-for folder in dirs:
-    foldername = folder.split(".")[-1]
-    if "testuser" in foldername:
-        num = int(re.findall(r'\d+', foldername)[0])
-        
-        valid_profile_path = os.path.join(root, folder)
-        valid_profiles.append(valid_profile_path)
+for x in range(0, 3):
+    profile_path = Path(f"test_profiles/testprofile_{x}").resolve()
 
-profile_folder_root = "C:/Users/Fshir/Desktop/MENG/MastersProject/frontend/tests/test_profiles/"
-
-for profile_path in valid_profiles:
-    
-    foldername = (profile_path.split("\\")[-1]).split(".")[-1]
-    profile_folder = f"{profile_folder_root}{foldername}"
-    print(profile_folder)
-    instr = f"echo D | xcopy /E /H /K /Y \"{profile_path}\" \"{profile_folder}\""
+    profile_path.mkdir(parents=True, exist_ok=True)
+    instr = f'firefox -profile "{profile_path}"'
     print(instr)
-    os.system(instr)
+    subprocess.run(instr, shell=True, check=True)
