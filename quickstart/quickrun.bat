@@ -7,6 +7,7 @@
 @REM conda create --name masters_venv python=3.12.9
 @REM cd backend && pip install -r requirements.txt
 @REM And have an "api.ini" file in /backend and a ".env" file in /crypto-core
+@REM If running with hardhat, you can use the files in this folder.
 
 rem save the root directory
 pushd ..
