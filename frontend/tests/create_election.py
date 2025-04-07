@@ -15,6 +15,7 @@ from selenium.webdriver.common.keys import Keys
 import time
 import datetime
 from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
+from selenium.common.exceptions import StaleElementReferenceException,NoSuchElementException, ElementNotInteractableException, NoAlertPresentException
 
 def close_extra_tabs(driver):
     
@@ -26,7 +27,7 @@ def close_extra_tabs(driver):
 
 if __name__ == '__main__':
     uuid_page = "about:debugging#/runtime/this-firefox"
-    firefox_profile_path = "test_firefox_profile.masters_project"
+    firefox_profile_path = "test_profiles/testprofile_0"
     timeout = 20
     options = Options()
     options.add_argument("--window-size=1280x1600")
@@ -38,10 +39,13 @@ if __name__ == '__main__':
     firefox_profile = FirefoxProfile(firefox_profile_path)
     options.profile = firefox_profile
     driver = webdriver.Firefox(options=options)
+    driver.install_addon("metamask.xpi", temporary=True)
 
+    # check metamask extension is installed
     driver.get(uuid_page)
 
     uuid_metamask_name = obtain_element(driver, (By.XPATH, "//span[text()='MetaMask']"), timeout)
+    
     # get parent div
     uuid_parent_div = uuid_metamask_name.find_element(By.XPATH, '..')
     uuid_section = uuid_parent_div.find_element(By.TAG_NAME, "section")
@@ -57,10 +61,11 @@ if __name__ == '__main__':
             break
         
     mm_login_page = f"moz-extension://{uuid}/home.html"
+    print(mm_login_page)
     driver.get(mm_login_page)
-
-    # Put password into login box
-    metamask_test_password = "G2%Ea3TPq@dX@2"
+    driver.switch_to.window(driver.window_handles[1])
+    driver.close()
+    driver.switch_to.window(driver.window_handles[0])
 
     # Need to use XPath to get the elements on the metamask extension
     # Otherwise it triggers Metamask's Javascript security LavaMoat which protects
@@ -68,88 +73,236 @@ if __name__ == '__main__':
     # Can't use a typical searcher like driver.find_element(By.ID, ...)
     # because it uses something like ".execute_script" or "element.get_property()"
     # under the hood.
-    password_input = WebDriverWait(driver, 15).until(    
-    EC.presence_of_element_located((By.XPATH, "//input[@id='password']")))
-    password_input.send_keys(metamask_test_password)
 
-    # Click the unlock button. You should have logged into metamask now.
-    unlock_button = driver.find_element(By.XPATH, "//button[text()[contains(.,'Unlock')]]")
-    unlock_button.click()
+    # Here since it's a new profile, need to properly instantiate metamask profile.
+    # check checkbox agreeing to terms and conditions.
+    mm_checkbox = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//input[@id='onboarding__terms-checkbox']")))
+    mm_checkbox.click()
 
-    # Open a new tab
-    driver.switch_to.new_window('tab')
+    # Import an existing wallet
+    mm_import_button = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Import')]")))
+    mm_import_button.click()
 
-    # List all tab handles
-    handles = driver.window_handles
+    # Select No Thanks for collecting data
+    # Put password into login box
+    mm_no_thanks = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'No thanks')]")))
+    mm_no_thanks.click()
 
-    # Switch back to MetaMask (first tab)
-    # driver.switch_to.window(handles[0])
+    mm_test_password = "&inA6nUiR5#xXR2"
+    mm_phrase = "focus sibling viable dilemma announce puzzle rely change ritual runway depend practice".split(" ")
+    print(mm_phrase)
 
-    # Switch to new tab (second)
-    driver.switch_to.window(handles[1])
+    # Enter secret recovery phrase
+    mm_sp_first_input  = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//input[@id='import-srp__srp-word-0']")))
 
-    # Get current number of windows
-    existing_windows = set(driver.window_handles)
-
-    # Register and login to website
-    authentication_success = register_and_login(driver)
-    if authentication_success == "success":
-        print("logged in successfully")
-    else:
-        print("Failed to login")
-
-    # Navigate to create election page from homepage
-    create_vote_btn = driver.find_element(By.LINK_TEXT, "Create Vote")  # or By.ID, etc.
-    create_vote_btn.click()
-
-    # Wait till the popup appears
-    WebDriverWait(driver, 10).until(lambda d: len(d.window_handles) > len(existing_windows))
+    mm_phrase_inputs = [driver.find_element(By.ID, f"import-srp__srp-word-{i}") for i in range(12)]
+    for i in range(12):
+        mm_phrase_inputs[i].send_keys(mm_phrase[i])
     
-    # Get handle of new window
-    new_windows = set(driver.window_handles) - existing_windows
-    metamask_popup_handle = new_windows.pop()
+    # Click enter button 
+    mm_confirm_phrase = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Confirm Secret Recovery Phrase')]")))
+    mm_confirm_phrase.click()
 
-    # Switch to metamask popup window
-    driver.switch_to.window(metamask_popup_handle)
+    # Set the password
+    new_password_fields_0 = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//input[@data-testid='create-password-new']")))
 
-    # Click the connect button
-    WebDriverWait(driver, 10).until(
-    EC.presence_of_element_located((By.XPATH, "//button[text()='Connect']")))
-    driver.find_element(By.XPATH, "//button[text()='Connect']").click()
+    new_password_fields_1 = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//input[@data-testid='create-password-confirm']")))
+    
+    new_password_fields_0.send_keys(mm_test_password)
+    new_password_fields_1.send_keys(mm_test_password)
 
-    # Switch back to create election window
-    driver.switch_to.window(handles[1])
+    new_password_fields_checkbox = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//input[@data-testid='create-password-terms']")))
+    new_password_fields_checkbox.click()
 
-    # Input form data to create election
-    suffix = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
-    test_title = f"My Test Election {suffix}"
-    test_description = f"My Test Election Description {suffix}"
-    test_start_time = "04-04-2025T19:30"
-    test_end_time = "05-05-2025T19:30"
-    id_box = obtain_element(driver, (By.ID, "title"), timeout) 
-    id_box.send_keys(test_title)
+    mm_import_my_wallet_button = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Import my wallet')]")))
+    mm_import_my_wallet_button.click()
 
-    obtain_element(driver, (By.ID, "description"), timeout).send_keys(test_description)
+    mm_done_importing = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Done')]")))
+    mm_done_importing.click()
 
-    start_time_box = obtain_element(driver, (By.ID, "startDate"), timeout)
-    start_time_box.send_keys(test_start_time)
+    mm_done_importing_1 = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Next')]")))
+    mm_done_importing_1.click()
 
-    obtain_element(driver, (By.ID, "endDate"), timeout).send_keys(test_end_time)
+    mm_done_importing_2 = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[@data-testid='pin-extension-done']")))
+    mm_done_importing_2.click()
+    
+    WebDriverWait(driver, timeout).until(
+    EC.invisibility_of_element_located((By.CLASS_NAME, "loading-overlay")))
+    # Close popup
+    mm_close_popup = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[@data-testid='popover-close']")))
+    mm_close_popup.click()
 
-    optionA = driver.find_element(By.XPATH, '//input[@placeholder="Option 1"]')
-    optionA.send_keys("10")
+    # Click on Networks available
+    mm_networks_dropdown = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//p[contains(text(), 'Ethereum Mainnet')]")))
+    mm_networks_dropdown.click()
 
-    optionB = driver.find_element(By.XPATH, '//input[@placeholder="Option 2"]')
-    optionB.send_keys("20")
+    # add a new network
+    mm_new_network = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Add a custom network')]")))
+    mm_new_network.click()
 
-    submitButton = driver.find_element(By.XPATH, '//button[@type="submit"]')
-    submitButton.click()
+    network_name = "localhost8545"
+    RPC_url = "http://127.0.0.1:8545/"
+    chain_id = "31337"
+    currency_symbol = "ETH"
+    account_id = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" # from first hardhat account
+    account_private_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
-    # At this point a popup should come up. Accept it.
-    # Wait until alert is visible then accept it.
-    WebDriverWait(driver, timeout).until(EC.alert_is_present())
-    driver.switch_to.alert.accept()
-    driver.quit()
+    mm_network_name = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//input[@id='networkName']")))
+    mm_network_name.send_keys(network_name)
+
+    mm_network_chainId = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//input[@id='chainId']")))
+    mm_network_chainId.send_keys(chain_id)
+
+    mm_network_currency_symbol = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//input[@id='nativeCurrency']")))
+    mm_network_currency_symbol.send_keys(currency_symbol)
+
+    mm_network_rpc_url_dropdown = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[@data-testid='test-add-rpc-drop-down']")))
+    mm_network_rpc_url_dropdown.click()
+
+    mm_network_add_rpc_url_button = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Add RPC URL')]")))
+    mm_network_add_rpc_url_button.click()
+
+    mm_network_rpc_url = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//input[@id='rpcUrl']")))
+    mm_network_rpc_url.send_keys(RPC_url)
+
+    mm_network_add_rpc_url_button_final = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Add URL')]")))
+    mm_network_add_rpc_url_button_final.click()
+
+    mm_network_save = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Save')]")))
+    mm_network_save.click()
+
+    mm_networks_dropdown = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//p[contains(text(), 'Ethereum Mainnet')]")))
+    mm_networks_dropdown.click()
+    
+    # select our test network.
+    WebDriverWait(driver, timeout).until(
+    EC.invisibility_of_element_located((By.CLASS_NAME, "loading-overlay")))
+
+    mm_network_div = WebDriverWait(driver, timeout).until(
+    EC.element_to_be_clickable((By.XPATH, f"//p[contains(text(), '{network_name}')]/ancestor::div[@role='button']")))   
+    mm_network_div.click()
+
+    WebDriverWait(driver, timeout).until(
+    EC.invisibility_of_element_located((By.CLASS_NAME, "loading-overlay")))
+
+    mm_accounts_dropdown = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[@data-testid='account-menu-icon']")))
+    mm_accounts_dropdown.click()
+
+    mm_accounts_dropdown_add_account = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[@data-testid='multichain-account-menu-popover-action-button']")))
+    mm_accounts_dropdown_add_account.click()
+
+    mm_accounts_dropdown_add_account_import = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[@data-testid='multichain-account-menu-popover-add-imported-account']")))
+    mm_accounts_dropdown_add_account_import.click()
+
+    mm_enter_private_key = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//input[@id='private-key-box']")))
+    mm_enter_private_key.send_keys(account_private_key)
+
+    mm_enter_private_key_import = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//button[@data-testid='import-account-confirm-button']")))
+    mm_enter_private_key_import.click()
+
+    # # Open a new tab
+    # driver.switch_to.new_window('tab')
+
+    # # List all tab handles
+    # handles = driver.window_handles
+
+    # # Switch back to MetaMask (first tab)
+    # # driver.switch_to.window(handles[0])
+
+    # # Switch to new tab (second)
+    # driver.switch_to.window(handles[1])
+
+    # # Get current number of windows
+    # existing_windows = set(driver.window_handles)
+
+    # # Register and login to website
+    # authentication_success = register_and_login(driver)
+    # if authentication_success == "success":
+    #     print("logged in successfully")
+    # else:
+    #     print("Failed to login")
+
+    # # Navigate to create election page from homepage
+    # create_vote_btn = driver.find_element(By.LINK_TEXT, "Create Vote")  # or By.ID, etc.
+    # create_vote_btn.click()
+
+    # # Wait till the popup appears
+    # WebDriverWait(driver, 10).until(lambda d: len(d.window_handles) > len(existing_windows))
+    
+    # # Get handle of new window
+    # new_windows = set(driver.window_handles) - existing_windows
+    # metamask_popup_handle = new_windows.pop()
+
+    # # Switch to metamask popup window
+    # driver.switch_to.window(metamask_popup_handle)
+
+    # # Click the connect button
+    # WebDriverWait(driver, 10).until(
+    # EC.presence_of_element_located((By.XPATH, "//button[text()='Connect']")))
+    # driver.find_element(By.XPATH, "//button[text()='Connect']").click()
+
+    # # Switch back to create election window
+    # driver.switch_to.window(handles[1])
+
+    # # Input form data to create election
+    # suffix = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
+    # test_title = f"My Test Election {suffix}"
+    # test_description = f"My Test Election Description {suffix}"
+    # test_start_time = "04-04-2025T19:30"
+    # test_end_time = "05-05-2025T19:30"
+    # id_box = obtain_element(driver, (By.ID, "title"), timeout) 
+    # id_box.send_keys(test_title)
+
+    # obtain_element(driver, (By.ID, "description"), timeout).send_keys(test_description)
+
+    # start_time_box = obtain_element(driver, (By.ID, "startDate"), timeout)
+    # start_time_box.send_keys(test_start_time)
+
+    # obtain_element(driver, (By.ID, "endDate"), timeout).send_keys(test_end_time)
+
+    # optionA = driver.find_element(By.XPATH, '//input[@placeholder="Option 1"]')
+    # optionA.send_keys("10")
+
+    # optionB = driver.find_element(By.XPATH, '//input[@placeholder="Option 2"]')
+    # optionB.send_keys("20")
+
+    # submitButton = driver.find_element(By.XPATH, '//button[@type="submit"]')
+    # submitButton.click()
+
+    # # At this point a popup should come up. Accept it.
+    # # Wait until alert is visible then accept it.
+    # WebDriverWait(driver, timeout).until(EC.alert_is_present())
+    # driver.switch_to.alert.accept()
+    # driver.quit()
     
 
 
