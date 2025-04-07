@@ -188,26 +188,12 @@ def register_metamask_with_hardhat(driver):
     EC.presence_of_element_located((By.XPATH, "//button[@data-testid='import-account-confirm-button']")))
     mm_enter_private_key_import.click()
 
-if __name__ == '__main__':
+def get_extension_uuid(driver, extension_name):
     uuid_page = "about:debugging#/runtime/this-firefox"
-    firefox_profile_path = "test_profiles/testprofile_0"
-    timeout = 20
-    options = Options()
-    options.add_argument("--window-size=1280x1600")
-
-    # To run in headless mode (without opening a window to run it in)
-    # If you want to see the frontend testing for debugging, comment out this line.
-    # options.add_argument('--headless')
-
-    firefox_profile = FirefoxProfile(firefox_profile_path)
-    options.profile = firefox_profile
-    driver = webdriver.Firefox(options=options)
-    driver.install_addon("metamask.xpi", temporary=True)
-
-    # check metamask extension is installed
+     # check extension is installed
     driver.get(uuid_page)
 
-    uuid_metamask_name = obtain_element(driver, (By.XPATH, "//span[text()='MetaMask']"), timeout)
+    uuid_metamask_name = obtain_element(driver, (By.XPATH, f"//span[text()='{extension_name}']"), timeout)
     
     # get parent div
     uuid_parent_div = uuid_metamask_name.find_element(By.XPATH, '..')
@@ -222,8 +208,31 @@ if __name__ == '__main__':
             print(uuid_tag.text)
             uuid = uuid_tag.text
             break
-        
-    mm_login_page = f"moz-extension://{uuid}/home.html"
+    
+    return uuid
+
+if __name__ == '__main__':
+    
+    firefox_profile_path = "test_profiles/testprofile_0"
+    timeout = 20
+    options = Options()
+    options.add_argument("--window-size=1280x1600")
+
+    # To run in headless mode (without opening a window to run it in)
+    # If you want to see the frontend testing for debugging, comment out this line.
+    # options.add_argument('--headless')
+
+    firefox_profile = FirefoxProfile(firefox_profile_path)
+    options.profile = firefox_profile
+    driver = webdriver.Firefox(options=options)
+    driver.install_addon("metamask.xpi", temporary=True)
+    uuid = get_extension_uuid(driver, "MetaMask")
+    if not(uuid == None):
+        mm_login_page = f"moz-extension://{uuid}/home.html"
+    else:
+        print("Extension is not installed, or its uuid could not be found")
+        quit()
+
     print(mm_login_page)
     driver.get(mm_login_page)
     driver.switch_to.window(driver.window_handles[1])
@@ -238,10 +247,7 @@ if __name__ == '__main__':
     # List all tab handles
     handles = driver.window_handles
 
-    # Switch back to MetaMask (first tab)
-    # driver.switch_to.window(handles[0])
-
-    # Switch to new tab (second)
+    # Switch to new tab
     driver.switch_to.window(handles[1])
 
     # Get current number of windows
