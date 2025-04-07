@@ -56,36 +56,62 @@ async def get_vote_information(election_id: int, blockchain_service: BlockchainS
 
 
 @router.post("/store-public-key/{vote_id}", response_model=StandardResponse[TransactionResponse])
-async def store_public_key(vote_id: int, data: dict, db=Depends(get_db)):
-    public_key_bytes = bytes(data["public_key"].values())
-    public_key_hex = "0x" + public_key_bytes.hex()
+async def store_public_key(vote_id: int, data: PublicKeyRequest, db=Depends(get_db)):
+    # The public key is already validated as a string by Pydantic
+    public_key_input = data.public_key
     
-    public_key_data = {
+    # Prepare the key for storage/query: remove the "0x" prefix if present
+    public_key_processed = public_key_input
+    if public_key_input.startswith('0x'):
+        public_key_processed = public_key_input[2:] # Slice off the "0x"
+    
+    # Define the filter to find an existing document
+    filter_query = {
         "vote_id": vote_id,
-        "reward_token": 1,
-        "public_key": public_key_hex,
-        "is_secret_holder": data["is_secret_holder"],
+        "public_key": public_key_processed, 
     }
 
-    if data["is_secret_holder"]:
-        public_key_data["reward_token"] = 0
+    # Define the data to be set on update or insert
+    update_data = {
+        "$set": {
+            "reward_token": 0 if data.is_secret_holder else 1,
+            "is_secret_holder": data.is_secret_holder,
+            # Ensure vote_id and public_key are also set on insert
+            "vote_id": vote_id, 
+            "public_key": public_key_processed 
+        }
+    }
 
-    await db.public_keys.insert_one(public_key_data)
+    # Use update_one with upsert=True
+    # This will update if found, or insert if not found.
+    result = await db.public_keys.update_one(filter_query, update_data, upsert=True)
+
+    # Optional: Check result details if needed (e.g., result.matched_count, result.upserted_id)
+    # logger.info(f"Upsert result for vote {vote_id}, key {public_key_processed}: Matched={result.matched_count}, UpsertedId={result.upserted_id}")
 
     return StandardResponse(
         success=True,
-        message="Public key stored securely",
+        # Adjust message slightly to reflect upsert logic
+        message="Public key stored or updated successfully", 
     )
 
 
 @router.post("/validate-public-key", response_model=StandardResponse[TransactionResponse])
-async def validate_public_key(data: dict, db=Depends(get_db)):
-    public_key_bytes = bytes(data["public_key"].values())
-    public_key_hex = "0x" + public_key_bytes.hex()
-    key = await db.public_keys.find_one({"public_key": public_key_hex})
+async def validate_public_key(data: KeyRequest, db=Depends(get_db)):
+    public_key_input = data.public_key
+    
+    # Prepare the key for DB query: remove the "0x" prefix if present
+    public_key_to_query = public_key_input
+    if public_key_input.startswith('0x'):
+        public_key_to_query = public_key_input[2:] # Slice off the "0x"
+
+    # Query the database using the raw hex string (without 0x)
+    key = await db.public_keys.find_one({"public_key": public_key_to_query})
+    
     if not key:
-        logger.warning(f"Public key not found: {data.public_key}")
-        raise handle_validation_error("Invalid public key")
+        # Log the key as received (with 0x for clarity if needed) but query uses raw hex
+        logger.warning(f"Public key not found in DB during validation: {public_key_input}")
+        raise HTTPException(status_code=404, detail="Invalid public key")
     else:
         return StandardResponse(
             success=True,
@@ -95,41 +121,76 @@ async def validate_public_key(data: dict, db=Depends(get_db)):
 
 @router.post("/submit-vote/{election_id}", response_model=StandardResponse[TransactionResponse])
 async def submit_vote(election_id: int, request: dict, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    public_keys = []
     
-    votes = await blockchain_service.call_contract_function("getVotes", election_id)
-    voter_bytes = bytes(request["voter"].values())
-    voter_hex = "0x" + voter_bytes.hex()
-    
-    if (any(entry[5] == voter_hex for entry in votes)):
+    # --- Validate and process voter public key --- 
+    voter_hex = request.get("voter")
+    if not voter_hex or not isinstance(voter_hex, str):
+        raise HTTPException(status_code=422, detail="Missing or invalid 'voter' field (string expected).")
+    # Ensure '0x' prefix
+    if not voter_hex.startswith('0x'):
+        voter_hex = '0x' + voter_hex
+
+    # --- Check if voter already voted --- 
+    # Index [5] verified to be the 'voter' string based on the updated contract struct.
+    votes_from_chain = await blockchain_service.call_contract_function("getVotes", election_id) 
+    if (any(entry[5] == voter_hex for entry in votes_from_chain)):
         raise HTTPException(status_code=400, detail="public key has already cast a vote")
         
-    for key in request["public_keys"]:
-        public_key_bytes = bytes(key.values())
-        public_key_hex = "0x" + public_key_bytes.hex()
-        public_keys.append(public_key_hex)
+    # --- Validate and process list of holder public keys --- 
+    public_keys_input = request.get("public_keys")
+    if not public_keys_input or not isinstance(public_keys_input, list):
+        raise HTTPException(status_code=422, detail="Missing or invalid 'public_keys' field (list expected).")
     
+    public_keys_hex_list = []
+    for key_str in public_keys_input:
+        if not isinstance(key_str, str):
+             raise HTTPException(status_code=422, detail=f"Invalid item type in 'public_keys' list (string expected, got {type(key_str)}). Item: {key_str}")
+        pk_hex = key_str
+        # Ensure '0x' prefix for each key in the list
+        if not pk_hex.startswith('0x'):
+            pk_hex = '0x' + pk_hex
+        public_keys_hex_list.append(pk_hex)
+    
+    # --- Validate other required fields --- 
+    required_fields = ["election_id", "ciphertext", "g1r", "g2r", "alpha", "threshold"]
+    for field in required_fields:
+        if field not in request:
+            raise HTTPException(status_code=422, detail=f"Missing required field: {field}")
+            
+    # TODO: Add type validation for these fields if necessary (e.g., threshold is int)
+    
+    # --- Prepare Transaction --- 
     nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
+    
+    # Ensure election_id and threshold are integers
+    try:
+        election_id_int = int(request["election_id"])
+        threshold_int = int(request["threshold"])
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="'election_id' and 'threshold' must be valid integers.")
+        
+    # Estimate Gas
     estimated_gas = blockchain_service.contract.functions.submitVote(
-        int(request["election_id"]),
-        public_keys,
+        election_id_int,
+        public_keys_hex_list, # Use corrected list of hex strings
         request["ciphertext"],
         request["g1r"],
         request["g2r"],
         request["alpha"],
-        voter_hex,
-        request["threshold"]
+        voter_hex, # Use corrected voter hex string
+        threshold_int 
     ).estimate_gas({"from": WALLET_ADDRESS})
 
-    create_election_tx = blockchain_service.contract.functions.submitVote(
-        int(request["election_id"]),
-        public_keys,
+    # Build Transaction
+    create_vote_tx = blockchain_service.contract.functions.submitVote(
+        election_id_int,
+        public_keys_hex_list, # Use corrected list of hex strings
         request["ciphertext"],
         request["g1r"],
         request["g2r"],
         request["alpha"],
-        voter_hex,
-        request["threshold"]
+        voter_hex, # Use corrected voter hex string
+        threshold_int
     ).build_transaction({
         'from': WALLET_ADDRESS,
         'gas': estimated_gas,
@@ -137,7 +198,7 @@ async def submit_vote(election_id: int, request: dict, blockchain_service: Block
         'nonce': nonce,
     })
 
-    signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_election_tx, PRIVATE_KEY)
+    signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_vote_tx, PRIVATE_KEY)
     tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
     receipt = blockchain_service.w3.eth.wait_for_transaction_receipt(tx_hash)
     

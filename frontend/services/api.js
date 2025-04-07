@@ -12,9 +12,12 @@ const apiClient = axios.create({
 // Add request interceptor to include auth token if available
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    // Guard localStorage access for SSR
+    if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('token');
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
     }
     return config;
   },
@@ -70,6 +73,12 @@ export const electionApi = {
   getElectionById: (electionId) => {
     return apiClient.get(`/api/elections/election/${electionId}`);
   },
+
+  // --- Add function to get metadata --- 
+  getElectionMetadata: (electionId) => {
+    return apiClient.get(`/api/elections/election/${electionId}/metadata`);
+  }
+  // -----------------------------------
 };
 
 // API service for votes
@@ -108,8 +117,8 @@ export const holderApi = {
   },
   
   // Join as holder
-  joinAsHolder: (election_id, publicKey) => {
-    return apiClient.post(`/api/holders/join/${election_id}`, { public_key: publicKey });
+  joinAsHolder: (election_id, data) => {
+    return apiClient.post(`/api/holders/join/${election_id}`, data);
   },
 };
 

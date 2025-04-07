@@ -50,7 +50,7 @@ GET /api/agents/{id}/status
 ## Setup and Development
 
 ### Prerequisites
-- Python 3.10.16
+- Python 3.12.*
 - PostgreSQL
 - Ethereum node access (or similar blockchain)
 

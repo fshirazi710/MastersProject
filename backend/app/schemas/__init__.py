@@ -14,6 +14,9 @@ from app.schemas.auth import (
 # Elections schemas
 from app.schemas.election import (
     ElectionCreateRequest,
+    ExtendedElectionCreateRequest,
+    SliderConfig,
+    ElectionMetadata,
 )
 
 # Vote schemas
@@ -26,7 +29,8 @@ from app.schemas.vote import (
 
 # Holder schemas
 from app.schemas.holder import (
-    JoinHolderRequest,
+    # JoinHolderRequest,
+    JoinHolderStringRequest,
     HolderResponse,
     HolderStatusResponse,
     HolderListResponse,
@@ -37,6 +41,7 @@ from app.schemas.holder import (
 # Share schemas
 from app.schemas.share import (
     ShareSubmitRequest,
+    ShareListSubmitRequest,
     ShareVerificationRequest,
     ShareVerificationResponse,
     ShareStatusResponse,

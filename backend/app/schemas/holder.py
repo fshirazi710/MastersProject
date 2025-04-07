@@ -6,23 +6,32 @@ from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 import re
 
-class JoinHolderRequest(BaseModel):
-    """Schema for joining as a secret holder."""
-    public_key: List[int] = Field(
-        ..., 
-        description="BLS12-381 public key components [x, y]",
-        min_length=2,
-        max_length=2,
-        examples=[[123456789, 987654321]]
-    )
+# class JoinHolderRequest(BaseModel):
+#     """Schema for joining as a secret holder."""
+#     public_key: List[int] = Field(
+#         ..., 
+#         description="BLS12-381 public key components [x, y]",
+#         min_length=2,
+#         max_length=2,
+#         examples=[[123456789, 987654321]]
+#     )
     
-    @field_validator('public_key')
-    @classmethod
-    def validate_public_key(cls, v):
-        """Validate that the public key has exactly two components."""
-        if len(v) != 2:
-            raise ValueError("Public key must have exactly 2 components [x, y]")
-        return v
+#     @field_validator('public_key')
+#     @classmethod
+#     def validate_public_key(cls, v):
+#         """Validate that the public key has exactly two components."""
+#         if len(v) != 2:
+#             raise ValueError("Public key must have exactly 2 components [x, y]")
+#         return v
+
+# New schema for joining with a public key string
+class JoinHolderStringRequest(BaseModel):
+    """Schema for joining as a secret holder using a public key string."""
+    public_key: str = Field(
+        ...,
+        description="BLS12-381 public key as a hex string",
+        examples=["0xabcdef12345..."]
+    )
 
 class HolderResponse(BaseModel):
     """Schema for secret holder data."""
