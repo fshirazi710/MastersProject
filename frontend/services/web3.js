@@ -1,23 +1,36 @@
 import Web3 from 'web3';
 import { config } from '../config';
+import { isAddress } from 'web3-validator';
 
 class Web3Service {
   constructor() {
     this.web3 = null;
     this.account = null;
     this.contract = null;
+    this.balance = null;
   }
 
   async init() {
     if (window.ethereum) {
       try {
         // Request account access
-        await window.ethereum.request({ method: 'eth_requestAccounts' });
         this.web3 = new Web3(window.ethereum);
+        await window.ethereum.request({ method: 'eth_requestAccounts' });
         
-        // Get connected account
+        // Get connected accounts
         const accounts = await this.web3.eth.getAccounts();
-        this.account = accounts[0];
+
+        // Get the first account with a non zero balance
+        for (const account of accounts) {
+          const balanceWei = await this.web3.eth.getBalance(account);
+          const balance = this.web3.utils.fromWei(balanceWei, "ether");
+      
+          if (parseFloat(balance) > 0) {
+            console.log(`Found account with non-zero balance: ${account} → ${balance} ETH`);
+            this.account = account;
+            this.balance = balance;
+          }
+        }
         
         // Initialize contract
         this.contract = new this.web3.eth.Contract(
@@ -86,17 +99,8 @@ class Web3Service {
   }
 
   async getBalance() {
-    if (!this.web3 || !this.account) {
-      throw new Error('Web3 not initialized');
-    }
-
-    try {
-      const balance = await this.web3.eth.getBalance(this.account);
-      return this.web3.utils.fromWei(balance, 'ether');
-    } catch (error) {
-      console.error('Error getting balance:', error);
-      throw error;
-    }
+    // Return the account balance
+    return this.balance;
   }
 }
 

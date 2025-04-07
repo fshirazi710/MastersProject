@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     WEB3_PROVIDER_URL: str = config["BLOCKCHAIN"].get("WEB3_PROVIDER_URL", "")
     CONTRACT_ADDRESS: str = config["BLOCKCHAIN"].get("CONTRACT_ADDRESS", "")
     WALLET_ADDRESS: str = config["BLOCKCHAIN"].get("WALLET_ADDRESS", "")
+    CONTRACT_ABI: list = json.loads(config["BLOCKCHAIN"].get("CONTRACT_ABI", "[]"))
     PRIVATE_KEY: str = config["BLOCKCHAIN"].get("PRIVATE_KEY", "")
 
     # Database

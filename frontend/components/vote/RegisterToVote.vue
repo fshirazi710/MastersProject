@@ -43,18 +43,44 @@
             </div>
           </label>
         </div>
-        <button class="btn primary">
+        <div v-if="isSecretHolder === 'yes'" class="alert-box">
+          <strong>Reward Pool: {{ rewardPool }} ETH</strong>
+          <p></p>
+          <strong>Required Deposit: {{ requiredDeposit }} ETH</strong>
+        </div>
+        <button @click="generateKeyPair()" class="btn primary">
           Register To Vote
         </button>
+        <!-- New styled alert box for votingToken -->
+        <div v-if="pk" class="alert-box">
+          <strong>The Key Pair Needed To Vote Has Been Stored. Return to this page to Cast Your Vote Later</strong>
+        </div>
       </form>
     </div>
   </template>
   
   <script setup>
   import { ref } from 'vue'
-  import { voteApi, holderApi } from '@/services/api'
-  import { generateBLSKeyPair } from "../../services/cryptography";
+  import axios from 'axios'
+  import { generateBLSKeyPair } from "../../services/blsUtils";
   import Cookies from "js-cookie";
+
+  const pk = ref(null); // Make pk reactive
+
+  const generateKeyPair = async () => {
+    const { sk, pk: publicKey } = generateBLSKeyPair();
+    
+    console.log("Private Key:", sk.toString(16));
+    console.log("Public Key:", publicKey.toHex());
+
+    // Store the private key in a cookie for 1 day
+    Cookies.set("privateKey", sk.toString(16), { expires: 1, secure: true, sameSite: "Strict" });
+    storePublicKey()
+
+    // Update the reactive pk variable to trigger UI update
+    pk.value = publicKey.toHex();
+  };
+
   
   const props = defineProps({
     voteId: {
@@ -172,7 +198,7 @@
       alert(err.response?.data?.detail || err.message || 'Failed to join as secret holder. Please try again.');
       throw err; // Re-throw to prevent the success message in storePublicKey
     }
-  }
+}
   </script>
   
   <style lang="scss" scoped>

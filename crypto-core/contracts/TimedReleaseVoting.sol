@@ -9,6 +9,79 @@ pragma solidity ^0.8.0;
  */
 contract TimedReleaseVoting {
 
+    // For debugging
+    event LogMessage(string message);
+    event LogUint(string label, uint256 value);
+    event LogAddress(address addr);
+
+    struct Election {
+        uint256 id;
+        string title;
+        string description;
+        uint256 startDate;
+        uint256 endDate;
+        string[] options;
+        uint256 rewardPool;
+        uint256 electionDeposit;
+    }
+
+    mapping(uint256 => Election) public election;
+    uint256 public electionCount;
+
+    event ElectionCreated(uint256 id, string title);
+
+    event ElectionCreatedEvent (
+        uint256 id,
+        string title,
+        string description,
+        uint256 startDate,
+        uint256 endDate,
+        string[] options,
+        uint256 rewardPool,
+        uint256 electionDeposit
+    );
+
+    function createElection(
+        string memory title,
+        string memory description,
+        uint256 startDate,
+        uint256 endDate,
+        string[] memory options,
+        uint256 rewardPool,
+        uint256 electionDeposit
+    ) public returns (uint256) {
+
+        election[electionCount] = Election(electionCount, title, description, startDate, endDate, options, rewardPool, electionDeposit);
+        emit ElectionCreated(electionCount, title);
+        emit ElectionCreatedEvent(
+            electionCount, 
+            title, 
+            description, 
+            startDate, 
+            endDate, 
+            options, 
+            rewardPool, 
+            electionDeposit
+        );
+        electionCount++;
+        return electionCount - 1;
+    }
+    
+    function getElection(uint256 voteId) public view returns (
+        uint256 id,
+        string memory title,
+        string memory description,
+        uint256 startDate,
+        uint256 endDate,
+        string[] memory options,
+        uint256 rewardPool,
+        uint256 electionDeposit
+    ) {
+        require(voteId < electionCount, "Election does not exist");
+        Election memory v = election[voteId];
+        return (v.id, v.title, v.description, v.startDate, v.endDate, v.options, v.rewardPool, v.electionDeposit);
+    }
+
     // ======== State Variables ========
 
     struct Vote {
