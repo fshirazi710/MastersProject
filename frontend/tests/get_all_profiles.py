@@ -15,7 +15,7 @@ for x in range(0, 3):
 
     profile_path.mkdir(parents=True, exist_ok=True)
     
-    # Setup instruction for making profile -headless
+    # Setup instruction for making profile
     instr = f'firefox -profile -headless -no-remote "{profile_path}"'
     print(instr)
 
