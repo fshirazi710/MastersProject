@@ -1,11 +1,11 @@
 
 
 @echo off
-@REM These instructions assume you have installed npx, npm, and anaconda
-@REM ran "npm install" in /frontend
-@REM Created a conda environment where you have pip installed all requirements for the backend like so:
+@REM These instructions assume you have installed npx, npm, and anaconda and are on Windows.
+@REM That you have ran "npm install" in /frontend
+@REM And that you have created a conda environment with all requirements installed like so:
 @REM conda create --name masters_venv python=3.12.9
-@REM pip install -r requirements.txt
+@REM cd backend && pip install -r requirements.txt
 @REM And have an "api.ini" file in /backend and a ".env" file in /crypto-core
 
 rem save the root directory
