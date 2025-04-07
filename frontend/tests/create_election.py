@@ -211,54 +211,10 @@ def get_extension_uuid(driver, extension_name):
     
     return uuid
 
-if __name__ == '__main__':
-    
-    firefox_profile_path = "test_profiles/testprofile_0"
-    timeout = 20
-    options = Options()
-    options.add_argument("--window-size=1280x1600")
-
-    # To run in headless mode (without opening a window to run it in)
-    # If you want to see the frontend testing for debugging, comment out this line.
-    # options.add_argument('--headless')
-
-    firefox_profile = FirefoxProfile(firefox_profile_path)
-    options.profile = firefox_profile
-    driver = webdriver.Firefox(options=options)
-    driver.install_addon("metamask.xpi", temporary=True)
-    uuid = get_extension_uuid(driver, "MetaMask")
-    if not(uuid == None):
-        mm_login_page = f"moz-extension://{uuid}/home.html"
-    else:
-        print("Extension is not installed, or its uuid could not be found")
-        quit()
-
-    print(mm_login_page)
-    driver.get(mm_login_page)
-    driver.switch_to.window(driver.window_handles[1])
-    driver.close()
-    driver.switch_to.window(driver.window_handles[0])
-
-    register_metamask_with_hardhat(driver)
-    
-    # Open a new tab
-    driver.switch_to.new_window('tab')
-
-    # List all tab handles
-    handles = driver.window_handles
-
-    # Switch to new tab
-    driver.switch_to.window(handles[1])
-
-    # Get current number of windows
-    existing_windows = set(driver.window_handles)
-
-    # Register and login to website
-    authentication_success = register_and_login(driver)
-    if authentication_success == "success":
-        print("logged in successfully")
-    else:
-        print("Failed to login")
+def create_election(driver):
+    # This function assumes on your browser you are logged into metamask
+    homepage_url = "http://localhost:3000/"
+    driver.get(homepage_url)
 
     # Navigate to create election page from homepage
     create_vote_btn = driver.find_element(By.LINK_TEXT, "Create Vote")  # or By.ID, etc.
@@ -314,6 +270,56 @@ if __name__ == '__main__':
     # Wait until alert is visible then accept it.
     WebDriverWait(driver, timeout).until(EC.alert_is_present())
     driver.switch_to.alert.accept()
+
+if __name__ == '__main__':
+    
+    firefox_profile_path = "test_profiles/testprofile_0"
+    timeout = 20
+    options = Options()
+    options.add_argument("--window-size=1280x1600")
+
+    # To run in headless mode (without opening a window to run it in)
+    # If you want to see the frontend testing for debugging, comment out this line.
+    # options.add_argument('--headless')
+
+    firefox_profile = FirefoxProfile(firefox_profile_path)
+    options.profile = firefox_profile
+    driver = webdriver.Firefox(options=options)
+    driver.install_addon("metamask.xpi", temporary=True)
+    uuid = get_extension_uuid(driver, "MetaMask")
+    if not(uuid == None):
+        mm_login_page = f"moz-extension://{uuid}/home.html"
+    else:
+        print("Extension is not installed, or its uuid could not be found")
+        quit()
+
+    print(mm_login_page)
+    driver.get(mm_login_page)
+    driver.switch_to.window(driver.window_handles[1])
+    driver.close()
+    driver.switch_to.window(driver.window_handles[0])
+
+    register_metamask_with_hardhat(driver)
+    
+    # Open a new tab
+    driver.switch_to.new_window('tab')
+
+    # List all tab handles
+    handles = driver.window_handles
+
+    # Switch to new tab
+    driver.switch_to.window(handles[1])
+
+    # Get current number of windows
+    existing_windows = set(driver.window_handles)
+
+    # Register and login to website
+    authentication_success = register_and_login(driver)
+    if not(authentication_success == "success"):
+        print("Failed to login")
+        quit()
+
+    create_election(driver)
     #driver.quit()
     
 
