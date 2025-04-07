@@ -30,6 +30,8 @@
           id="title" 
           v-model="voteData.title" 
           required 
+          minlength="3" 
+          maxlength="100"
           class="form-input"
         >
       </div>
@@ -41,8 +43,11 @@
           id="description" 
           v-model="voteData.description" 
           required 
+          minlength="10"
+          maxlength="1000"
           class="form-input"
         ></textarea>
+        <p class="helper-text">Minimum 10 characters</p>
       </div>
 
       <!-- Date selection row with two inputs -->
@@ -111,36 +116,95 @@
         </div>
       </div>
 
-      <!-- Dynamic voting options section -->
+      <!-- Question Type Selection -->
       <div class="form-group">
-        <label>Options</label>
-        <!-- List of voting options with remove buttons -->
-        <div v-for="(option, index) in voteData.options" :key="index" class="option-row">
-          <input 
-            type="text" 
-            v-model="voteData.options[index]" 
-            :placeholder="'Option ' + (index + 1)"
-            class="form-input"
-          >
-          <!-- Remove button (hidden for first two options) -->
+        <h3>Question Type</h3>
+        <div class="radio-group">
+          <label>
+            <input type="radio" v-model="questionType" value="options" name="questionType">
+            Standard Options
+          </label>
+          <label>
+            <input type="radio" v-model="questionType" value="slider" name="questionType">
+            Numerical Slider
+          </label>
+        </div>
+      </div>
+
+      <!-- Dynamic voting options section (Conditional) -->
+      <template v-if="questionType === 'options'">
+        <div class="form-group">
+          <label>Options</label>
+          <p class="helper-text">Minimum 2 options required</p>
+          <!-- List of voting options with remove buttons -->
+          <div v-for="(option, index) in voteData.options" :key="index" class="option-row">
+            <input 
+              type="text" 
+              v-model="voteData.options[index]" 
+              :placeholder="'Option ' + (index + 1)"
+              class="form-input"
+              required
+            >
+            <!-- Remove button (hidden for first two options) -->
+            <button 
+              type="button" 
+              @click="removeOption(index)" 
+              class="btn danger"
+              v-if="voteData.options.length > 2"
+            >
+              Remove
+            </button>
+          </div>
+          <!-- Add new option button -->
           <button 
             type="button" 
-            @click="removeOption(index)" 
-            class="btn danger"
-            v-if="voteData.options.length > 2"
+            @click="addOption" 
+            class="btn secondary"
           >
-            Remove
+            Add Option
           </button>
         </div>
-        <!-- Add new option button -->
-        <button 
-          type="button" 
-          @click="addOption" 
-          class="btn secondary"
-        >
-          Add Option
-        </button>
-      </div>
+      </template>
+
+      <!-- Slider Configuration Section (Conditional) -->
+      <template v-if="questionType === 'slider'">
+         <div class="form-group">
+            <h3>Slider Configuration</h3>
+             <div class="form-row">
+              <div class="form-group">
+                <label for="sliderMin">Minimum Value</label>
+                <input 
+                  type="number"
+                  id="sliderMin"
+                  v-model.number="sliderConfig.min"
+                  required
+                  class="form-input"
+                >
+              </div>
+              <div class="form-group">
+                <label for="sliderMax">Maximum Value</label>
+                <input 
+                  type="number"
+                  id="sliderMax"
+                  v-model.number="sliderConfig.max"
+                  required
+                  class="form-input"
+                >
+              </div>
+              <div class="form-group">
+                <label for="sliderStep">Step Increment</label>
+                <input 
+                  type="number"
+                  id="sliderStep"
+                  v-model.number="sliderConfig.step"
+                  required
+                  min="1" 
+                  class="form-input"
+                >
+              </div>
+            </div>
+         </div>
+      </template>
 
       <!-- Form submit button -->
       <button type="submit" class="btn primary" :disabled="loading || !walletConnected">
@@ -151,9 +215,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { voteApi } from '@/services/api'
+import { electionApi } from '@/services/api'
 import { web3Service } from '@/services/web3'
 
 const router = useRouter();
@@ -162,6 +226,14 @@ const error = ref(null);
 const walletConnected = ref(false);
 const walletAddress = ref('');
 const walletBalance = ref(0);
+
+// New state for question type and slider config
+const questionType = ref('options'); // 'options' or 'slider'
+const sliderConfig = ref({
+  min: 0,
+  max: 100,
+  step: 1,
+});
 
 // This line sets the middleware for authentication
 definePageMeta({
@@ -174,7 +246,7 @@ const voteData = ref({
   description: '',
   start_date: '',
   end_date: '',
-  options: ['', ''],
+  options: ['', ''], // Will be overwritten if slider type
   reward_pool: 0.003,
   required_deposit: 0.001,
 })
@@ -202,8 +274,46 @@ const removeOption = (index) => {
   voteData.value.options.splice(index, 1)
 }
 
+// Validation logic (computed property example)
+const isFormValid = computed(() => {
+  // Basic checks (title, description, dates)
+  if (!voteData.value.title || voteData.value.title.length < 3 || voteData.value.title.length > 100) return false;
+  if (!voteData.value.description || voteData.value.description.length < 10 || voteData.value.description.length > 1000) return false;
+  if (!voteData.value.start_date || !voteData.value.end_date) return false;
+  // TODO: Add better date validation (end > start)
+  
+  // Options validation
+  if (questionType.value === 'options') {
+    if (voteData.value.options.length < 2) return false;
+    if (voteData.value.options.some(opt => !opt.trim())) return false; // Ensure no empty options
+  }
+
+  // Slider validation
+  if (questionType.value === 'slider') {
+    if (sliderConfig.value.min === null || sliderConfig.value.max === null || sliderConfig.value.step === null) return false;
+    if (sliderConfig.value.min >= sliderConfig.value.max) return false;
+    if (sliderConfig.value.step <= 0) return false;
+    // Check generated option count (example limit: 200)
+    const numOptions = Math.floor((sliderConfig.value.max - sliderConfig.value.min) / sliderConfig.value.step) + 1;
+    if (numOptions > 200) { 
+        // error.value = "Slider range/step generates too many options (>200). Please adjust."; // Provide feedback
+        return false; // Or handle differently
+    }
+  }
+  
+  // Check ETH values
+  if (voteData.value.reward_pool < 0.001 || voteData.value.required_deposit < 0.001) return false;
+
+  return true; // If all checks pass
+});
+
 const handleSubmit = async () => {
-  if (loading.value) return;
+  if (loading.value || !isFormValid.value) { 
+      if (!isFormValid.value) {
+          error.value = "Please fill out all fields correctly. Ensure Min < Max, Step > 0, and slider settings don't generate excessive options (>200)." 
+      }
+      return;
+  };
   
   loading.value = true;
   error.value = null;
@@ -219,29 +329,141 @@ const handleSubmit = async () => {
       throw new Error('Insufficient balance for reward pool');
     }
 
-    // Format dates to ISO strings
-    const formattedData = {
-      ...voteData.value,
-      start_date: new Date(voteData.value.start_date).toISOString(),
-      end_date: new Date(voteData.value.end_date).toISOString(),
+    // --- Generate options if slider type --- 
+    let finalOptions = [];
+    let payloadSliderConfig = null;
+    let displayHint = null;
+
+    if (questionType.value === 'slider') {
+      displayHint = 'slider';
+      payloadSliderConfig = {
+        min: Number(sliderConfig.value.min),
+        max: Number(sliderConfig.value.max),
+        step: Number(sliderConfig.value.step),
+      };
+      
+      // --- Generate options: Min, Max, and multiples of Step between Min and Max --- 
+      const optionsSet = new Set(); // Use Set for unique values
+
+      // Always include min and max (if valid range)
+      if (payloadSliderConfig.max >= payloadSliderConfig.min) {
+          optionsSet.add(payloadSliderConfig.min);
+          optionsSet.add(payloadSliderConfig.max);
+      }
+
+      // Add multiples of step that fall BETWEEN min and max
+      if (payloadSliderConfig.step > 0) { 
+          for (let currentMultiple = payloadSliderConfig.step; 
+               currentMultiple < payloadSliderConfig.max; // Strictly less than max
+               currentMultiple += payloadSliderConfig.step)
+          { 
+              if (currentMultiple > payloadSliderConfig.min) { // Strictly greater than min
+                  optionsSet.add(currentMultiple);
+              }
+          }
+          // Handle negative multiples if range allows
+          if (payloadSliderConfig.min < 0) {
+              for (let currentMultiple = -payloadSliderConfig.step; 
+                   currentMultiple > payloadSliderConfig.min; // Strictly greater than min
+                   currentMultiple -= payloadSliderConfig.step)
+              { 
+                  if (currentMultiple < payloadSliderConfig.max) { // Strictly less than max
+                     optionsSet.add(currentMultiple);
+                  }
+              }
+          }
+      }
+
+      // Convert set to sorted array of strings
+      finalOptions = Array.from(optionsSet)
+                          .sort((a, b) => a - b)
+                          .map(String);
+      // --- End generation logic --- 
+
+      // Validation checks (adjust if necessary for this logic)
+      if (finalOptions.length < 2 && payloadSliderConfig.min < payloadSliderConfig.max) {
+         throw new Error("Slider configuration must generate at least 2 unique options if Min != Max.");
+      } else if (finalOptions.length === 0 && payloadSliderConfig.min <= payloadSliderConfig.max) {
+           finalOptions = [String(payloadSliderConfig.min)]; 
+           if (finalOptions[0] === undefined || finalOptions[0] === null || finalOptions[0] === 'NaN') { 
+                 throw new Error("Slider configuration generated no valid options.");
+           }
+      } else if (finalOptions.length === 0) {
+           throw new Error("Slider configuration generated no options (invalid range?).");
+      }
+      
+    } else {
+      finalOptions = voteData.value.options.filter(opt => opt && opt.trim());
+    }
+    // --- End option generation ---
+
+    // Convert to BST before sending
+    const toBSTISOString = (date) => {
+        if (!date) return null;
+        try {
+            // Assuming input is YYYY-MM-DDTHH:MM
+            const localDate = new Date(date);
+            // Format for display/confirmation in London time
+            const bstStr = localDate.toLocaleString("en-GB", { timeZone: "Europe/London" }); 
+            // Reconstruct ISO-like string for backend (might need adjustment based on backend expectation)
+            const [day, month, year, hour, minute] = bstStr.match(/\d+/g);
+            return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+        } catch(e) {
+            console.error("Error formatting date:", e);
+            return null; // Handle invalid date input
+        }
     };
-    console.log(formattedData)
-    // First create the vote in the backend
-    const response = await voteApi.createVote(formattedData);
+
+    // Format core data for the contract part of the backend request
+    const coreElectionData = {
+      title: voteData.value.title,
+      description: voteData.value.description,
+      start_date: toBSTISOString(voteData.value.start_date),
+      end_date: toBSTISOString(voteData.value.end_date),
+      reward_pool: Number(voteData.value.reward_pool),
+      required_deposit: Number(voteData.value.required_deposit),
+      options: finalOptions, // Use the generated or original options
+    };
+
+    // Construct the full payload including metadata
+    const fullPayload = {
+        election_data: coreElectionData,
+        displayHint: displayHint, // Will be 'slider' or null
+        sliderConfig: payloadSliderConfig // Will contain config or null
+    };
+    
+    // Validate formatted dates
+    if (!coreElectionData.start_date || !coreElectionData.end_date) {
+        throw new Error('Invalid start or end date format provided.');
+    }
+
+    console.log("Submitting Full Payload:", fullPayload); // Debug log
+
+    // Call the backend API
+    // NOTE: electionApi.createElection might need adjustment if it doesn't expect this nested structure
+    const response = await electionApi.createElection(fullPayload);
     alert(response.data.message || 'Vote created successfully!');
     router.push('/all-votes');
   } catch (err) {
-    console.error('Failed to create vote:', err);
-    error.value = err.message || 'Failed to create vote. Please try again.';
+    console.error("Vote creation failed:", err);
+    // More specific error handling
+    if (err.response?.data?.detail) {
+      error.value = `Error: ${err.response.data.detail}`;
+    } else if (err instanceof Error) {
+      error.value = err.message;
+    } else {
+      error.value = 'An unexpected error occurred during vote creation.';
+    }
   } finally {
     loading.value = false;
   }
 }
 
-// Initialize Web3 when component is mounted
+// Connect wallet on mount
 onMounted(() => {
   connectWallet();
-})
+});
+
 </script>
 
 <style lang="scss" scoped>
@@ -277,6 +499,29 @@ onMounted(() => {
     background: #f8d7da;
     border: 1px solid #f5c6cb;
     color: #721c24;
+  }
+}
+
+/* Add styles for radio group if needed */
+.radio-group label {
+  margin-right: 15px;
+  cursor: pointer;
+}
+
+.info-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: var(--info-light);
+  color: var(--info-dark);
+  padding: 10px;
+  border-radius: var(--border-radius);
+  border: 1px solid var(--info);
+  margin-bottom: $spacing-md;
+  font-size: 0.9em;
+
+  i {
+    color: var(--info);
   }
 }
 </style> 

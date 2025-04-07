@@ -142,3 +142,17 @@ class SubmittedSharesResponse(BaseModel):
         description="Number of submitted shares",
         examples=[2]
     ) 
+
+# Schema for the request body sent by the frontend
+class ShareItem(BaseModel):
+    """Represents a single item in the shares list."""
+    vote_id: int
+    share: str # Assuming generateShares returns a hex string
+
+class ShareListSubmitRequest(BaseModel):
+    """Schema for submitting a list of shares and the holder's public key."""
+    shares: List[ShareItem]
+    public_key: str = Field(
+        ...,
+        description="Holder's public key hex string"
+    ) 

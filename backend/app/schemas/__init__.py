@@ -11,22 +11,26 @@ from app.schemas.auth import (
     TokenData,
 )
 
+# Elections schemas
+from app.schemas.election import (
+    ElectionCreateRequest,
+    ExtendedElectionCreateRequest,
+    SliderConfig,
+    ElectionMetadata,
+)
+
 # Vote schemas
 from app.schemas.vote import (
     VoteSubmitRequest,
-    VoteCreateRequest,
     VoteResponse,
-    DecryptVoteRequest,
-    DecryptVoteResponse,
-    VotingTokenRequest,
-    VotingTokenResponse,
-    TokenValidationRequest,
-    VoteStatusResponse
+    PublicKeyRequest,
+    KeyRequest
 )
 
 # Holder schemas
 from app.schemas.holder import (
-    JoinHolderRequest,
+    # JoinHolderRequest,
+    JoinHolderStringRequest,
     HolderResponse,
     HolderStatusResponse,
     HolderListResponse,
@@ -37,6 +41,7 @@ from app.schemas.holder import (
 # Share schemas
 from app.schemas.share import (
     ShareSubmitRequest,
+    ShareListSubmitRequest,
     ShareVerificationRequest,
     ShareVerificationResponse,
     ShareStatusResponse,

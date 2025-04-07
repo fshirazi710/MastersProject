@@ -1,36 +1,27 @@
 """
 Vote router for managing votes in the system.
 """
-from datetime import datetime, UTC
-from fastapi import APIRouter, Depends, HTTPException, status
-from typing import List, Dict, Any, Optional
+from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Dict, Any
 
 from app.core.dependencies import get_blockchain_service, get_db
-from app.core.error_handling import handle_blockchain_error, handle_validation_error, handle_not_found_error
+from app.core.error_handling import handle_blockchain_error, handle_validation_error
 from app.core.config import (
     WALLET_ADDRESS,
     PRIVATE_KEY,
 )
 from app.schemas import (
     VoteSubmitRequest, 
-    VoteCreateRequest, 
+    PublicKeyRequest,
+    KeyRequest,
     VoteResponse, 
-    DecryptVoteRequest, 
-    DecryptVoteResponse,
-    VotingTokenRequest,
-    VotingTokenResponse,
-    TokenValidationRequest,
     ShareStatusResponse,
     StandardResponse,
     TransactionResponse,
-    VoteStatusResponse
 )
 from app.services.blockchain import BlockchainService
-from app.routers.auth_router import get_current_user
 
 import logging
-import random
-import string
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -189,129 +180,97 @@ async def get_all_votes(blockchain_service: BlockchainService = Depends(get_bloc
         logger.error(f"Error getting votes: {str(e)}")
         raise handle_blockchain_error("get votes", e)
 
-@router.get("/summary", response_model=StandardResponse[VoteStatusResponse])
-async def get_vote_summary(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    """
-    Get a summary of all votes.
-    
-    Returns:
-        Status information for all votes
-    """
+
+@router.post("/get-vote-information/{election_id}", response_model=StandardResponse[List[Dict[str, Any]]])
+async def get_vote_information(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     try:
-        total_votes = await blockchain_service.call_contract_function("voteCount")
-        active_votes = 0
-        closed_votes = 0
-        decrypted_votes = 0
-        
-        for i in range(total_votes):
-            vote_data = await blockchain_service.call_contract_function("getVote", i)
-            status = vote_data[8] if len(vote_data) > 8 else None
-            if status == "active":
-                active_votes += 1
-            elif status == "closed":
-                closed_votes += 1
-            elif status == "decrypted":
-                decrypted_votes += 1
-        
+        all_votes = []
+        votes = await blockchain_service.call_contract_function("getVotes", election_id)
+        for index, vote in enumerate(votes):  # Add index tracking
+            all_votes.append({
+                "id": election_id,
+                "vote_id": index,
+                "ciphertext": vote[1],
+                "g1r": vote[2],
+                "g2r": vote[3],
+                "alphas": vote[4],
+                "voter": vote[5],
+                "threshold": vote[6]
+            })
         return StandardResponse(
             success=True,
-            message="Successfully retrieved vote summary",
-            data=VoteStatusResponse(
-                total_votes=total_votes,
-                active_votes=active_votes,
-                closed_votes=closed_votes,
-                decrypted_votes=decrypted_votes
-            )
+            message=f"Successfully retrieved vote information for election {election_id}",
+            data=all_votes
         )
     except Exception as e:
-        logger.error(f"Error getting vote summary: {str(e)}")
-        raise handle_blockchain_error("get vote summary", e)
+        logger.error(f"Error getting election information: {str(e)}")
+        raise handle_blockchain_error("get election information", e)
 
-@router.get("/{vote_id}", response_model=StandardResponse[Dict[str, Any]])
-async def get_vote_data(vote_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    """
-    Get vote data by ID.
+
+@router.post("/store-public-key/{vote_id}", response_model=StandardResponse[TransactionResponse])
+async def store_public_key(vote_id: int, data: PublicKeyRequest, db=Depends(get_db)):
+    # The public key is already validated as a string by Pydantic
+    public_key_input = data.public_key
     
-    Args:
-        vote_id: ID of the vote
-        
-    Returns:
-        Vote data including ciphertext, nonce, and decryption time
-    """
-    try:
-        # Call the blockchain service to get the vote data using the helper method
-        vote_data = await blockchain_service.call_contract_function("getVote", vote_id)
-        
-        # Convert the vote data to a readable format
-        data = {
-            "id": vote_id,
-            "ciphertext": vote_data[0].hex() if vote_data[0] else None,
-            "nonce": vote_data[1].hex() if vote_data[1] else None,
-            "decryption_time": vote_data[2] if len(vote_data) > 2 else None,
-            "g2r": [str(vote_data[3][0]), str(vote_data[3][1])] if len(vote_data) > 3 and vote_data[3] else None,
-            "title": vote_data[4] if len(vote_data) > 4 else None,
-            "description": vote_data[5] if len(vote_data) > 5 else None,
-            "start_date": datetime.fromtimestamp(vote_data[6]).isoformat() if len(vote_data) > 6 else None,
-            "end_date": datetime.fromtimestamp(vote_data[7]).isoformat() if len(vote_data) > 7 else None,
-            "status": vote_data[8] if len(vote_data) > 8 else None,
-            "participant_count": vote_data[9] if len(vote_data) > 9 else None,
-            "options": vote_data[10] if len(vote_data) > 10 else None,
-            "reward_pool": blockchain_service.w3.from_wei(vote_data[11], 'ether') if len(vote_data) > 11 else 0,
-            "required_deposit": blockchain_service.w3.from_wei(vote_data[12], 'ether') if len(vote_data) > 12 else 0,
+    # Prepare the key for storage/query: remove the "0x" prefix if present
+    public_key_processed = public_key_input
+    if public_key_input.startswith('0x'):
+        public_key_processed = public_key_input[2:] # Slice off the "0x"
+    
+    # Define the filter to find an existing document
+    filter_query = {
+        "vote_id": vote_id,
+        "public_key": public_key_processed, 
+    }
+
+    # Define the data to be set on update or insert
+    update_data = {
+        "$set": {
+            "reward_token": 0 if data.is_secret_holder else 1,
+            "is_secret_holder": data.is_secret_holder,
+            # Ensure vote_id and public_key are also set on insert
+            "vote_id": vote_id, 
+            "public_key": public_key_processed 
         }
-        
-        return StandardResponse(
-            success=True,
-            message=f"Successfully retrieved vote data for vote {vote_id}",
-            data=data
-        )
-    except Exception as e:
-        logger.error(f"Error getting vote data: {str(e)}")
-        raise handle_blockchain_error("get vote data", e)
+    }
 
-@router.post("", response_model=StandardResponse[TransactionResponse])
-async def submit_vote(request: VoteSubmitRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    """
-    Submit an encrypted vote to the blockchain.
+    # Use update_one with upsert=True
+    # This will update if found, or insert if not found.
+    result = await db.public_keys.update_one(filter_query, update_data, upsert=True)
+
+    # Optional: Check result details if needed (e.g., result.matched_count, result.upserted_id)
+    # logger.info(f"Upsert result for vote {vote_id}, key {public_key_processed}: Matched={result.matched_count}, UpsertedId={result.upserted_id}")
+
+    return StandardResponse(
+        success=True,
+        # Adjust message slightly to reflect upsert logic
+        message="Public key stored or updated successfully", 
+    )
+
+
+@router.post("/validate-public-key", response_model=StandardResponse[TransactionResponse])
+async def validate_public_key(data: KeyRequest, db=Depends(get_db)):
+    public_key_input = data.public_key
     
-    Args:
-        request: Vote submission request with vote data and decryption time
-        
-    Returns:
-        Transaction response with transaction hash and vote ID
-    """
-    try:
-        # Validate the decryption time
-        current_time = int(datetime.now(UTC).timestamp())
-        if request.decryption_time <= current_time:
-            raise handle_validation_error("Decryption time must be in the future")
-            
-        # Call the blockchain service to submit the vote
-        result = await blockchain_service.submit_vote(
-            request.vote_data,
-            request.decryption_time,
-            request.reward_amount or 0.1,  # Default to 0.1 ETH if not provided
-            request.threshold
-        )
-        
-        if not result.get("success", False):
-            raise handle_blockchain_error("submit vote", Exception(result.get("error", "Unknown error")))
-            
+    # Prepare the key for DB query: remove the "0x" prefix if present
+    public_key_to_query = public_key_input
+    if public_key_input.startswith('0x'):
+        public_key_to_query = public_key_input[2:] # Slice off the "0x"
+
+
+    # Query the database using the raw hex string (without 0x)
+    key = await db.public_keys.find_one({"public_key": public_key_to_query})
+    
+    if not key:
+        # Log the key as received (with 0x for clarity if needed) but query uses raw hex
+        logger.warning(f"Public key not found in DB during validation: {public_key_input}")
+        raise HTTPException(status_code=404, detail="Invalid public key")
+    else:
         return StandardResponse(
             success=True,
-            message="Successfully submitted vote",
-            data=TransactionResponse(
-                success=True,
-                message="Successfully submitted vote",
-                transaction_hash=result["transaction_hash"],
-                vote_id=result.get("vote_id")
-            )
+            message="Public key validated successfully",
         )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error submitting vote: {str(e)}")
-        raise handle_blockchain_error("submit vote", e)
+
 
 # Function to generate a unique alphanumeric token
 def generate_voting_token(length=8):
@@ -319,158 +278,94 @@ def generate_voting_token(length=8):
     characters = string.ascii_letters + string.digits
     return ''.join(random.choices(characters, k=length))
 
-@router.post("/tokens/{vote_id}", response_model=StandardResponse[VotingTokenResponse])
-async def generate_token(vote_id: int, db=Depends(get_db)):
-    """
-    Generate a unique voting token for a vote.
-    
-    Args:
-        vote_id: ID of the vote
-        
-    Returns:
-        StandardResponse with generated token
-    """
-    try:
-        # Generate a unique token
-        max_attempts = 10  # Prevent infinite loops
-        attempts = 0
-        
-        while attempts < max_attempts:
-            token = generate_voting_token()
-            
-            # Check if the token already exists
-            existing_token = await db.election_tokens.tokens.find_one({"token": token})
-            if existing_token is None:
-                # Create token object
-                token_data = {
-                    "vote_id": vote_id,
-                    "token": token,
-                    "created_at": datetime.now(UTC).isoformat()
-                }
-                
-                # Save the token
-                await db.election_tokens.tokens.insert_one(token_data)
-                
-                # Create response
-                token_response = VotingTokenResponse(
-                    token=token,
-                    vote_id=vote_id
-                )
-                
-                return StandardResponse(
-                    success=True,
-                    message="Token generated successfully",
-                    data=token_response
-                )
-            
-            attempts += 1
-        
-        # If we couldn't generate a unique token after max attempts
-        raise handle_validation_error("Failed to generate unique token after maximum attempts")
-        
-    except Exception as e:
-        logger.error(f"Error generating token: {str(e)}")
-        raise handle_blockchain_error("generate token", e)
 
-@router.get("/tokens/validate", response_model=StandardResponse[Dict[str, bool]])
-async def validate_token(token: str, db=Depends(get_db)):
-    """
-    Validate a voting token.
+@router.post("/submit-vote/{election_id}", response_model=StandardResponse[TransactionResponse])
+async def submit_vote(election_id: int, request: dict, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     
-    Args:
-        token: The token to validate
-        
-    Returns:
-        Validation result
-    """
-    try:
-        # Check if the token exists in the database
-        token_doc = await db.election_tokens.tokens.find_one({"token": token})
-        
-        if token_doc:
-            return StandardResponse(
-                success=True,
-                message="Token is valid",
-                data={"valid": True, "vote_id": token_doc["vote_id"]}
-            )
-        else:
-            return StandardResponse(
-                success=True,
-                message="Token is invalid",
-                data={"valid": False}
-            )
-    except Exception as e:
-        logger.error(f"Error validating token: {str(e)}")
-        raise handle_blockchain_error("validate token", e)
+    # --- Validate and process voter public key --- 
+    voter_hex = request.get("voter")
+    if not voter_hex or not isinstance(voter_hex, str):
+        raise HTTPException(status_code=422, detail="Missing or invalid 'voter' field (string expected).")
+    # Ensure '0x' prefix
+    if not voter_hex.startswith('0x'):
+        voter_hex = '0x' + voter_hex
 
-@router.get("/{vote_id}/shares", response_model=StandardResponse[ShareStatusResponse])
-async def get_share_status(
-    vote_id: int,
-    blockchain_service: BlockchainService = Depends(get_blockchain_service)
-):
-    """
-    Get the status of share submissions for a vote.
-    
-    Args:
-        vote_id: ID of the vote
+    # --- Check if voter already voted --- 
+    # Index [5] verified to be the 'voter' string based on the updated contract struct.
+    votes_from_chain = await blockchain_service.call_contract_function("getVotes", election_id) 
+    if (any(entry[5] == voter_hex for entry in votes_from_chain)):
+        raise HTTPException(status_code=400, detail="public key has already cast a vote")
         
-    Returns:
-        Share status including total holders, submitted shares, and missing shares
-    """
+    # --- Validate and process list of holder public keys --- 
+    public_keys_input = request.get("public_keys")
+    if not public_keys_input or not isinstance(public_keys_input, list):
+        raise HTTPException(status_code=422, detail="Missing or invalid 'public_keys' field (list expected).")
+    
+    public_keys_hex_list = []
+    for key_str in public_keys_input:
+        if not isinstance(key_str, str):
+             raise HTTPException(status_code=422, detail=f"Invalid item type in 'public_keys' list (string expected, got {type(key_str)}). Item: {key_str}")
+        pk_hex = key_str
+        # Ensure '0x' prefix for each key in the list
+        if not pk_hex.startswith('0x'):
+            pk_hex = '0x' + pk_hex
+        public_keys_hex_list.append(pk_hex)
+    
+    # --- Validate other required fields --- 
+    required_fields = ["election_id", "ciphertext", "g1r", "g2r", "alpha", "threshold"]
+    for field in required_fields:
+        if field not in request:
+            raise HTTPException(status_code=422, detail=f"Missing required field: {field}")
+            
+    # TODO: Add type validation for these fields if necessary (e.g., threshold is int)
+    
+    # --- Prepare Transaction --- 
+    nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
+    
+    # Ensure election_id and threshold are integers
     try:
-        # Call the blockchain service to get the share status
-        status = await blockchain_service.get_share_status(vote_id)
+        election_id_int = int(request["election_id"])
+        threshold_int = int(request["threshold"])
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="'election_id' and 'threshold' must be valid integers.")
+        
+    # Estimate Gas
+    estimated_gas = blockchain_service.contract.functions.submitVote(
+        election_id_int,
+        public_keys_hex_list, # Use corrected list of hex strings
+        request["ciphertext"],
+        request["g1r"],
+        request["g2r"],
+        request["alpha"],
+        voter_hex, # Use corrected voter hex string
+        threshold_int 
+    ).estimate_gas({"from": WALLET_ADDRESS})
+
+    # Build Transaction
+    create_vote_tx = blockchain_service.contract.functions.submitVote(
+        election_id_int,
+        public_keys_hex_list, # Use corrected list of hex strings
+        request["ciphertext"],
+        request["g1r"],
+        request["g2r"],
+        request["alpha"],
+        voter_hex, # Use corrected voter hex string
+        threshold_int
+    ).build_transaction({
+        'from': WALLET_ADDRESS,
+        'gas': estimated_gas,
+        'gasPrice': blockchain_service.w3.eth.gas_price,
+        'nonce': nonce,
+    })
+
+    signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_vote_tx, PRIVATE_KEY)
+    tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+    receipt = blockchain_service.w3.eth.wait_for_transaction_receipt(tx_hash)
+    
+    if receipt.status == 1:
         return StandardResponse(
             success=True,
-            message="Successfully retrieved share status",
-            data=ShareStatusResponse(
-                total_holders=status["total_holders"],
-                submitted_shares=status["submitted_shares"],
-                missing_shares=status["missing_shares"],
-                holder_status=status["holder_status"]
-            )
+            message="Successfully submitted vote"
         )
-    except Exception as e:
-        logger.error(f"Error getting share status: {str(e)}")
-        raise handle_blockchain_error("get share status", e)
-
-@router.post("/{vote_id}/decrypt", response_model=StandardResponse[DecryptVoteResponse])
-async def decrypt_vote(
-    vote_id: int,
-    request: Optional[DecryptVoteRequest] = None,
-    blockchain_service: BlockchainService = Depends(get_blockchain_service)
-):
-    """
-    Decrypt a vote using submitted shares.
-    
-    Args:
-        vote_id: ID of the vote
-        request: Optional request with custom threshold
-        
-    Returns:
-        Decrypted vote data
-    """
-    try:
-        # Call the blockchain service to decrypt the vote
-        threshold = request.threshold if request and hasattr(request, 'threshold') else None
-        result = await blockchain_service.decrypt_vote(vote_id, threshold)
-        
-        if not result.get("success", False):
-            raise handle_blockchain_error("decrypt vote", Exception(result.get("error", "Unknown error")))
-            
-        return StandardResponse(
-            success=True,
-            message="Vote decrypted successfully",
-            data=DecryptVoteResponse(
-                vote_id=vote_id,
-                vote_data=result["data"]["vote_data"],
-                decryption_time=result["data"]["decryption_time"],
-                shares_used=result["data"]["shares_used"],
-                threshold=result["data"]["threshold"]
-            )
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error decrypting vote: {str(e)}")
-        raise handle_blockchain_error("decrypt vote", e)
+    else:
+        raise HTTPException(status_code=500, detail="vote failed to be submitted")

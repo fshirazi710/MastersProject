@@ -1,0 +1,114 @@
+/* Encryption status card showing key holders info */
+.encryption-status {
+  display: flex;
+  flex-direction: column;
+  gap: 10px; /* Spacing between status items */
+}
+
+.status-item {
+  display: flex;
+  justify-content: space-between; /* Pushes label left, value right */
+  align-items: center; /* Vertically align items */
+}
+
+.status-item .label {
+  /* Keep label styling consistent if needed */
+  color: var(--text-muted);
+  flex-shrink: 0; /* Prevent label from shrinking */
+  margin-right: 10px; /* Add space between label and value */
+}
+
+.status-item span:last-child {
+  /* Style for the value */
+  font-weight: 500;
+  text-align: right;
+}
+
+/* Styles moved from [id].vue */
+.loading {
+  text-align: center;
+  font-size: 1.2em;
+  color: #666;
+
+  .spinner {
+    border: 8px solid #f3f3f3; /* Light grey */
+    border-top: 8px solid #3498db; /* Blue */
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto;
+  }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.status-message {
+  padding: 10px 15px;
+  margin-bottom: 15px;
+  border-radius: var(--border-radius);
+  text-align: center;
+  font-weight: 500;
+  margin-top: 20px;
+}
+
+.info {
+  background-color: var(--info-light);
+  border: 1px solid var(--info);
+  color: var(--info-dark);
+}
+
+.warning {
+  /* Define specific warning styles if needed, or inherit */
+  /* Example:
+  background-color: var(--warning-light);
+  border: 1px solid var(--warning);
+  color: var(--warning-dark);
+  */
+}
+
+.ending-soon {
+  color: var(--warning);
+  font-weight: bold;
+  animation: pulse-opacity 2s infinite; /* Renamed animation */
+}
+
+@keyframes pulse-opacity {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+/* End of styles moved from [id].vue */
+
+.info-card {
+  // ... existing styles ...
+}
+
+/* Timeline card specifics */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px; /* Spacing between timeline items */
+}
+
+.timeline-item {
+  display: flex;
+  justify-content: space-between; /* Pushes label left, value right */
+  align-items: center; /* Vertically align items */
+}
+
+.timeline-item .label {
+  color: var(--text-muted);
+  flex-shrink: 0; /* Prevent label from shrinking */
+  margin-right: 10px; /* Add space between label and value */
+}
+
+.timeline-item .value {
+  font-weight: 500;
+  text-align: right;
+}
+
+// ... rest of the styles ... 
