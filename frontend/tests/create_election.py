@@ -137,10 +137,10 @@ if __name__ == '__main__':
     obtain_element(driver, (By.ID, "endDate"), timeout).send_keys(test_end_time)
 
     optionA = driver.find_element(By.XPATH, '//input[@placeholder="Option 1"]')
-    optionA.send_keys("my test option a")
+    optionA.send_keys("10")
 
     optionB = driver.find_element(By.XPATH, '//input[@placeholder="Option 2"]')
-    optionB.send_keys("my test option b")
+    optionB.send_keys("20")
 
     submitButton = driver.find_element(By.XPATH, '//button[@type="submit"]')
     submitButton.click()
