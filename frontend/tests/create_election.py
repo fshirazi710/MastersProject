@@ -243,6 +243,10 @@ def create_election(driver, title, description, start_time, end_time):
     obtain_element(driver, (By.ID, "description"), timeout).send_keys(description)
     obtain_element(driver, (By.ID, "startDate"), timeout).send_keys(start_time)
     obtain_element(driver, (By.ID, "endDate"), timeout).send_keys(end_time)
+    obtain_element(driver, (By.XPATH, '//input[@value="options"]'), timeout).click()
+
+    # time to fill in the form
+    time.sleep(5)
 
     optionA = driver.find_element(By.XPATH, '//input[@placeholder="Option 1"]')
     optionA.send_keys("10")
@@ -347,9 +351,9 @@ if __name__ == '__main__':
         quit()
 
     current_time = datetime.now()
-    start_time = (current_time + timedelta(minutes=5))
-    end_time = (current_time + timedelta(minutes=8))
-    election_shares_reveal_deadline = (current_time + timedelta(minutes = 8 + 3))
+    start_time = (current_time + timedelta(minutes=3))
+    end_time = (current_time + timedelta(minutes=6))
+    election_shares_reveal_deadline = (current_time + timedelta(minutes = 6 + 3))
     title = f"My_Test_Election_{start_time.strftime('%m/%d/%Y_%H%M')}"
     description = f"My_Test_Election_Description_{start_time.strftime('%m/%d/%Y_%H%M')}"
 
@@ -392,7 +396,22 @@ if __name__ == '__main__':
     
     # Now that the election has started, submit votes
     print("The election start time has been reached")
+    # slider = WebDriverWait(driver, timeout).until(
+    # EC.presence_of_element_located((By.CLASS_NAME, "custom-slider-input")))
+    # driver.execute_script
+    # ("arguments[0].value = arguments[1]; "
+    # "arguments[0].dispatchEvent(new Event('input'));", slider, 0.8)
 
+    # Select option 1
+    option1 = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located((By.XPATH, "//input[@id='option-1']")))
+    option1.click()
+
+    vote_submit_button = WebDriverWait(driver, timeout).until(    
+    EC.presence_of_element_located(
+        (By.XPATH, "//button[contains(text(), 'Submit Encrypted Vote')]")))
+    vote_submit_button.click()
+    
     # driver.quit()
     
 
