@@ -257,20 +257,61 @@ def create_election(driver, title, description, start_time, end_time):
     WebDriverWait(driver, timeout).until(EC.alert_is_present())
     driver.switch_to.alert.accept()
 
-if __name__ == '__main__':
-    
-    firefox_profile_path = "test_profiles/testprofile_0"
-    timeout = 20
+
+def create_driver_with_profile(profile_path, headless = True):
     options = Options()
     options.add_argument("--window-size=1280x1600")
 
-    # To run in headless mode (without opening a window to run it in)
-    # If you want to see the frontend testing for debugging, comment out this line.
-    # options.add_argument('--headless')
+    
+    if headless:
+        # To run in headless mode (without opening a window to run it in)
+        options.add_argument('--headless')
 
     firefox_profile = FirefoxProfile(firefox_profile_path)
     options.profile = firefox_profile
     driver = webdriver.Firefox(options=options)
+    print(f"successfully created driver with profile path {profile_path}")
+    return driver
+
+
+def register_to_vote(d, registration_url):
+    timeout = 20
+    d.get(registration_url)
+
+    # Register to vote as a secret holder (yes checked for secret holding by default)
+    register = WebDriverWait(d, timeout).until(    
+    EC.presence_of_element_located(
+        (By.XPATH, "//button[contains(text(), 'Register To Vote')]")))
+    
+    register.click()
+
+    # Wait until alert is visible then accept it.
+    WebDriverWait(d, timeout).until(EC.alert_is_present())
+    d.switch_to.alert.accept()
+
+    # Check that right now (before election start time) votes cannot be cast
+    voting_unavailable_text = "Voting has not started yet. Please come back when the election is active."
+    
+    try:
+        voting_unavailable = WebDriverWait(d, timeout*6).until(
+            EC.presence_of_element_located((
+                By.XPATH, f"//div[contains(text(), '{voting_unavailable_text}')]")))
+        print("Election testing success: voting was unavailable before election start")
+    except NoSuchElementException:
+        print("Election testing failure: voting was not unavailable before election start")
+
+if __name__ == '__main__':
+    
+    firefox_profile_path = "test_profiles/testprofile_0"
+    timeout = 20
+    driver = create_driver_with_profile(firefox_profile_path, headless=False)
+    # Open other drivers to act as participants
+    test_drivers = []
+    for x in range(1, 3):
+        test_driver = create_driver_with_profile(f"test_profiles/testprofile_{x}")
+        test_drivers.append(test_driver)
+
+
     driver.install_addon("metamask.xpi", temporary=True)
     uuid = get_extension_uuid(driver, "MetaMask")
     if not(uuid == None):
@@ -306,16 +347,20 @@ if __name__ == '__main__':
         quit()
 
     current_time = datetime.now()
-    start_time = (current_time + timedelta(minutes=10)).strftime('%m/%d/%Y_%H%M')
-    end_time = (current_time + timedelta(minutes=20)).strftime('%m/%d/%Y_%H%M')
-    election_shares_reveal_deadline = (current_time + timedelta(minutes = 20 + 15)).strftime('%m/%d/%Y_%H%M')
-    title = f"My_Test_Election_{start_time}"
-    description = f"My_Test_Election_Description_{start_time}"
+    start_time = (current_time + timedelta(minutes=5))
+    end_time = (current_time + timedelta(minutes=8))
+    election_shares_reveal_deadline = (current_time + timedelta(minutes = 8 + 3))
+    title = f"My_Test_Election_{start_time.strftime('%m/%d/%Y_%H%M')}"
+    description = f"My_Test_Election_Description_{start_time.strftime('%m/%d/%Y_%H%M')}"
 
-    print(f"election start time {start_time}")
-    print(f"election_end_time {end_time}")
-    print(f"election_shares_reveal_deadline {election_shares_reveal_deadline}")
-    create_election(driver, title, description, start_time, end_time)
+    print(f"election start time {start_time.strftime('%m/%d/%Y_%H%M')}")
+    print(f"election_end_time {end_time.strftime('%m/%d/%Y_%H%M')}")
+    print(f"election_shares_reveal_deadline {election_shares_reveal_deadline.strftime('%m/%d/%Y_%H%M')}")
+    create_election(driver, 
+                    title, 
+                    description, 
+                    start_time.strftime('%m/%d/%Y_%H%M'), 
+                    end_time.strftime('%m/%d/%Y_%H%M'))
 
     # now that the election is created, we should try registering a few secret holders
     # then double checking the functionality works as it should. 
@@ -326,7 +371,7 @@ if __name__ == '__main__':
 
     # Get the element containing the election description, then the parent div vote card
     # all-votes can take a while to load, give a generous timeout.
-    election_description_p = election_description_p = WebDriverWait(driver, timeout*6).until(
+    election_description_p = WebDriverWait(driver, timeout*6).until(
     EC.presence_of_element_located((By.XPATH, f"//p[contains(text(), '{description}')]"))
 )
     election_description_p_parent = election_description_p.parent
@@ -335,8 +380,20 @@ if __name__ == '__main__':
     election_page_a = election_description_p_parent.find_element(By.XPATH, "//a[contains(text(), 'Signup To Vote')]")
     election_page_href = election_page_a.get_attribute('href')
     print(election_page_href)
-    driver.get(election_page_href)
-    #driver.quit()
+
+    # Have all users register to vote as secret holders.
+    register_to_vote(driver, election_page_href)
+    for test_driver in test_drivers:
+        register_to_vote(test_driver, election_page_href)
+    
+    # Wait until the election starts
+    while datetime.now() < start_time:
+        time.sleep(1)
+    
+    # Now that the election has started, submit votes
+    print("The election start time has been reached")
+
+    # driver.quit()
     
 
 
