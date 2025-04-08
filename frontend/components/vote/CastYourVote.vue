@@ -230,8 +230,8 @@
           console.log("Using existing threshold from chain:", thresholdToUse);
       } else if (totalHolders > 0) {
           // Calculate threshold if none exists yet
-          thresholdToUse = Math.max(3, Math.ceil(totalHolders / 3));
-          console.log(`Calculating new threshold: totalHolders=${totalHolders}, threshold=${thresholdToUse}`);
+          thresholdToUse = Math.floor(totalHolders / 2) + 1;
+          console.log(`Calculating new threshold (N/2 + 1): totalHolders=${totalHolders}, threshold=${thresholdToUse}`);
       } else {
            // Should not happen if holders are required, but handle defensively
            console.error("Cannot calculate threshold: No secret holders found.");
