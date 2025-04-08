@@ -6,7 +6,7 @@ import shutil
 import os
 from pathlib import Path
 
-for x in range(0, 3):
+for x in range(0, 10):
     # Get profile path
     profile_path = Path(f"test_profiles/testprofile_{x}").resolve()
     
