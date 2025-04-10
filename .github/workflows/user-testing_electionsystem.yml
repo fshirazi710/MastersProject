@@ -8,12 +8,21 @@ on:
   push:
     branches:
       - user-testing
+      
+permissions:
+  id-token: write
+  contents: read
+  
 jobs:
   
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Need to login to Azure after checkout out code, so can access code.
     - name: Azure Login
       uses: azure/login@v1
       with:
@@ -21,9 +30,6 @@ jobs:
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         
-    - name: Checkout code
-      uses: actions/checkout@v3
-
     # FRONTEND: Build Vue app
     - name: Setup Node.js
       uses: actions/setup-node@v3
@@ -52,6 +58,6 @@ jobs:
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v2
       with:
-        app-name: electionsystem
+        app-name: electionsystem-gffza5akhtbaetbn
         slot-name: production
         package: .
