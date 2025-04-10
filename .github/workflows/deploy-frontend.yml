@@ -1,0 +1,42 @@
+name: Deploy Nuxt Frontend to Azure Web App
+
+on:
+  push:
+    branches:
+      - user-testing 
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Need to login to Azure after checkout out code, so can access code.
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '22'
+
+    - name: Install dependencies and build
+      working-directory: ./frontend
+      run: |
+        npm install
+        npm run build
+        npm run start
+
+    - name: Deploy to Azure Web App
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: electionsystem-frontend 
+        slot-name: production
+        package: ./frontend

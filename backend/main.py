@@ -16,21 +16,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-### NEED THE BELOW FOR DEPLOYMENT TO AZURE
-
-# Path to frontend built files - when in github actions npm run build is ran 
-# a folder called /dist is made in the frontend folder. 
-frontend_path = os.path.join(os.path.dirname(__file__), "../frontend/dist")
-
-# Serve static files
-app.mount("/static", StaticFiles(directory=os.path.join(frontend_path, "static")), name="static")
-
-
-# Serve index.html at "/"
-@app.get("/")
-async def serve_spa():
-    return FileResponse(os.path.join(frontend_path, "index.html"))
-
 # Event handlers for MongoDB connection
 @app.on_event("startup")
 async def startup_db_client():
