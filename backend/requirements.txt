@@ -62,7 +62,6 @@ pytest-cov==4.1.0
 python-dotenv==1.0.1
 python-multipart==0.0.9
 pyunormalize==16.0.0
-pywin32==308
 referencing==0.36.2
 regex==2024.11.6
 requests==2.32.3
@@ -80,3 +79,7 @@ uvicorn==0.34.0
 web3==7.10.0
 websockets==15.0
 yarl==1.18.3
+
+# Install pywin32 only on Windows
+pywin32==308 ; sys_platform == "win32"
+
