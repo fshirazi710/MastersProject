@@ -3,6 +3,7 @@ Share router for managing secret shares in the system.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from collections import defaultdict
+import math # Potentially needed if the stored value isn't an integer
 
 from app.core.dependencies import get_blockchain_service, get_db
 from app.core.error_handling import handle_blockchain_error
@@ -92,29 +93,38 @@ async def submit_share(
     receipt = blockchain_service.w3.eth.wait_for_transaction_receipt(tx_hash)
 
     if receipt.status == 1:
-        # Prepare the key for DB query: remove the "0x" prefix if present
         public_key_input = data.public_key
-        public_key_to_query = public_key_input
-        if public_key_input.startswith('0x'):
-            public_key_to_query = public_key_input[2:] # Slice off the "0x"
-            
-        # Update DB to mark shares as released for this holder/election
-        # Use the key WITHOUT 0x prefix for the query
-        filter_criteria = {"public_key": public_key_to_query, "vote_id": election_id}
-        # Set reward_token to 5 upon successful share submission, per intended logic
-        update_field = {"$set": {"reward_token": 5}}
-        # Use update_one or update_many depending on your DB structure
-        update_result = await db.public_keys.update_one(filter_criteria, update_field)
-        
-        # Optional: Log if the update didn't find a document
-        if update_result.matched_count == 0:
-            logger.warning(f"DB update for released_secret failed: No document found for pk {public_key_to_query} and vote_id {election_id}")
-            
+        public_key_to_query = public_key_input[2:] if public_key_input.startswith('0x') else public_key_input
+
+        # Mark the share as successfully submitted in the database
+        # The final reward_token will be updated later when results are finalized
+        try:
+            filter_criteria = {"public_key": public_key_to_query, "vote_id": election_id}
+            # Set a flag indicating successful submission
+            update_field = {"$set": {"share_submitted_successfully": True}}
+            update_result = await db.public_keys.update_one(filter_criteria, update_field)
+
+            if update_result.matched_count == 0:
+                # This case might indicate an issue, as the holder should exist if they are submitting a share.
+                logger.warning(f"DB update for share_submitted_successfully flag failed: No document found for pk {public_key_to_query} and vote_id {election_id}")
+            elif update_result.modified_count == 0:
+                # This might mean the flag was already set, which could be okay or indicate a duplicate submission attempt handling.
+                logger.info(f"Share submission flag already set for pk {public_key_to_query} and vote_id {election_id}")
+            else:
+                logger.info(f"Successfully marked share submission for pk {public_key_to_query} and vote_id {election_id}")
+
+        except Exception as db_err:
+            logger.error(f"Database error while setting share submission flag for pk {public_key_to_query}, vote_id {election_id}: {str(db_err)}")
+            # Decide if this should prevent the success response. For now, let's still return success but log the error.
+            # raise HTTPException(status_code=500, detail="Failed to update share submission status in database")
+
         return StandardResponse(
             success=True,
-            message="Successfully submitted share(s)"
+            # Updated message to reflect only submission, not reward calculation
+            message="Share submitted successfully. Reward will be updated upon election finalization."
         )
     else:
+        # Transaction failed
         raise HTTPException(status_code=500, detail="secret share(s) failed to be stored on the blockchain")
 
 

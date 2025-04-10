@@ -338,19 +338,67 @@ async def get_election_metadata(election_id: int, db=Depends(get_db)):
 @router.post("/election/{election_id}/submit-token-value")
 async def submit_secret_holder_tokens_value(election_id: int, data: dict, db=Depends(get_db)):
     try:
+        # --- 1. Store the submitted average value in metadata --- 
         metadata_doc = await db.election_metadata.find_one({"election_id": election_id})
         
+        if not metadata_doc:
+             # Handle case where metadata doesn't exist, although it should for a slider
+             raise HTTPException(status_code=404, detail=f"Metadata not found for election {election_id}")
+
         # Check if the 'secret_holder_reward_tokens' field already exists
         if "secret_holder_reward_tokens" in metadata_doc:
+            # logger.info(f"Secret holder reward tokens value already submitted for election {election_id}.")
+            # Optionally, still proceed to update holder rewards if they might not have been updated before
+            # For now, let's return early as per original logic.
             return {"message": "Secret holder tokens value already submitted."}
-
-        # If the field doesn't exist, proceed with the update
-        await db.election_metadata.update_one(
-            {"election_id": election_id},
-            {"$set": {"secret_holder_reward_tokens": math.ceil(data["reward_tokens"])}}
-        )
         
-        return {"message": "Secret holder tokens value submitted successfully."}
+        submitted_value = data.get("reward_tokens")
+        if submitted_value is None:
+             raise HTTPException(status_code=400, detail="Missing 'reward_tokens' in request data.")
 
+        try:
+            # Store the average value (ceiling applied as in original code)
+            final_average_value = math.ceil(float(submitted_value))
+        except (ValueError, TypeError):
+             raise HTTPException(status_code=400, detail="Invalid 'reward_tokens' value provided.")
+
+        # Update the metadata document
+        update_meta_result = await db.election_metadata.update_one(
+            {"election_id": election_id},
+            {"$set": {"secret_holder_reward_tokens": final_average_value}}
+        )
+
+        if update_meta_result.matched_count == 0:
+             # Should not happen based on the check above, but handle defensively
+             raise HTTPException(status_code=500, detail=f"Failed to update metadata for election {election_id} after initial check.")
+        
+        # logger.info(f"Stored secret_holder_reward_tokens ({final_average_value}) for election {election_id}.")
+
+        # --- 2. Update reward_token for holders who submitted shares --- 
+        
+        # Determine the reward based on election type (assuming this endpoint is only for sliders)
+        # If this endpoint could be called for non-sliders, we'd need logic here.
+        # For sliders, reward is base + average.
+        final_reward = 10 + final_average_value
+        
+        # Update reward_token for all holders of this election who successfully submitted their share
+        filter_criteria = {
+            "vote_id": election_id,
+            "share_submitted_successfully": True # Target only those who submitted
+        }
+        update_field = {"$set": {"reward_token": final_reward}}
+        
+        # Use update_many to update all matching holders
+        update_holders_result = await db.public_keys.update_many(filter_criteria, update_field)
+        
+        # logger.info(f"Updated reward_token to {final_reward} for {update_holders_result.modified_count} holders in election {election_id} who submitted shares.")
+        if update_holders_result.matched_count > 0 and update_holders_result.modified_count == 0:
+             logger.warning(f"Found {update_holders_result.matched_count} holders who submitted shares for election {election_id}, but none required reward_token update (perhaps already set?).")
+
+        return {"message": f"Secret holder tokens value submitted successfully. Updated rewards for {update_holders_result.modified_count} holders."}
+
+    except HTTPException as http_exc: # Re-raise HTTP exceptions
+        raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in submit_secret_holder_tokens_value for election {election_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
