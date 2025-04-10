@@ -83,3 +83,5 @@ yarl==1.18.3
 # Install pywin32 only on Windows
 pywin32==308 ; sys_platform == "win32"
 
+# Need gunicorn for running backend on azure server
+gunicorn==21.2.0

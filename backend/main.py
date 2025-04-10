@@ -7,12 +7,29 @@ from app.routers.share_router import router as share_router
 from starlette.middleware.cors import CORSMiddleware
 from app.core.config import CORS_ALLOWED_ORIGINS
 from app.core.mongodb import connect_to_mongo, close_mongo_connection
-
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 app = FastAPI(
     title="Timed Release Crypto System API",
     description="API for the Timed Release Crypto System",
     version="1.0.0"
 )
+
+### NEED THE BELOW FOR DEPLOYMENT TO AZURE
+
+# Path to frontend built files - when in github actions npm run build is ran 
+# a folder called /dist is made in the frontend folder. 
+frontend_path = os.path.join(os.path.dirname(__file__), "../frontend/dist")
+
+# Serve static files
+app.mount("/static", StaticFiles(directory=os.path.join(frontend_path, "static")), name="static")
+
+
+# Serve index.html at "/"
+@app.get("/")
+async def serve_spa():
+    return FileResponse(os.path.join(frontend_path, "index.html"))
 
 # Event handlers for MongoDB connection
 @app.on_event("startup")
