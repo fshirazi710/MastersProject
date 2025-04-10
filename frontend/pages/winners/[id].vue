@@ -70,6 +70,8 @@ const submitEmail = async () => {
     const response = await electionApi.submitEmail(voteId, { email: formData.value.email });
     alert(response.data.message || "Email submitted successfully!");
     showEmailForm.value = false; // Hide form after submission
+    const voteCookieName = `vote_${voteId}_privateKey`;
+    Cookies.remove(voteCookieName); // Remove the private key cookie
     router.push('/');
   } catch (err) {
     console.error("Failed to submit email:", err);
@@ -87,7 +89,6 @@ const checkWinners = async () => {
 
   try {
     // Retrieve the vote-specific private key
-    console.log(voteId)
     const privateKeyCookie = `vote_${voteId}_privateKey`;
     const privateKeyHex = Cookies.get(privateKeyCookie);
 
