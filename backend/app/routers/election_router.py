@@ -1,6 +1,7 @@
 """
 Election router for managing elections in the system.
 """
+import math
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
@@ -333,3 +334,23 @@ async def get_election_metadata(election_id: int, db=Depends(get_db)):
             status_code=500,
             detail=f"Failed to retrieve metadata for election {election_id}"
         )
+
+@router.post("/election/{election_id}/submit-token-value")
+async def submit_secret_holder_tokens_value(election_id: int, data: dict, db=Depends(get_db)):
+    try:
+        metadata_doc = await db.election_metadata.find_one({"election_id": election_id})
+        
+        # Check if the 'secret_holder_reward_tokens' field already exists
+        if "secret_holder_reward_tokens" in metadata_doc:
+            return {"message": "Secret holder tokens value already submitted."}
+
+        # If the field doesn't exist, proceed with the update
+        await db.election_metadata.update_one(
+            {"election_id": election_id},
+            {"$set": {"secret_holder_reward_tokens": math.ceil(data["reward_tokens"])}}
+        )
+        
+        return {"message": "Secret holder tokens value submitted successfully."}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

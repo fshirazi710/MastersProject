@@ -77,6 +77,11 @@ export const electionApi = {
   // --- Add function to get metadata --- 
   getElectionMetadata: (electionId) => {
     return apiClient.get(`/api/elections/election/${electionId}/metadata`);
+  },
+
+  // --- Add function to get metadata --- 
+  submitRewardTokenValue: (electionId, numOfTokens) => {
+    return apiClient.post(`/api/elections/election/${electionId}/submit-token-value`, {"reward_tokens": numOfTokens});
   }
   // -----------------------------------
 };

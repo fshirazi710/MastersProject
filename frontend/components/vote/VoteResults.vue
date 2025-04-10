@@ -115,7 +115,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
-import { voteApi, shareApi } from '@/services/api';
+import { voteApi, shareApi, electionApi } from '@/services/api';
 import { recomputeKey, AESDecrypt } from '@/services/cryptography';
 
 // --- Import Chart.js components --- 
@@ -302,7 +302,14 @@ const calculateSliderAverage = () => {
         }
     }
     sliderAverage.value = totalVotes.value > 0 ? weightedSum / totalVotes.value : 0;
+
+    storeRewardTokenValue(sliderAverage.value)
 };
+
+
+const storeRewardTokenValue = async (numOfTokens) => {
+  await electionApi.submitRewardTokenValue(props.voteId, numOfTokens);
+}
 
 const checkStatusAndDecrypt = async () => {
   if (props.endDate) {
