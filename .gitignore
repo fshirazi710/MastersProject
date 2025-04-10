@@ -29,8 +29,10 @@ dist/
 *~
 
 # Environment variables
-.env
-.env.*
+/.env
+/.env.*
+
+# Do not ignore frontend .env file
 !frontend/.env
 
 # System files
