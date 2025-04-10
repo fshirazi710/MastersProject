@@ -40,7 +40,8 @@ dist/
 Thumbs.db
 
 # Backend
-backend/api.ini
+# Need this uncommented to deploy
+# backend/api.ini
 
 # Python
 __pycache__/
