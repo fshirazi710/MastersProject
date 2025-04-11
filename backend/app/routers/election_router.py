@@ -17,6 +17,7 @@ from app.helpers.election_helper import get_election_status, election_informatio
 from app.services.blockchain import BlockchainService
 import logging
 import json
+from web3.exceptions import ContractLogicError
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -26,26 +27,33 @@ router = APIRouter(prefix="/elections", tags=["Elections"])
 
 @router.post("/create-election", response_model=StandardResponse[TransactionResponse])
 async def create_election(data: ExtendedElectionCreateRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
-    # Extract core data for contract interaction
-    core_data = data.election_data
     
-    # Convert start and end dates from ISO format to Unix timestamps
-    start_timestamp = int(datetime.fromisoformat(core_data.start_date.replace('Z', '+00:00')).timestamp())
-    end_timestamp = int(datetime.fromisoformat(core_data.end_date.replace('Z', '+00:00')).timestamp())
-    
-    # Convert reward pool and required deposit from Ether to Wei
-    reward_pool_wei = blockchain_service.w3.to_wei(core_data.reward_pool, 'ether')
-    required_deposit_wei = blockchain_service.w3.to_wei(core_data.required_deposit, 'ether')
+    try:
+        # Extract core data for contract interaction
+        core_data = data.election_data
+        
+        # Convert start and end dates from ISO format to Unix timestamps
+        start_timestamp = int(datetime.fromisoformat(core_data.start_date.replace('Z', '+00:00')).timestamp())
+        end_timestamp = int(datetime.fromisoformat(core_data.end_date.replace('Z', '+00:00')).timestamp())
+        
+        # Convert reward pool and required deposit from Ether to Wei
+        reward_pool_wei = blockchain_service.w3.to_wei(core_data.reward_pool, 'ether')
+        required_deposit_wei = blockchain_service.w3.to_wei(core_data.required_deposit, 'ether')
 
-    # Call helper function with only core data
-    receipt = await create_election_transaction(
-        core_data,
-        start_timestamp, 
-        end_timestamp, 
-        reward_pool_wei, 
-        required_deposit_wei, 
-        blockchain_service,
-    )
+        # Call helper function with only core data
+        receipt = await create_election_transaction(
+            core_data,
+            start_timestamp, 
+            end_timestamp, 
+            reward_pool_wei, 
+            required_deposit_wei, 
+            blockchain_service,
+        )
+    except ContractLogicError as e:
+        return {"status": "failed", "error": str(e)}
+    
+    except Exception as e:
+        return {"status": "failed", "error": str(e)}
     
     if receipt.status != 1:
          raise HTTPException(status_code=500, detail="Failed to create election on blockchain")
