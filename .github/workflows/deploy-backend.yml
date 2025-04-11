@@ -24,7 +24,7 @@ jobs:
     - name: Install dependencies
       run: |
         # Upgrade pip
-        python -m pip install --upgrade pip
+        # python -m pip install --upgrade pip
 
         # Before deployment, the working directory is the project root.
         # After deployment, the working directory is /backend.
@@ -33,11 +33,8 @@ jobs:
         # Hence we must create the venv inside of the backend folder. 
         python -m venv backend/venv 
 
-        # Activate the venv
-        source backend/venv/bin/activate 
-
-        # Install requirements inside the venv 
-        pip install -r backend/requirements.txt 
+        # Activate the venv , install requirements inside the venv 
+        source backend/venv/bin/activate && pip install -r backend/requirements.txt 
 
     - name: Azure Login
       uses: azure/login@v1
