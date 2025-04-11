@@ -18,7 +18,7 @@ from app.services.blockchain import BlockchainService
 import logging
 import json
 from web3.exceptions import ContractLogicError
-
+import traceback
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,8 @@ async def create_election(data: ExtendedElectionCreateRequest, blockchain_servic
 
         if receipt.status != 1:
             logger.error(f"Blockchain transaction failed with status {receipt.status}")
+            logger.error(f"Unhandled exception occurred: {str(e)}")
+            logger.error(traceback.format_exc())
             raise HTTPException(status_code=400, detail="Election creation failed at blockchain level.")
         
     except ContractLogicError as e:

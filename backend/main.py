@@ -10,6 +10,19 @@ from app.core.mongodb import connect_to_mongo, close_mongo_connection
 import os
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+
+import logging
+import sys
+
+# Ensure logs get sent to stdout which azure log stream should catch
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
 app = FastAPI(
     title="Timed Release Crypto System API",
     description="API for the Timed Release Crypto System",
