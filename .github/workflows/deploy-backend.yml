@@ -23,8 +23,17 @@ jobs:
 
     - name: Install dependencies
       run: |
+        # Upgrade pip
         python -m pip install --upgrade pip
-        pip install -r ./backend/requirements.txt
+
+        # Make the virtual environment inside the project root, wwwroot (backend folder)
+        python -m venv /home/site/wwwroot/venv 
+
+        # Activate the venv
+        source /home/site/wwwroot/venv/bin/activate 
+
+        # Install requirements inside the venv 
+        pip install -r /home/site/wwwroot/requirements.txt 
 
     - name: Azure Login
       uses: azure/login@v1
