@@ -23,8 +23,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        # Upgrade pip
-        # python -m pip install --upgrade pip
+
 
         # Before deployment, the working directory is the project root.
         # After deployment, the working directory is /backend.
