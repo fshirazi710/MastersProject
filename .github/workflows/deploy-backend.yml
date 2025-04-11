@@ -21,20 +21,6 @@ jobs:
       with:
         python-version: '3.12'  # Ensure this matches the Python version you need
 
-    - name: Install dependencies
-      run: |
-
-
-        # Before deployment, the working directory is the project root.
-        # After deployment, the working directory is /backend.
-        # This backend folder has its contents copied to wwwroot, which becomes the new working directory.
-        # This means files in the repo root, not in the backend folder, will be lost.
-        # Hence we must create the venv inside of the backend folder. 
-        python -m venv backend/venv 
-
-        # Activate the venv , install requirements inside the venv 
-        source backend/venv/bin/activate && pip install -r backend/requirements.txt 
-
     - name: Azure Login
       uses: azure/login@v1
       with:
@@ -45,4 +31,6 @@ jobs:
       with:
         app-name: electionsystem-backend
         slot-name: production
-        package: ./backend  # Deploy the contents of the backend folder
+        # Deploy the contents of the backend folder. Azure auto creates a venv using requirements.txt
+        # inside of the working directory, wwwroot, in a folder called antenv.
+        package: ./backend  
