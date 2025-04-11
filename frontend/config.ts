@@ -21,7 +21,7 @@ const API_CONFIG = {
         baseURL: 'http://127.0.0.1:8000',
     },
     production: {
-        baseURL: process.env.NUXT_PUBLIC_API_URL || 'https://api.yourdomain.com', // This will be overridden in production
+        baseURL: "https://electionsystem-backend-f2f7frg8dhbjdye3.uksouth-01.azurewebsites.net/", // This will be overridden in production
     }
 } as const;
 
