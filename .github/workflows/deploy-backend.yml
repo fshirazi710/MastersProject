@@ -26,16 +26,18 @@ jobs:
         # Upgrade pip
         python -m pip install --upgrade pip
 
-        # Make the virtual environment inside the project root
-        # Deployed package is ./backend, which has its contents copied inside of /home/site/wwwroot
-        # /home/site/wwwroot is the current working directory of all instructions in the yaml. 
-        python -m venv venv 
+        # Before deployment, the working directory is the project root.
+        # After deployment, the working directory is /backend.
+        # This backend folder has its contents copied to wwwroot, which becomes the new working directory.
+        # This means files in the repo root, not in the backend folder, will be lost.
+        # Hence we must create the venv inside of the backend folder. 
+        python -m venv backend/venv 
 
         # Activate the venv
-        source venv/bin/activate 
+        source backend/venv/bin/activate 
 
         # Install requirements inside the venv 
-        pip install -r requirements.txt 
+        pip install -r backend/requirements.txt 
 
     - name: Azure Login
       uses: azure/login@v1
