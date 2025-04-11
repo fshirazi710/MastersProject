@@ -19,7 +19,7 @@ import logging
 import json
 from web3.exceptions import ContractLogicError
 import traceback
-# Configure logging
+# Configure logging - update
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/elections", tags=["Elections"])
