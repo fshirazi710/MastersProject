@@ -3,7 +3,7 @@ name: Deploy Nuxt Frontend to Azure Web App
 on:
   push:
     branches:
-      - user-testing 
+      - user-testing
 
 permissions:
   contents: read
@@ -16,7 +16,6 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
-    # Need to login to Azure after checkout out code, so can access code.
     - name: Azure Login
       uses: azure/login@v1
       with:
@@ -27,15 +26,22 @@ jobs:
       with:
         node-version: '22'
 
-    - name: Install dependencies and build
+    - name: Install dependencies
       working-directory: ./frontend
+      run: npm install
+
+    - name: Build frontend
+      working-directory: ./frontend
+      run: npm run build
+
+    - name: Move build output
       run: |
-        npm install
-        npm run build
+        mkdir deploy
+        cp -r ./frontend/.output/* ./deploy/
 
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v2
       with:
-        app-name: electionsystem-frontend 
+        app-name: electionsystem-frontend
         slot-name: production
-        package: ./frontend/.output # use the folder where the build output goes, which is ready to run.
+        package: ./deploy
