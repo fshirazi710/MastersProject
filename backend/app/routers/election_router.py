@@ -49,14 +49,20 @@ async def create_election(data: ExtendedElectionCreateRequest, blockchain_servic
             required_deposit_wei, 
             blockchain_service,
         )
+
+        if receipt.status != 1:
+            logger.error(f"Blockchain transaction failed with status {receipt.status}")
+            raise HTTPException(status_code=400, detail="Election creation failed at blockchain level.")
+        
     except ContractLogicError as e:
-        return {"status": "failed", "error": str(e)}
+        logger.error(f"Smart Contract rejected the transaction: {e}")
+        raise HTTPException(status_code=400, detail=f"Smart contract rejection: {str(e)}")
     
     except Exception as e:
-        return {"status": "failed", "error": str(e)}
+        logger.exception("Unexpected error during election creation")
+        raise HTTPException(status_code=500, detail="Internal server error during election creation.")
     
-    if receipt.status != 1:
-         raise HTTPException(status_code=500, detail="Failed to create election on blockchain")
+    
 
     # --- Store Metadata in DB --- 
     election_id = None
