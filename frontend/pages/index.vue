@@ -4,9 +4,15 @@
     <section class="hero">
       <h1>Timed Release Crypto System</h1>
       <p class="subtitle">Secure time-locked message delivery on the blockchain</p>
+      <div class="video-wrapper">
+        <video controls autoplay muted playsinline>
+          <source src="/assets/videos/demo.mp4" type="video/mp4" />
+          Your browser does not support the video tag.
+        </video>
+      </div>
       <!-- Call to action buttons with navigation -->
       <div class="cta-buttons">
-        <NuxtLink v-if="!store.loggedIn" to="/login" class="btn primary">Login</NuxtLink>
+        <NuxtLink v-if="!store.loggedIn" to="/all-votes" class="btn primary">All Votes</NuxtLink>
         <NuxtLink v-else to="/create-vote" class="btn primary">Create Vote</NuxtLink>
         <NuxtLink to="/faq" class="btn secondary">Learn More</NuxtLink>
       </div>
@@ -71,5 +77,20 @@ const handleLearnMore = (section) => {
 // Main styles are in _home.scss
 .feature-card {
   cursor: pointer;
+}
+
+.video-wrapper {
+  max-width: 800px;
+  margin: 2rem auto;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+
+  video {
+    width: 100%;
+    height: auto;
+    display: block;
+    border: none;
+  }
 }
 </style> 
