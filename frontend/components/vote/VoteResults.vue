@@ -293,14 +293,13 @@ const manageInterval = (activateFast) => {
        console.log("Activating fast interval (1s) for submission window.");
        fastCheckIntervalId = setInterval(checkStatusAndDecrypt, 1000); // 1 second
    } else {
-       // If not activating fast, decide if the slow interval should run
-       // Only run slow interval if vote hasn't ended OR if it ended but deadline hasn't passed AND we're not already decrypted/failed
-       if (!votingEnded.value || (votingEnded.value && !submissionDeadlinePassed.value && !isDecrypted.value && !submissionFailed.value)) {
-           // console.log("Activating slow interval (30s)."); // Optional log
-           // statusCheckInterval = setInterval(checkStatusAndDecrypt, 30000); // 30 seconds
-           // NOTE: Let's disable the 30s interval for now to avoid potential conflicts. The 1s interval covers the most critical period.
+       // Activate slower interval ONLY if results are not yet final
+       if (!isDecrypted.value && !submissionFailed.value) {
+           console.log("Activating slow interval (30s) for status checks."); 
+           statusCheckInterval = setInterval(checkStatusAndDecrypt, 30000); // 30 seconds
        } else {
-            console.log("No interval needed.");
+            // Results are final (decrypted or failed), no interval needed.
+            console.log("No interval needed, results are final.");
        }
    }
 };
