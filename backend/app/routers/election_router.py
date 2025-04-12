@@ -155,13 +155,12 @@ async def get_all_elections(blockchain_service: BlockchainService = Depends(get_
             required_keys = 0
             submitted_votes = await blockchain_service.call_contract_function("getVotes", election_id)
             if submitted_votes and len(submitted_votes) > 0:
-                # Vote struct: publicKey[0], ciphertext[1], g1r[2], g2r[3], alpha[4], voter[5], threshold[6]
                 required_keys = submitted_votes[0][6] # Index 6 is threshold
                 
             released_keys = await db.public_keys.count_documents({
                 "vote_id": election_id, 
                 "is_secret_holder": True, 
-                "reward_token": 5
+                "share_submitted_successfully": True
             })
             # --- End fetch --- 
             
@@ -207,11 +206,11 @@ async def get_election_information(election_id: int, blockchain_service: Blockch
              # Log if getting votes fails, but don't stop the request unless it's critical
              logger.warning(f"Could not retrieve votes for election {election_id} (might be normal if none submitted): {vote_err}")
 
-        # Step 3: Get released key count (this should be safe)
+        # Get released key count based on the new flag
         released_keys = await db.public_keys.count_documents({
             "vote_id": election_id, 
             "is_secret_holder": True, 
-            "reward_token": 5
+            "share_submitted_successfully": True
         })
 
         # Step 4: Format the final response
