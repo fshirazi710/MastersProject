@@ -20,36 +20,33 @@ import json
 from web3.exceptions import ContractLogicError, TransactionNotFound, TimeExhausted
 import traceback
 # Configure logging - update
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/elections", tags=["Elections"])
-
-def print_and_log(message):
-    print(message)
-    logger.info(message)
 
 @router.post("/create-election", response_model=StandardResponse[TransactionResponse])
 async def create_election(data: ExtendedElectionCreateRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
     
     try:
-        print_and_log("About to send createVote transaction...")
+        logger.info("About to send createVote transaction...")
         # Extract core data for contract interaction
         core_data = data.election_data
-        print_and_log(core_data)
+        logger.info(core_data)
 
         # Convert start and end dates from ISO format to Unix timestamps
         start_timestamp = int(datetime.fromisoformat(core_data.start_date.replace('Z', '+00:00')).timestamp())
-        print_and_log(start_timestamp)
+        logger.info(start_timestamp)
 
         end_timestamp = int(datetime.fromisoformat(core_data.end_date.replace('Z', '+00:00')).timestamp())
-        print_and_log(end_timestamp)
+        logger.info(end_timestamp)
         
         # Convert reward pool and required deposit from Ether to Wei
         reward_pool_wei = blockchain_service.w3.to_wei(core_data.reward_pool, 'ether')
-        print_and_log(reward_pool_wei)
+        logger.info(reward_pool_wei)
 
         required_deposit_wei = blockchain_service.w3.to_wei(core_data.required_deposit, 'ether')
-        print_and_log(required_deposit_wei)
+        logger.info(required_deposit_wei)
 
         # Call helper function with only core data
         receipt = await create_election_transaction(
@@ -60,7 +57,7 @@ async def create_election(data: ExtendedElectionCreateRequest, blockchain_servic
             required_deposit_wei, 
             blockchain_service,
         )
-        print_and_log(receipt)
+        logger.info(receipt)
 
         if receipt.status != 1:
             logger.error(f"Blockchain transaction failed with status {receipt.status}")
@@ -68,18 +65,18 @@ async def create_election(data: ExtendedElectionCreateRequest, blockchain_servic
             raise HTTPException(status_code=400, detail="Election creation failed at blockchain level.")
         
     except ContractLogicError as e:
-        print_and_log(traceback.format_exc())
-        print_and_log(f"Smart Contract rejected the transaction: {e}")
+        logger.info(traceback.format_exc())
+        logger.info(f"Smart Contract rejected the transaction: {e}")
         raise HTTPException(status_code=400, detail=f"Smart contract rejection: {str(e)}")
     
     except TransactionNotFound as e:
-        print_and_log(e)
-        print_and_log("transaction not found")
+        logger.info(e)
+        logger.info("transaction not found")
         raise HTTPException(status_code=408, detail="Transaction not found after sending.")
 
     except TimeExhausted as e:
-        print_and_log(e)
-        print_and_log("time exhausted")
+        logger.info(e)
+        logger.info("time exhausted")
         raise HTTPException(status_code=504, detail="time exhausted.")
 
     except Exception as e:
