@@ -103,7 +103,7 @@
       <!-- Redirect user to exit questionnaire -->
       <div class="encryption-notice">
         <i class="lock-icon">🎉</i>
-        <p>Click below to complete the exit questionnaire and see if you’ve won</p>
+        <p>Click below to complete the exit questionnaire and see if you've won</p>
       </div>
 
       <button class="btn primary">
@@ -164,6 +164,10 @@ const props = defineProps({
   sliderConfig: {
     type: Object,
     default: null
+  },
+  totalSecretHolders: {
+    type: Number,
+    required: true
   }
   // -------------------------
 })
@@ -321,29 +325,39 @@ const checkStatusAndDecrypt = async () => {
     votingEnded.value = now > endDateTime;
     submissionDeadlinePassed.value = now > deadlineTime;
 
-    if (submissionDeadlinePassed.value) {
-      if (props.releasedKeys < props.requiredKeys && !isDecrypted.value) { // Check !isDecrypted to avoid marking failed if somehow decrypted earlier
+    // --- Check if ready for decryption --- 
+    const enoughKeys = props.releasedKeys >= props.requiredKeys;
+    const allHoldersSubmitted = props.totalSecretHolders > 0 && props.releasedKeys === props.totalSecretHolders;
+    const canDecryptEarly = votingEnded.value && enoughKeys && allHoldersSubmitted;
+    const canDecryptAfterDeadline = submissionDeadlinePassed.value && enoughKeys;
+
+    if (!isDecrypted.value && !submissionFailed.value) { // Only proceed if not already done or failed
+      if (canDecryptEarly) {
+        console.log("Voting ended and all secret holders submitted shares. Attempting decryption early...");
+        await decryptVotes();
+        if (statusCheckInterval) clearInterval(statusCheckInterval);
+      } else if (canDecryptAfterDeadline) {
+        console.log("Submission deadline passed with enough keys. Attempting decryption...");
+        await decryptVotes();
+        if (statusCheckInterval) clearInterval(statusCheckInterval);
+      } else if (submissionDeadlinePassed.value && !enoughKeys) {
+        // Deadline passed, but not enough keys
         submissionFailed.value = true;
         console.warn("Submission deadline passed with insufficient keys.");
         if (statusCheckInterval) clearInterval(statusCheckInterval); // Stop checking if failed
-      } else if (props.releasedKeys >= props.requiredKeys && !isDecrypted.value && !submissionFailed.value) {
-         // Deadline passed, enough keys, and not yet decrypted or failed
-         console.log("Submission deadline passed with enough keys. Attempting decryption...");
-         await decryptVotes(); // Attempt decryption
-         // Stop checking interval regardless of decryption outcome (it either worked or failed definitively)
-         if (statusCheckInterval) clearInterval(statusCheckInterval);
-      } else {
-         // Conditions met earlier or already decrypted/failed, clear interval
-          if (statusCheckInterval) clearInterval(statusCheckInterval);
       }
+      // If none of the above conditions are met, the interval continues
     }
-    // If deadline hasn't passed yet, the interval will continue checking
+    else { // Already decrypted or failed
+         if (statusCheckInterval) clearInterval(statusCheckInterval);
+    }
+
   } else {
-    // No end date, treat as not ended.
+    // No end date logic (remains the same)
     votingEnded.value = false;
     submissionDeadlinePassed.value = false;
     submissionFailed.value = false;
-    if (statusCheckInterval) clearInterval(statusCheckInterval); // Stop checking if no date
+    if (statusCheckInterval) clearInterval(statusCheckInterval);
   }
 };
 

@@ -107,6 +107,7 @@
       :endDate="vote.endDate"
       :releasedKeys="vote.releasedKeys"
       :requiredKeys="vote.requiredKeys"
+      :totalSecretHolders="totalSecretHolders"
       :displayHint="displayHint"
       :sliderConfig="sliderConfig"
     />
@@ -138,6 +139,7 @@
   // Add state for metadata
   const displayHint = ref(null);
   const sliderConfig = ref(null);
+  const totalSecretHolders = ref(0); // <<< Add state for the count
 
   // --- onBeforeUnmount Hook --- 
   // Clear the main timer interval on unmount
@@ -212,11 +214,13 @@
               participantCount: voteData.participant_count || 0,
               rewardPool: voteData.reward_pool || 0,
               requiredDeposit: voteData.required_deposit || 0,
-              secretHolderCount: holderData.count || 0,
+              secretHolderCount: voteData.secret_holder_count || 0,
+              totalSecretHolders: voteData.totalSecretHolders || 0,
               requiredKeys: voteData.required_keys || 0,
               releasedKeys: voteData.released_keys || 0,
           }
           
+          totalSecretHolders.value = vote.value.totalSecretHolders;
           displayHint.value = metadata?.displayHint; 
           sliderConfig.value = parsedSliderConfig;
           
@@ -389,6 +393,7 @@
   // ----------------------------------------
 
   onMounted(() => {
+      fetchVoteData();
   });
 
   // Format date strings for display

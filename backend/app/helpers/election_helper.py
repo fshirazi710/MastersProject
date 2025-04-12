@@ -34,6 +34,7 @@ async def election_information_response(
     participant_count, 
     required_keys,
     released_keys,
+    total_secret_holders,
     blockchain_service: BlockchainService = Depends(get_blockchain_service)
 ):
     # Constructs a response containing election information
@@ -50,6 +51,7 @@ async def election_information_response(
         "status": election_status,
         "participant_count": participant_count,
         "secret_holder_count": 0,
+        "totalSecretHolders": total_secret_holders,
         "options": election_info[5],
         "reward_pool": blockchain_service.w3.from_wei(election_info[6], 'ether') if len(election_info) > 6 else 0,
         "required_deposit": blockchain_service.w3.from_wei(election_info[7], 'ether') if len(election_info) > 7 else 0,
