@@ -25,6 +25,14 @@ jobs:
       uses: azure/login@v1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    # Make sure Oryx knows this is a python project and it needs building.
+    - name: Build and Package App
+      uses: azure/appservice-build@v1
+      with:
+        platform: python
+        platform-version: '3.12'
+        app-artifact-location: ./backend
 
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v2
@@ -34,3 +42,4 @@ jobs:
         # Deploy the contents of the backend folder. Azure auto creates a venv using requirements.txt
         # inside of the working directory, wwwroot, in a folder called antenv.
         package: ./backend  
+        python_version: '3.12'
