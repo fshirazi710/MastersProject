@@ -139,9 +139,9 @@
       // Join as holder on blockchain if chosen
       if (isHolder) {
         await joinAsSecretHolder(props.voteId, pk.value);
-        alert("Successfully registered as secret holder.");
+        // alert("Successfully registered as secret holder.");
       } else {
-        alert("Successfully registered as voter.");
+        // alert("Successfully registered as voter.");
       }
       
       // Emit event upon successful registration
