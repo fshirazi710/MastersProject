@@ -154,9 +154,6 @@
 /* Add specific styles for this component or import shared styles */
 .voting-section {
   margin-top: 20px;
-  padding: 20px;
-  background-color: var(--background-light);
-  border-radius: var(--border-radius);
 }
 
 .encryption-notice {
