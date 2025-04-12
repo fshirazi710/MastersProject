@@ -16,6 +16,7 @@
             <div class="requirement-status-container">
               <span class="requirement-status" :class="{ 'completed': votingEnded && submissionDeadlinePassed, 'warning': votingEnded && !submissionDeadlinePassed }">
                 {{ votingStatusText }}
+                <span v-if="submissionTimeRemaining"> ({{ submissionTimeRemaining }} remaining)</span>
               </span>
             </div>
           </li>
@@ -31,12 +32,15 @@
             </div>
           </li>
         </ul>
-        <p v-if="!submissionDeadlinePassed" class="check-back">
-          Please check back after the share submission deadline ({{ submissionDeadline ? submissionDeadline.toLocaleString() : 'Calculating...' }}) to see the final results.
+        <p v-if="votingEnded && !submissionDeadlinePassed" class="check-back">
+           Secret holders, please submit your shares. Window closes in: {{ submissionTimeRemaining || '...' }}
         </p>
-        <p v-else class="check-back">
+        <p v-else-if="submissionDeadlinePassed" class="check-back">
           Checking for results...
         </p>
+         <p v-else class="check-back">
+           Voting is still in progress or hasn't started.
+         </p>
       </div>
     </div>
 
@@ -180,7 +184,9 @@ const votingEnded = ref(false);
 const submissionDeadlinePassed = ref(false);
 const submissionFailed = ref(false);
 const submissionDeadline = ref(null);
+const submissionTimeRemaining = ref(null);
 let statusCheckInterval = null;
+let fastCheckIntervalId = null;
 
 // --- New refs for slider results --- 
 const sliderAverage = ref(null);
@@ -262,17 +268,52 @@ const distributionChartOptions = ref({
 });
 // ----------------------
 
+// --- Helper function to format countdown --- 
+const formatCountdown = (ms) => {
+  if (ms <= 0) return '00:00';
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+};
+
+// --- Function to manage the status check interval --- 
+const manageInterval = (activateFast) => {
+   // Clear any existing intervals first
+   if (fastCheckIntervalId) {
+       clearInterval(fastCheckIntervalId);
+       fastCheckIntervalId = null;
+   }
+   if (statusCheckInterval) { // Clear the slower interval too if it exists
+       clearInterval(statusCheckInterval);
+       statusCheckInterval = null;
+   }
+
+   if (activateFast) {
+       console.log("Activating fast interval (1s) for submission window.");
+       fastCheckIntervalId = setInterval(checkStatusAndDecrypt, 1000); // 1 second
+   } else {
+       // If not activating fast, decide if the slow interval should run
+       // Only run slow interval if vote hasn't ended OR if it ended but deadline hasn't passed AND we're not already decrypted/failed
+       if (!votingEnded.value || (votingEnded.value && !submissionDeadlinePassed.value && !isDecrypted.value && !submissionFailed.value)) {
+           // console.log("Activating slow interval (30s)."); // Optional log
+           // statusCheckInterval = setInterval(checkStatusAndDecrypt, 30000); // 30 seconds
+           // NOTE: Let's disable the 30s interval for now to avoid potential conflicts. The 1s interval covers the most critical period.
+       } else {
+            console.log("No interval needed.");
+       }
+   }
+};
+
 onMounted(() => {
   checkStatusAndDecrypt();
-  if (!submissionDeadlinePassed.value || (!isDecrypted.value && !submissionFailed.value)) {
-    statusCheckInterval = setInterval(checkStatusAndDecrypt, 30000);
-  }
+  // Initial interval management is handled within checkStatusAndDecrypt
 })
 
 onUnmounted(() => {
-  if (statusCheckInterval) {
-    clearInterval(statusCheckInterval);
-  }
+  // Clear intervals on unmount
+  if (fastCheckIntervalId) clearInterval(fastCheckIntervalId);
+  if (statusCheckInterval) clearInterval(statusCheckInterval);
 })
 
 watch([() => props.releasedKeys, () => props.requiredKeys], ([newReleased, newRequired], [oldReleased, oldRequired]) => {
@@ -316,48 +357,61 @@ const storeRewardTokenValue = async (numOfTokens) => {
 }
 
 const checkStatusAndDecrypt = async () => {
+  let shouldRunFastInterval = false; // Flag to determine interval speed after checks
+
   if (props.endDate) {
     const now = new Date();
     const endDateTime = new Date(props.endDate);
-    const deadlineTime = new Date(endDateTime.getTime() + 15 * 60000); // Add 15 minutes
-    submissionDeadline.value = deadlineTime; // Store it
+    const deadlineTime = new Date(endDateTime.getTime() + 15 * 60000);
+    submissionDeadline.value = deadlineTime;
 
     votingEnded.value = now > endDateTime;
     submissionDeadlinePassed.value = now > deadlineTime;
 
-    // --- Check if ready for decryption --- 
+    // --- Handle Countdown Timer --- 
+    if (votingEnded.value && !submissionDeadlinePassed.value) {
+      const remainingMs = deadlineTime.getTime() - now.getTime();
+      submissionTimeRemaining.value = formatCountdown(remainingMs);
+      shouldRunFastInterval = true; // Need fast updates for the countdown
+    } else {
+      submissionTimeRemaining.value = null; // Clear countdown if window is closed or not started
+    }
+    // ----------------------------
+
     const enoughKeys = props.releasedKeys >= props.requiredKeys;
     const allHoldersSubmitted = props.totalSecretHolders > 0 && props.releasedKeys === props.totalSecretHolders;
     const canDecryptEarly = votingEnded.value && enoughKeys && allHoldersSubmitted;
     const canDecryptAfterDeadline = submissionDeadlinePassed.value && enoughKeys;
 
-    if (!isDecrypted.value && !submissionFailed.value) { // Only proceed if not already done or failed
+    let stopChecking = false;
+
+    if (!isDecrypted.value && !submissionFailed.value) {
       if (canDecryptEarly) {
         console.log("Voting ended and all secret holders submitted shares. Attempting decryption early...");
         await decryptVotes();
-        if (statusCheckInterval) clearInterval(statusCheckInterval);
+        stopChecking = true;
       } else if (canDecryptAfterDeadline) {
         console.log("Submission deadline passed with enough keys. Attempting decryption...");
         await decryptVotes();
-        if (statusCheckInterval) clearInterval(statusCheckInterval);
+        stopChecking = true;
       } else if (submissionDeadlinePassed.value && !enoughKeys) {
-        // Deadline passed, but not enough keys
         submissionFailed.value = true;
         console.warn("Submission deadline passed with insufficient keys.");
-        if (statusCheckInterval) clearInterval(statusCheckInterval); // Stop checking if failed
+        stopChecking = true;
       }
-      // If none of the above conditions are met, the interval continues
-    }
-    else { // Already decrypted or failed
-         if (statusCheckInterval) clearInterval(statusCheckInterval);
+    } else { // Already decrypted or failed
+      stopChecking = true;
     }
 
-  } else {
-    // No end date logic (remains the same)
+    // Manage interval based on whether we should stop or run fast/slow
+    manageInterval(shouldRunFastInterval && !stopChecking);
+
+  } else { // No end date
     votingEnded.value = false;
     submissionDeadlinePassed.value = false;
     submissionFailed.value = false;
-    if (statusCheckInterval) clearInterval(statusCheckInterval);
+    submissionTimeRemaining.value = null;
+    manageInterval(false); // No countdown needed
   }
 };
 
