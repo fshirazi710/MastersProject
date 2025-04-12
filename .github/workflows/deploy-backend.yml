@@ -32,7 +32,7 @@ jobs:
       with:
         platform: python
         platform-version: '3.12'
-        app-artifact-location: ./backend
+        source-directory: ./backend
 
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v2
