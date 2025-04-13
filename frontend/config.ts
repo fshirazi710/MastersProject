@@ -21,7 +21,7 @@ const API_CONFIG = {
         baseURL: 'http://127.0.0.1:8000',
     },
     production: {
-        baseURL: "https://electionsystem-backend-f2f7frg8dhbjdye3.uksouth-01.azurewebsites.net", 
+        baseURL: "https://electionsystem-backend.politesea-e85aa253.westus2.azurecontainerapps.io", 
     }
 } as const;
 
