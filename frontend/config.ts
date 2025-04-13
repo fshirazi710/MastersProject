@@ -21,7 +21,7 @@ const API_CONFIG = {
         baseURL: 'http://127.0.0.1:8000',
     },
     production: {
-        baseURL: "https://electionsystem-backend.politesea-e85aa253.westus2.azurecontainerapps.io", 
+        baseURL: "https://backend-red-mountain-4350.fly.dev", 
     }
 } as const;
 
