@@ -79,7 +79,8 @@ const CONTRACT_CONFIG = {
 } as const;
 
 // Get current environment
-const environment = (process.env.NODE_ENV || 'development') as keyof typeof API_CONFIG;
+// const environment = (process.env.NODE_ENV || 'development') as keyof typeof API_CONFIG;
+const environment = 'production'; // TEMP HARDCODE for testing
 
 // Export the configuration for the current environment
 export const config = {
