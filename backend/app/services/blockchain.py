@@ -32,7 +32,7 @@ class BlockchainService:
     def _load_contract(self):
         """Load the smart contract interface"""
 
-        logger.info(f"Current working directory is: '{Path.cwd()}'")
+        # logger.info(f"Current working directory is: '{Path.cwd()}'")
         
         # Show abi path (on fly.io filesystem)
         abi_path = Path("/TimedReleaseVoting.json")
@@ -43,8 +43,7 @@ class BlockchainService:
             with open(abi_path, 'r') as f:
                 contract_json = json.load(f)
                 abi = contract_json['abi']
-                logger.info(f"Contract ABI loaded successfully, {len(abi)} functions/events found.")
-                print(f"Contract ABI loaded successfully, {len(abi)} functions/events found.")
+                # logger.info(f"Contract ABI loaded successfully, {len(abi)} functions/events found.")
         except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
             error_msg = f"Failed to load contract ABI: {str(e)}"
             logger.error(error_msg)

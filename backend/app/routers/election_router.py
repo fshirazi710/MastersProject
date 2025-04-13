@@ -43,24 +43,18 @@ router = APIRouter(prefix="/elections", tags=["Elections"])
 async def create_election(data: ExtendedElectionCreateRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
     
     try:
-        logger.info("About to send createVote transaction...")
         # Extract core data for contract interaction
         core_data = data.election_data
-        logger.info(core_data)
 
         # Convert start and end dates from ISO format to Unix timestamps
         start_timestamp = int(datetime.fromisoformat(core_data.start_date.replace('Z', '+00:00')).timestamp())
-        logger.info(start_timestamp)
 
         end_timestamp = int(datetime.fromisoformat(core_data.end_date.replace('Z', '+00:00')).timestamp())
-        logger.info(end_timestamp)
         
         # Convert reward pool and required deposit from Ether to Wei
         reward_pool_wei = blockchain_service.w3.to_wei(core_data.reward_pool, 'ether')
-        logger.info(reward_pool_wei)
 
         required_deposit_wei = blockchain_service.w3.to_wei(core_data.required_deposit, 'ether')
-        logger.info(required_deposit_wei)
 
         # Call helper function with only core data
         receipt = await create_election_transaction(
@@ -71,7 +65,6 @@ async def create_election(data: ExtendedElectionCreateRequest, blockchain_servic
             required_deposit_wei, 
             blockchain_service,
         )
-        logger.info(receipt)
 
         if receipt.status != 1:
             logger.error(f"Blockchain transaction failed with status {receipt.status}")
