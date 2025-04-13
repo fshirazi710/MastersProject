@@ -69,9 +69,9 @@
   })
   
   const isSecretHolder = ref('yes')
-  const pk = ref(null);
-
   const emit = defineEmits(['registration-successful']);
+
+  const pubKey = ref(null);
 
   const generateKeyPair = async () => {
     const privateKeyCookie = `vote_${props.voteId}_privateKey`;
@@ -80,11 +80,10 @@
 
     // Check if private key already exists for this vote
     if (Cookies.get(privateKeyCookie)) {
-      // Maybe just fetch the existing public key?
+      // Check if public key already exists for this vote
       const existingPk = Cookies.get(publicKeyCookie);
       if (existingPk) {
-          pk.value = existingPk; // Use existing public key
-          // Decide if we need to call storePublicKey again or just inform the user
+          // Tell the user they've already registered.
           alert("You have already registered for this vote with this browser.");
           return; // Stop execution
       } else {
@@ -94,16 +93,16 @@
          Cookies.remove(privateKeyCookie); // Remove potentially stale private key
       }
     }
-
-    // New scope to prevent conflict with outer const pk
-    {
-      const { sk, pk: publicKey } = generateBLSKeyPair();
-    }
+    
+    const { sk, pk: publicKey } = generateBLSKeyPair();
+    // console.log('Generated Private Key :', sk);
+    // console.log('Generated Public Key:', publicKey);
     
     const privateKeyHex = sk.toString(16);
-    // Log the publicKey object to see what it actually is
-    console.log('Inspecting publicKey object:', publicKey);
     const publicKeyHex = publicKey.toHex();
+    // console.log('Private Key Hex:', privateKeyHex);
+    // console.log("Public Key Hex:", publicKeyHex);
+    
 
     // Store the private key in a cookie for this specific vote
     Cookies.set(privateKeyCookie, privateKeyHex, { expires: 365, secure: true, sameSite: "Strict" });
@@ -113,7 +112,8 @@
     Cookies.set(isHolderCookie, 'false', { expires: 365, secure: true, sameSite: "Strict" });
 
     // Update the reactive pk variable
-    pk.value = publicKeyHex; // Use the hex string
+    pubKey.value = publicKeyHex;
+    // console.log('pubKey.value before storePublicKey:', pubKey.value);
 
     // Proceed to store public key on backend
     storePublicKey();
@@ -121,8 +121,9 @@
 
   // Method to store public key and potentially join as holder
   const storePublicKey = async () => {
-    if (!pk.value) {
+    if (!pubKey.value) {
       alert("Key pair not generated yet.");
+      // console.log("Key pair not generated yet.");
       return;
     }
 
@@ -136,15 +137,17 @@
     try {
       // Store public key (and holder status) on backend
       const response = await voteApi.storePublicKey(props.voteId, {
-        public_key: pk.value, // Send hex string
+        public_key: pubKey.value, // Send hex string
         is_secret_holder: isHolder
       });
 
       // Join as holder on blockchain if chosen
       if (isHolder) {
-        await joinAsSecretHolder(props.voteId, pk.value);
+        // console.log("Now calling joinAsSecretHolder");
+        await joinAsSecretHolder(props.voteId, pubKey.value);
         // alert("Successfully registered as secret holder.");
       } else {
+        // console.log("Not calling joinAsSecretHolder - did not select yes");
         // alert("Successfully registered as voter.");
       }
       
@@ -158,14 +161,17 @@
       // Cookies.remove(isHolderCookie);
       // Cookies.remove(`vote_${props.voteId}_privateKey`); // Also remove private key
       alert(err.response?.data?.detail || err.message || 'Failed during registration. Please try again.');
-      // Maybe reset pk.value = null; here?
     }
   }
 
   const joinAsSecretHolder = async (vote_id, public_key) => {
     try {
+      // console.log("Now inside of joinAsSecretHolder");
       // Public key is already a hex string here
       const response = await holderApi.joinAsHolder(vote_id, { public_key: public_key }); // Pass as object
+    
+      // console.log("Response after calling joinAsHolder")
+      // console.log(response)
     } catch (err) {
       console.error('Failed to join as secret holder:', err);
       // Log the detailed validation error from the backend response, stringified

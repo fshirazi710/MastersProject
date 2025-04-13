@@ -55,7 +55,7 @@
           </div>
           <div class="status-item">
             <span class="label">Total Secret Holders:</span>
-            <span>{{ vote.secretHolderCount }}</span>
+            <span>{{ totalSecretHolders }}</span>
           </div>
           <!-- Show released keys count for ended votes -->
           <div v-if="vote.status === 'ended'" class="status-item">
@@ -215,12 +215,12 @@
               rewardPool: voteData.reward_pool || 0,
               requiredDeposit: voteData.required_deposit || 0,
               secretHolderCount: voteData.secret_holder_count || 0,
-              totalSecretHolders: voteData.totalSecretHolders || 0,
+              totalSecretHolders: holderData.count || 0,
               requiredKeys: voteData.required_keys || 0,
               releasedKeys: voteData.released_keys || 0,
           }
           
-          totalSecretHolders.value = vote.value.totalSecretHolders;
+          totalSecretHolders.value = holderData.count;
           displayHint.value = metadata?.displayHint; 
           sliderConfig.value = parsedSliderConfig;
           
