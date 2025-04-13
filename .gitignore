@@ -13,9 +13,10 @@ Cargo.lock
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 
-# Virtual environment
-.venv/
-venv/
+# Don't ignore, Virtual environment, commit it so during deployment the project is
+# pre-built and ready to run. Keep deployment simple.
+# .venv/
+# venv/
 
 # Nuxt build output
 .nuxt/

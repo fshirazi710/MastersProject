@@ -26,15 +26,6 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
     
-    # Make sure Oryx knows this is a python project and it needs building.
-    - name: Build and Package App
-      uses: azure/appservice-build@v1
-      with:
-        platform: python
-        platform-version: '3.12'
-        source-directory: ./backend
-        enable-oryx-build-verbose-logging: true
-
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v2
       with:
