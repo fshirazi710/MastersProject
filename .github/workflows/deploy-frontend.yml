@@ -34,9 +34,15 @@ jobs:
       working-directory: ./frontend
       run: npm run build
 
+    - name: Prepare deployment folder
+      run: |
+        mkdir deploy
+        cp -r frontend/.output deploy/.output
+        cp -r frontend/node_modules deploy/node_modules
+
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v2
       with:
         app-name: electionsystem-frontend
         slot-name: production
-        package: ./frontend
+        package: ./deploy
