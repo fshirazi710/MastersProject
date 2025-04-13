@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = config["API"].get("PROJECT_NAME", "")
 
     # CORS
-    CORS_ALLOWED_ORIGINS: list = json.loads(config["CORS"].get("CORS_ALLOWED_ORIGINS", '["https://electionsystem-frontend-afa6effjh3ffe2cv.uksouth-01.azurewebsites.net"]'))
+    CORS_ALLOWED_ORIGINS: list = json.loads(config["CORS"].get("CORS_ALLOWED_ORIGINS", '["https://masters-project-umber.vercel.app"]'))
 
     # Blockchain
     WEB3_PROVIDER_URL: str = config["BLOCKCHAIN"].get("WEB3_PROVIDER_URL", "")
