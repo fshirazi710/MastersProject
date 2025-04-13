@@ -16,7 +16,6 @@ export default defineNuxtConfig({
     }
   },
   nitro: {
-    preset: 'node-server',
-    serveStatic: true
+    preset: 'vercel',
   }
 })
