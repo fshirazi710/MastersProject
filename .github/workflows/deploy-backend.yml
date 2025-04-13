@@ -31,7 +31,4 @@ jobs:
       with:
         app-name: electionsystem-backend
         slot-name: production
-        # Deploy the contents of the backend folder. Azure auto creates a venv using requirements.txt
-        # inside of the working directory, wwwroot, in a folder called antenv.
-        package: ./backend  
-        python_version: '3.12'
+        package: ./backend
