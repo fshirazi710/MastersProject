@@ -169,7 +169,9 @@ async def get_all_elections(blockchain_service: BlockchainService = Depends(get_
 
             # Retrieve election information from the blockchain
             election_info = await blockchain_service.call_contract_function("getElection", election_id)
-            
+            logger.info("election_info: ", election_info)
+            logger.info("election_info[3]: ", election_info[3])
+            logger.info("election_info[4]: ", election_info[4])
             # Calculate the status of the election
             election_status = await get_election_status(election_info[3], election_info[4])
 
@@ -223,6 +225,10 @@ async def get_election_information(election_id: int, blockchain_service: Blockch
     try:
         # Step 1: Try to get the core election info
         election_info = await blockchain_service.call_contract_function("getElection", election_id)
+        
+        logger.info("election_info: ", election_info)
+        logger.info("election_info[3]: ", election_info[3])
+        logger.info("election_info[4]: ", election_info[4])
         
         # If successful, proceed to get auxiliary info
         election_status = await get_election_status(election_info[3], election_info[4])
