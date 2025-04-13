@@ -95,7 +95,11 @@
       }
     }
 
-    const { sk, pk: publicKey } = generateBLSKeyPair();
+    // New scope to prevent conflict with outer const pk
+    {
+      const { sk, pk: publicKey } = generateBLSKeyPair();
+    }
+    
     const privateKeyHex = sk.toString(16);
     // Log the publicKey object to see what it actually is
     console.log('Inspecting publicKey object:', publicKey);
