@@ -33,6 +33,7 @@ jobs:
         platform: python
         platform-version: '3.12'
         source-directory: ./backend
+        enable-oryx-build-verbose-logging: true
 
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v2
