@@ -18,10 +18,10 @@ type ContractABI = {
 // API Configuration
 const API_CONFIG = {
     development: {
-        baseURL: "https://backend-red-mountain-4350.fly.dev",
+        baseURL: "http://localhost:8000",
     },
     production: {
-        baseURL: "https://backend-red-mountain-4350.fly.dev", 
+        baseURL: "http://backend-red-mountain-4350.fly.dev", 
     }
 } as const;
 

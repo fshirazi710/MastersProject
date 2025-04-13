@@ -49,9 +49,9 @@ app.add_middleware(
 async def log_requests(request: Request, call_next):
     logger = logging.getLogger() 
     logger.setLevel(logging.DEBUG)
-    logger.info(f"Incoming request: {request.method} {request.url}")
+    # logger.info(f"Incoming request: {request.method} {request.url}")
     response = await call_next(request)
-    logger.info(f"Response status: {response.status_code}")
+    # logger.info(f"Response status: {response.status_code}")
     return response
 
 # Include routers
