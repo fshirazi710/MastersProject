@@ -19,9 +19,23 @@ import logging
 import json
 from web3.exceptions import ContractLogicError, TransactionNotFound, TimeExhausted
 import traceback
+import sys
+
 # Configure logging - update
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.DEBUG, 
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    stream=sys.stdout
+)
+
+logger = logging.getLogger() 
+logger.setLevel(logging.DEBUG)
+
+access_logger = logging.getLogger("uvicorn.access")
+access_logger.propagate = True
+
+error_logger = logging.getLogger("uvicorn.error")
+error_logger.propagate = True
 
 router = APIRouter(prefix="/elections", tags=["Elections"])
 

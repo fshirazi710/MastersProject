@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from app.routers.vote_router import router as vote_router
 from app.routers.election_router import router as election_router
 from app.routers.holder_router import router as holder_router
@@ -33,11 +33,21 @@ async def shutdown_db_client():
 # Allow requests from the frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ALLOWED_ORIGINS,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger = logging.getLogger() 
+    logger.setLevel(logging.DEBUG)
+    logger.info(f"Incoming request: {request.method} {request.url}")
+    response = await call_next(request)
+    logger.info(f"Response status: {response.status_code}")
+    return response
 
 # Include routers
 app.include_router(vote_router, prefix="/api")
