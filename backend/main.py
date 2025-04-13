@@ -21,6 +21,11 @@ app = FastAPI(
     version="1.0.0"
 )
 
+
+@app.get("/healthcheck")
+def read_root():
+     return {"status": "ok"}
+
 # Event handlers for MongoDB connection
 @app.on_event("startup")
 async def startup_db_client():

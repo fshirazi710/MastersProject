@@ -5,8 +5,12 @@ import logging
 import json
 import os
 import asyncio
+import pathlib  
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
 
 class BlockchainService:
     """
@@ -27,19 +31,26 @@ class BlockchainService:
         
     def _load_contract(self):
         """Load the smart contract interface"""
-        # Load ABI from the TimedReleaseVoting contract
-        abi_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
-                               "../crypto-core/build/contracts/TimedReleaseVoting.json")
+
+        logger.info(f"Current working directory is: '{Path.cwd()}'")
         
+        # Show abi path (on fly.io filesystem)
+        abi_path = Path("/TimedReleaseVoting.json")
+
+        logger.info(f"abi path is '{abi_path}'")
+
         try:
             with open(abi_path, 'r') as f:
                 contract_json = json.load(f)
                 abi = contract_json['abi']
+                logger.info(f"Contract ABI loaded successfully, {len(abi)} functions/events found.")
+                print(f"Contract ABI loaded successfully, {len(abi)} functions/events found.")
         except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
             error_msg = f"Failed to load contract ABI: {str(e)}"
             logger.error(error_msg)
             # Return empty ABI if file not found or invalid
             abi = []
+            
             
         return self.w3.eth.contract(address=self.contract_address, abi=abi)
 
