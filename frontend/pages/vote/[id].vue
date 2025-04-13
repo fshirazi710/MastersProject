@@ -188,20 +188,33 @@
       error.value = null 
       
       try {
-          const [voteResponse, holdersResponse, metadataResponse] = await Promise.all([
-              electionApi.getElectionById(voteId),
-              holderApi.getHolderCount(voteId),
-              electionApi.getElectionMetadata(voteId) 
-          ]);
-          
+          console.log("In fetchVoteData");
+          const voteResponse = await electionApi.getElectionById(voteId);
+          console.log("voteResponse: ", voteResponse);
+
+          const holdersResponse = await holderApi.getHolderCount(voteId);
+          console.log("holdersResponse: ", holdersResponse);
+
+          const metadataResponse = await electionApi.getElectionMetadata(voteId);
+
+          console.log("metadataResponse: ", metadataResponse);
+
+            
           const metadata = metadataResponse.data.data; 
           let parsedSliderConfig = null;
+
+          console.log("Handling election metadata now: ")
+
           if (metadata && typeof metadata.sliderConfig === 'string') {
-              try { parsedSliderConfig = JSON.parse(metadata.sliderConfig); } catch (e) { console.error("Failed to parse sliderConfig JSON:", e); }
-          } else if (metadata && typeof metadata.sliderConfig === 'object') { parsedSliderConfig = metadata.sliderConfig; }
+              try { parsedSliderConfig = JSON.parse(metadata.sliderConfig); } 
+              catch (e) { console.error("Failed to parse sliderConfig JSON:", e); }
+          } 
+          else if (metadata && typeof metadata.sliderConfig === 'object') { parsedSliderConfig = metadata.sliderConfig; }
 
           const voteData = voteResponse.data.data;
           const holderData = holdersResponse.data.data;
+
+          console.log("Now setting vote.value ")
           
           vote.value = {
               id: voteData.id,
@@ -219,7 +232,8 @@
               requiredKeys: voteData.required_keys || 0,
               releasedKeys: voteData.released_keys || 0,
           }
-          
+          console.log("vote.value: ", vote.value);
+
           totalSecretHolders.value = holderData.count;
           displayHint.value = metadata?.displayHint; 
           sliderConfig.value = parsedSliderConfig;
