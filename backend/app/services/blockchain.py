@@ -37,7 +37,7 @@ class BlockchainService:
         # Show abi path (on fly.io filesystem)
         abi_path = Path("/TimedReleaseVoting.json")
         # local_abi_path = f"{Path(__file__).resolve().parent.parent.parent}/TimedReleaseVoting.json"
-        # logger.info(f"abi path is '{local_abi_path}'")
+        logger.info(f"abi path is '{abi_path}'")
 
         try:
             with open(abi_path, 'r') as f:
