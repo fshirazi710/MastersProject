@@ -1,4 +1,4 @@
-# fly.toml app configuration file generated for backend-red-mountain-4350 on 2025-04-13T12:20:57+01:00
+# fly.toml app configuration file generated for backend-red-mountain-4350 on 2025-04-14T01:11:42+01:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
@@ -13,7 +13,7 @@ primary_region = 'ams'
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 5
   processes = ['app']
 
 [[vm]]

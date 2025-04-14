@@ -2,6 +2,81 @@
 
 FastAPI backend server for the Timed Release Crypto System. This service manages blockchain interactions, cryptographic operations, and provides API endpoints for the frontend.
 
+
+## Deployment
+
+If you want to deploy the backend using fly.io, you need to:
+
+1- Make an account with fly here https://fly.io/app/sign-in , you can sign in with google.
+
+2- Join the organisation I invited you to on fly you should have an email with the invite.
+
+3- Install the fly command line tool, flyctl. With this you can use `fly` commands
+in your command prompt.
+
+https://fly.io/docs/flyctl/install/
+
+
+4 - See the guide here: 
+https://ahmadrosid.com/blog/deploy-fastapi-flyio
+
+You will need a dockerfile like the one in the tutorial, there is already one here specifically
+for this fly app. 
+
+5 - To interact with the backend app you need to login to fly, you can do it like this:
+
+```
+fly auth login
+```
+
+Then it should let you log in with Google. It will open up a tab in a browser and
+you need to login there and connect from there for you to log in from the cmd line.
+
+
+6 - Now you're logged in and in the organisation you should be able to make update the 
+backend web app. After making the change to the code you wanted to make to the backend, run:
+
+```
+// you need to be in the fly project to run this, fly.toml is in /backend
+cd <project-root>/backend
+fly deploy
+```
+
+To update the backend web app. At this point you will see a lot of "waiting for depot builder"
+then it should handle the update.
+
+If the change you made was bigger, like redeploying the smart contract &/or resetting the 
+database or changing the contract address, you need to completely delete and remake your backend to make sure fly.io picks up on the change, or it might be running in a stale state.
+
+You can do this by first destroying the backend app
+
+```
+fly apps destroy backend-red-mountain-4350
+```
+
+Then recreating it completely with:
+
+```
+fly launch
+```
+
+Note: the fly.toml file will have the configuration for the backend app set up.
+
+
+7 - Once the backend app is deployed you can view it from the backend URL at:
+http://backend-red-mountain-4350.fly.dev/
+
+And you can even call functions of it from 
+http://backend-red-mountain-4350.fly.dev/docs
+
+If you need to debug the backend app, you can also ssh into the fly.io console:
+
+```
+fly ssh console
+```
+
+
+
 ## Architecture
 
 This backend service:
