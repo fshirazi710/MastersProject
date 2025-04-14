@@ -184,7 +184,8 @@
       // console.log("Now inside of joinAsSecretHolder");
       // Public key is already a hex string here
       const response = await holderApi.joinAsHolder(vote_id, { public_key: public_key }); // Pass as object
-    
+      alert("You have chosen to be a secret holder. You must return between 5:00 PM and 5:15 PM to submit your secret share. Failure to do so will result in no raffle tickets being awarded.")
+      alert("You must use this same device and browser for all remaining steps.")
       // console.log("Response after calling joinAsHolder")
       // console.log(response)
     } catch (err) {
