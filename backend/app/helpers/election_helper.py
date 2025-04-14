@@ -15,17 +15,21 @@ logger = logging.getLogger(__name__)
 
 async def get_election_status(start_timestamp, end_timestamp):
     # Get current timestamp
+    start_timestamp_utc = start_timestamp - 3600
+    end_timestamp_utc = end_timestamp - 3600
+
     current_timestamp = int(datetime.now().timestamp())
 
     # Determine status based on timestamps
-    if current_timestamp < start_timestamp:
+    if current_timestamp < start_timestamp_utc:
         election_status = "join"
-    elif current_timestamp > end_timestamp:
+    elif current_timestamp > end_timestamp_utc:
         election_status = "ended"
     else:
         election_status = "active"
 
     return election_status
+
 
 
 async def election_information_response(
