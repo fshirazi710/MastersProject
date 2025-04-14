@@ -19,7 +19,14 @@
         {{ vote.status }}
       </div>
       <h1>{{ vote.title }}</h1>
-      <p class="description">{{ vote.description }}</p>
+      <p><strong>How many extra raffle tokens do you think secret holders should receive, considering they are contributing to securing the ballots?</strong></p>
+
+      <p><strong>Background:</strong><br>
+        • At the end of this trial, five participants will win a £20 Amazon voucher each.<br>
+        • Each participant starts with 10 tokens. Secret holders will receive extra raffle tokens.<br>
+        • More raffle tokens = higher winning probability (e.g., having 2 tokens is twice as likely to win as having 1 token).<br>
+        • Note that giving more tokens to secret holders will lower the probability of non secret holders winning vouchers.
+      </p>
     </div>
 
     <!-- Info cards grid: Timeline and Encryption Status -->
