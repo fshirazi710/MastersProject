@@ -111,10 +111,9 @@
       </div>
 
       <div style="display: flex; flex-direction: column; gap: 10px;">
-        <button class="btn primary" style="width: 100%;">
-          <a :href="randomLink" style="display: block; width: 100%; color: inherit; text-decoration: none;">
-            Complete Questionnaire
-          </a>
+        <button class="btn primary" style="width: 100%;" @click="navigateToRandomLink">
+          Complete Questionnaire
+        </button>
         </button>
         <button class="btn primary" style="width: 100%;">
           <a href="https://sepolia.arbiscan.io/address/0xd57a2f2e37eb3b9da2d097c76f4b6149e20b6cd2" target="_blank" style="display: block; width: 100%; color: inherit; text-decoration: none;">
@@ -153,6 +152,10 @@ const links = [
 ]
 
 const randomLink = ref(links[Math.floor(Math.random() * links.length)])
+const navigateToRandomLink = () => {
+  window.location.href = randomLink.value
+}
+
 
 // --- Register Chart.js components --- 
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale)
