@@ -150,8 +150,8 @@ const links = [
   'https://forms.office.com/e/mnop3456'
 ]
 
-const randomLink = ref(links[Math.floor(Math.random() * links.length)])
 const navigateToRandomLink = () => {
+  const randomLink = ref(links[Math.floor(Math.random() * links.length)])
   window.location.href = randomLink.value
 }
 
