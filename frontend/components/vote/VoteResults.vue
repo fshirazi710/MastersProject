@@ -102,17 +102,26 @@
       </template>
 
       <!-- Display error if decryption succeeded partially -->
-       <p v-if="error && isDecrypted" class="error-message" style="text-align: center;">{{ error }}</p>
-
+      <p v-if="error && isDecrypted" class="error-message" style="text-align: center;">{{ error }}</p>
+      
       <!-- Redirect user to exit questionnaire -->
       <div class="encryption-notice">
         <i class="lock-icon">🎉</i>
-        <p>Click below to complete the exit questionnaire and see if you've won</p>
+        <p>Click below to complete the exit questionnaire and see if you've won. Optionally, you can also see the blockchain transactions.</p>
       </div>
 
-      <button class="btn primary">
-        <a href="https://forms.office.com/e/iB5pshF3k2" style="color: inherit; text-decoration: none;">Complete Questionnaire</a>
-      </button>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button class="btn primary" style="width: 100%;">
+          <a href="https://forms.office.com/e/iB5pshF3k2" style="display: block; width: 100%; color: inherit; text-decoration: none;">
+            Complete Questionnaire
+          </a>
+        </button>
+        <button class="btn primary" style="width: 100%;">
+          <a href="https://sepolia.arbiscan.io/address/0xd57a2f2e37eb3b9da2d097c76f4b6149e20b6cd2" target="_blank" style="display: block; width: 100%; color: inherit; text-decoration: none;">
+            View Blockchain Transactions
+          </a>
+        </button>
+      </div>
     </div>
   </div>
 </template>
