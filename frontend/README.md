@@ -2,6 +2,24 @@
 
 A Vue/Nuxt based frontend for the Timed Release Crypto System. This application provides the user interface for a decentralized voting system with time-locked result revelation.
 
+
+## Deployment
+
+Whenever you make a commit to the user-testing branch the frontend will re-deploy via vercel.
+However if you want to manually login and view the project yourself and make a manual deployment:
+
+- go to https://vercel.com/
+- login with this burner email for our project: mastersproject08@gmail.com
+- if they send a verification email, the burner email password is ob&Lj5PeHR8&!U
+- Go to overview, then masters-project, then deployments, then the button with 3 dots
+- Click create deployment, you will need the ssh IE the commit hash 
+![alt text](image.png)
+
+Give the commit hash, double check and make sure the branch is user-testing not main, then
+click create deployment. In the deployments tab then you can select the most recent deployment
+and look and see how it builds.
+
+
 ## Core Concepts
 
 The frontend serves as the user interface layer, focusing on:
