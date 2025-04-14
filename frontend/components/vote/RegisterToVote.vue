@@ -43,9 +43,16 @@
             </div>
           </label>
         </div>
-        <button class="btn primary">
-          Register To Vote
+
+        <button 
+          class="btn primary" 
+          :disabled="loading"
+        >
+          {{ loading ? 'Registering...' : 'Register To Vote' }}
         </button>
+        <!-- <button class="btn primary">
+          Register To Vote
+        </button> -->
       </form>
     </div>
   </template>
@@ -67,13 +74,16 @@
       required: true
     }
   })
-  
+
+  const loading = ref(false);
   const isSecretHolder = ref('yes')
   const emit = defineEmits(['registration-successful']);
 
   const pubKey = ref(null);
 
   const generateKeyPair = async () => {
+    if (loading.value) return;
+    loading.value = true;
     const privateKeyCookie = `vote_${props.voteId}_privateKey`;
     const publicKeyCookie = `vote_${props.voteId}_publicKey`;
     const isHolderCookie = `vote_${props.voteId}_isHolder`;
@@ -168,7 +178,7 @@
       
       // Emit event upon successful registration
       emit('registration-successful');
-
+      loading.value = false;
     } catch (err) {
       console.error('Failed during registration:', err);
       // Reset cookies if registration failed?
