@@ -121,15 +121,27 @@
 
   // Method to store public key and potentially join as holder
   const storePublicKey = async () => {
+    console.log("Entered the storePublicKey function in RegisterToVote.vue");
+    console.log("what props contains:");
+    console.log(props);
+    
     if (!pubKey.value) {
       alert("Key pair not generated yet.");
-      // console.log("Key pair not generated yet.");
+      console.log("Key pair not generated yet.");
       return;
     }
 
     const isHolder = isSecretHolder.value === 'yes';
     const isHolderCookie = `vote_${props.voteId}_isHolder`;
     const publicKeyCookie = `vote_${props.voteId}_publicKey`;
+    console.log("IsHolder: ", isHolder);
+    console.log("isHolderCookie: ", isHolderCookie);
+    console.log("publicKeyCookie: ", publicKeyCookie);
+
+
+    console.log("props.voteID: ", props.voteId);
+    console.log("public_key: ", pubKey.value);
+    console.log("is_secret_holder: ", isHolder);
 
     // Update the holder status cookie
     Cookies.set(isHolderCookie, isHolder.toString(), { expires: 365, secure: true, sameSite: "Strict" });
@@ -140,6 +152,9 @@
         public_key: pubKey.value, // Send hex string
         is_secret_holder: isHolder
       });
+
+      console.log("Response after calling voteApi.storePublicKey:");
+      console.log(response);
 
       // Join as holder on blockchain if chosen
       if (isHolder) {
