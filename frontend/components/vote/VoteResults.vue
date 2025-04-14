@@ -112,7 +112,7 @@
 
       <div style="display: flex; flex-direction: column; gap: 10px;">
         <button class="btn primary" style="width: 100%;">
-          <a href="https://forms.office.com/e/iB5pshF3k2" style="display: block; width: 100%; color: inherit; text-decoration: none;">
+          <a :href="randomLink" style="display: block; width: 100%; color: inherit; text-decoration: none;">
             Complete Questionnaire
           </a>
         </button>
@@ -142,6 +142,17 @@ import {
     CategoryScale, 
     LinearScale 
 } from 'chart.js'
+
+// randomize exit questionnaire link
+const links = [
+  'https://forms.office.com/e/iB5pshF3k2',
+  'https://forms.office.com/e/abcd1234',
+  'https://forms.office.com/e/efgh5678',
+  'https://forms.office.com/e/ijkl9012',
+  'https://forms.office.com/e/mnop3456'
+]
+
+const randomLink = ref(links[Math.floor(Math.random() * links.length)])
 
 // --- Register Chart.js components --- 
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale)
