@@ -143,11 +143,11 @@ import {
 
 // randomize exit questionnaire link
 const links = [
-  'https://forms.office.com/e/iB5pshF3k2',
-  'https://forms.office.com/e/abcd1234',
-  'https://forms.office.com/e/efgh5678',
-  'https://forms.office.com/e/ijkl9012',
-  'https://forms.office.com/e/mnop3456'
+  'https://forms.office.com/e/bHniWQaagP',
+  'https://forms.office.com/e/ArRGTHCjH1',
+  'https://forms.office.com/e/f3ATmDYWwp',
+  'https://forms.office.com/e/hjhabLeevr',
+  'https://forms.office.com/e/5es3myvLVS'
 ]
 
 const navigateToRandomLink = () => {
