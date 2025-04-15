@@ -16,9 +16,12 @@ from app.helpers.election_helper import get_election_status, election_informatio
 from app.services.blockchain import BlockchainService
 import logging
 import json
+import asyncio
 
 # Configure logging
 logger = logging.getLogger(__name__)
+error_logger = logging.getLogger(__name__)
+error_logger.propagate = True
 
 router = APIRouter(prefix="/elections", tags=["Elections"])
 
@@ -114,49 +117,60 @@ async def create_election(data: ExtendedElectionCreateRequest, blockchain_servic
 
 
 @router.get("/all-elections", response_model=StandardResponse[List[Dict[str, Any]]])
-async def get_all_elections(blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
+async def get_all_elections(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     try:
-        # Get total number of votes from the smart contract
         elections = []
         num_of_elections = await blockchain_service.call_contract_function("electionCount")
 
-        # Iterate through each vote and retrieve its data
         for election_id in range(num_of_elections):
-
-            # Retrieve election information from the blockchain
             election_info = await blockchain_service.call_contract_function("getElection", election_id)
-            
-            # Calculate the status of the election
+            # logger.info("election_info: ", election_info)
+            # logger.info("election_info[3]: ", election_info[3])
+            # logger.info("election_info[4]: ", election_info[4])
             election_status = await get_election_status(election_info[3], election_info[4])
 
-            # Calculate how many people are registered for an election
-            participant_count = await db.public_keys.count_documents({"vote_id": election_id})
+            # --- Calculate counts using Contract Data --- 
+            # Total Secret Holders
+            total_secret_holders = await blockchain_service.call_contract_function("getNumHoldersByElection", election_id)
             
-            # --- Fetch required_keys and released_keys (mirroring get_election_information) --- 
+            # Required Keys (Threshold - assuming from first vote, might need better logic if votes vary)
             required_keys = 0
-            submitted_votes = await blockchain_service.call_contract_function("getVotes", election_id)
-            if submitted_votes and len(submitted_votes) > 0:
-                # Vote struct: publicKey[0], ciphertext[1], g1r[2], g2r[3], alpha[4], voter[5], threshold[6]
-                required_keys = submitted_votes[0][6] # Index 6 is threshold
-                
-            released_keys = await db.public_keys.count_documents({
-                "vote_id": election_id, 
-                "is_secret_holder": True, 
-                "reward_token": 5
-            })
-            # --- End fetch --- 
+            try:
+                submitted_votes = await blockchain_service.call_contract_function("getVotes", election_id)
+                if submitted_votes and len(submitted_votes) > 0:
+                    required_keys = submitted_votes[0][6] # Index 6 is threshold
+            except Exception as vote_err:
+                 logger.warning(f"Could not retrieve votes for election {election_id} to get threshold: {vote_err}")
+
+            # Released Keys (Submitted Shares)
+            released_keys = 0
+            active_holders = await blockchain_service.call_contract_function("getHoldersByElection", election_id)
+            # Use asyncio.gather for concurrent checks if list is large
+            submission_checks = [blockchain_service.has_holder_submitted(election_id, holder) for holder in active_holders]
+            submission_results = await asyncio.gather(*submission_checks, return_exceptions=True)
             
-            # Add election information to an array, including new keys
+            for result in submission_results:
+                if isinstance(result, bool) and result is True:
+                    released_keys += 1
+                elif isinstance(result, Exception):
+                    logger.error(f"Error checking submission status for a holder in election {election_id}: {result}")
+                    # Decide how to handle errors - skip count? 
+
+            # Participant Count (Assuming only holders participate for now?)
+            # If voters are distinct, different contract logic needed.
+            participant_count = total_secret_holders 
+            # --- End Contract Data Counts --- 
+
             elections.append(await election_information_response(
                 election_info, 
                 election_status, 
                 participant_count, 
-                required_keys, # Pass required_keys
-                released_keys, # Pass released_keys
+                required_keys, 
+                released_keys, 
+                total_secret_holders, 
                 blockchain_service
             ))
 
-        # Return response
         return StandardResponse(
             success=True,
             message=f"Successfully retrieved election information for all elections",
@@ -168,61 +182,84 @@ async def get_all_elections(blockchain_service: BlockchainService = Depends(get_
 
 
 @router.get("/election/{election_id}", response_model=StandardResponse[Dict[str, Any]])
-async def get_election_information(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
+async def get_election_information(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     try:
-        # Step 1: Try to get the core election info
         election_info = await blockchain_service.call_contract_function("getElection", election_id)
         
-        # If successful, proceed to get auxiliary info
-        election_status = await get_election_status(election_info[3], election_info[4])
-        participant_count = await db.public_keys.count_documents({"vote_id": election_id})
+        # logger.info("election_info: ", election_info)
+        # logger.info("election_info[3]: ", election_info[3])
+        # logger.info("election_info[4]: ", election_info[4])
         
+        election_status = await get_election_status(election_info[3], election_info[4])
+        
+        # --- Calculate counts using Contract Data --- 
+        # Total Secret Holders
+        total_secret_holders = await blockchain_service.call_contract_function("getNumHoldersByElection", election_id)
+
+        # Required Keys (Threshold)
         required_keys = 0
-        released_keys = 0
         try:
-            # Step 2: Try to get votes (might fail if none submitted yet, even if election exists)
             submitted_votes = await blockchain_service.call_contract_function("getVotes", election_id)
             if submitted_votes and len(submitted_votes) > 0:
-                required_keys = submitted_votes[0][6] 
+                required_keys = submitted_votes[0][6]
         except Exception as vote_err:
-             # Log if getting votes fails, but don't stop the request unless it's critical
-             logger.warning(f"Could not retrieve votes for election {election_id} (might be normal if none submitted): {vote_err}")
+            logger.warning(f"Could not retrieve votes for election {election_id} to get threshold: {vote_err}")
 
-        # Step 3: Get released key count (this should be safe)
-        released_keys = await db.public_keys.count_documents({
-            "vote_id": election_id, 
-            "is_secret_holder": True, 
-            "reward_token": 5
-        })
+        # Released Keys (Submitted Shares)
+        released_keys = 0
+        active_holders = await blockchain_service.call_contract_function("getHoldersByElection", election_id)
+        # Use asyncio.gather for concurrent checks
+        submission_checks = [blockchain_service.has_holder_submitted(election_id, holder) for holder in active_holders]
+        submission_results = await asyncio.gather(*submission_checks, return_exceptions=True)
+        
+        for result in submission_results:
+            if isinstance(result, bool) and result is True:
+                released_keys += 1
+            elif isinstance(result, Exception):
+                logger.error(f"Error checking submission status for a holder in election {election_id}: {result}")
 
-        # Step 4: Format the final response
-        data = await election_information_response(
-            election_info,
+        # Participant Count (Assuming only holders participate)
+        participant_count = total_secret_holders
+        # --- End Contract Data Counts --- 
+
+        # Fetch metadata (still requires DB)
+        # metadata = await db.election_metadata.find_one({"election_id": election_id})
+        # slider_config_parsed = json.loads(metadata.get('sliderConfig')) if metadata and metadata.get('sliderConfig') else None
+
+        # election_data = await election_information_response(
+        #     election_info, 
+        #     election_status, 
+        #     participant_count, 
+        #     required_keys, 
+        #     released_keys, 
+        #     total_secret_holders,
+        #     blockchain_service,
+        #     metadata.get('displayHint') if metadata else None,
+        #     slider_config_parsed
+        # )
+
+        # TEMP: Call helper without metadata until DB dependency is fully resolved
+        election_data = await election_information_response(
+            election_info, 
             election_status, 
             participant_count, 
-            required_keys,  
-            released_keys,  
+            required_keys, 
+            released_keys, 
+            total_secret_holders,
             blockchain_service
         )
 
         return StandardResponse(
             success=True,
             message=f"Successfully retrieved election information for election {election_id}",
-            data=data
+            data=election_data
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        error_message = str(e)
-        # Check specifically if the core getElection call failed because it doesn't exist
-        if "Election does not exist" in error_message:
-            logger.info(f"Attempted to access non-existent election with ID: {election_id}")
-            raise HTTPException(status_code=404, detail="Election does not exist")
-        else:
-            # Any other exception during the entire process is treated as a 500
-            logger.error(f"Unexpected error getting election information for ID {election_id}: {error_message}")
-            # Log traceback for detailed debugging if needed
-            # logger.exception(f"Traceback for error getting election {election_id}:") 
-            raise HTTPException(status_code=500, detail="Failed to get election information due to an internal error")
+        logger.error(f"Error getting election information: {str(e)}")
+        raise handle_blockchain_error("get election information", e)
 
 
 @router.post("/get-winners/{election_id}")

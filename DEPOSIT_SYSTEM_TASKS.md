@@ -15,9 +15,9 @@ This feature involves implementing a secure deposit system for secret holders, m
 ## Future Tasks
 
 - [x] Audit/Enhance Smart Contract (`TimedReleaseVoting.sol`) for holder/share status queries (e.g., `hasSubmittedShare`).
-- [ ] Refactor `holder_router.py` to remove `public_keys` DB usage (endpoint may be removed/simplified if frontend handles `joinAsHolder` tx).
-- [ ] Refactor `vote_router.py` to remove `public_keys` DB usage and rely on contract calls.
-- [ ] Refactor `share_router.py` to remove `public_keys` DB usage, remove central key signing, and implement holder signature verification.
+- [x] Refactor `holder_router.py` to remove `public_keys` DB usage (endpoint may be removed/simplified if frontend handles `joinAsHolder` tx).
+- [x] Refactor `vote_router.py` to remove `public_keys` DB usage and rely on contract calls.
+- [x] Refactor `share_router.py` to remove `public_keys` DB usage, remove central key signing, and implement holder signature verification.
 - [ ] Refactor `election_router.py` to remove `public_keys` DB usage and rely on contract calls for status checks.
 - [x] Update `BlockchainService` (`blockchain.py`) with new/updated contract interaction methods.
 - [ ] Implement wallet signing integration in Frontend (`services/api.js`, `services/web3.js`, relevant pages/components) for share submission.
@@ -27,6 +27,7 @@ This feature involves implementing a secure deposit system for secret holders, m
 - [ ] (Optional) Implement on-chain deposit/stake mechanism if required (Smart Contract, Backend, Frontend).
 - [ ] Add comprehensive tests for the new on-chain verification and holder signing logic.
 - [ ] Update documentation to reflect the new architecture.
+- [ ] Refactor Naming Scheme (Election->VoteSession, Vote->EncryptedVote, etc.)
 
 ## Implementation Plan
 
@@ -79,25 +80,25 @@ This feature involves implementing a secure deposit system for secret holders, m
 ### Relevant Files
 
 - `backend/app/routers/share_router.py` - Handles API requests for submitting secret shares.
-  - **Provides:** `POST /shares/submit-share/{election_id}` endpoint.
-  - **Depends on:** `BlockchainService`, Database (`public_keys` collection), `submitShares` (Smart Contract), Schemas (`ShareListSubmitRequest`).
-  - **Status:** Identified (Target for major refactor: remove DB, remove central signing, add signature verification)
+  - **Provides:** `POST /shares/submit-share/{election_id}` (now verifies signature).
+  - **Depends on:** `BlockchainService`, Schemas (`ShareListSubmitRequest`), `eth_account`.
+  - **Status:** Refactored (Removed DB/Central Signing, Added Sig Verification)
 - `backend/app/services/blockchain.py` - Provides low-level interaction with the blockchain/smart contract.
-  - **Provides:** Connection (`w3`), Contract object, `call_contract_function`.
+  - **Provides:** Connection (`w3`), Contract object, `call_contract_function`, `is_holder_active`, `has_holder_submitted`.
   - **Depends on:** `web3.py`, Contract ABI (`TimedReleaseVoting.json`), `settings`.
-  - **Status:** Identified (Needs updates for new contract functions/events)
+  - **Status:** Updated
 - `backend/app/routers/holder_router.py` - Handles API requests for secret holder registration.
-  - **Provides:** `POST /holders/join/{election_id}` endpoint.
-  - **Depends on:** `BlockchainService`, `join_as_holder_transaction` (helper), Smart Contract functions (`getHoldersByElection`).
-  - **Status:** Identified (Target for refactor: remove DB usage)
+  - **Provides:** `POST /holders/join/{election_id}` (now checks eligibility).
+  - **Depends on:** `BlockchainService`.
+  - **Status:** Refactored (Removed Tx Submission)
 - `backend/app/routers/vote_router.py` - Handles vote submission and participant key management.
-  - **Provides:** `POST /votes/submit-vote/{election_id}`, `POST /votes/store-public-key/{vote_id}`.
-  - **Depends on:** `BlockchainService`, Database (`public_keys` collection), Smart Contract (`submitVote`).
-  - **Status:** Identified (Target for refactor: remove DB usage)
+  - **Provides:** `POST /votes/submit-vote/{election_id}`.
+  - **Depends on:** `BlockchainService`, Smart Contract (`submitVote`).
+  - **Status:** Refactored (Removed DB Endpoints)
 - `backend/app/routers/election_router.py` - Manages election lifecycle and status.
   - **Provides:** Endpoints for creating/querying elections, checking winners.
-  - **Depends on:** `BlockchainService`, Database (`public_keys`, `election_metadata` collections), Smart Contract (`getElection`, `getVotes`).
-  - **Status:** Identified (Target for refactor: remove DB usage for holder/share status)
+  - **Depends on:** `BlockchainService`, Database (`election_metadata` collection), Smart Contract.
+  - **Status:** Partially Refactored (Needs checks in `/get-winners`, `/submit-token-value` updated)
 - `TimedReleaseVoting.json` (Located at `/` in backend runtime, likely in project root or `backend/` dir) - ABI for the smart contract.
   - **Provides:** Smart contract function definitions.
   - **Depends on:** Solidity contract source (`crypto-core/contracts/TimedReleaseVoting.sol`).
@@ -105,27 +106,31 @@ This feature involves implementing a secure deposit system for secret holders, m
 - `crypto-core/contracts/TimedReleaseVoting.sol` - Source code for the main smart contract.
   - **Provides:** On-chain logic for elections, voting, holder registration, share submission.
   - **Depends on:** Solidity (`^0.8.0`).
-  - **Status:** Identified (Target for audit/enhancement: add efficient status queries)
+  - **Status:** Enhanced (Added efficient status queries, fixed duplication)
 - Database Collection: `public_keys` - Stores holder information and tracks share submission status.
   - **Provides:** State tracking (`share_submitted_successfully`, `released_secret` flags).
   - **Depends on:** Database instance (likely MongoDB).
-  - **Status:** Identified (Target for removal)
+  - **Status:** Deprecated (Target for removal)
 - Database Collection: `election_metadata` - Stores UI/config related election metadata.
   - **Provides:** Off-chain data (`displayHint`, `sliderConfig`).
   - **Depends on:** Database instance (likely MongoDB).
-  - **Status:** Identified (Likely retained)
-- `backend/app/schemas/*.py` - Defines request/response data structures.
+  - **Status:** Retained
+- `backend/app/schemas/share.py` - Defines share-related schemas.
+  - **Provides:** `ShareListSubmitRequest` (updated with `signature`).
+  - **Depends on:** `pydantic`.
+  - **Status:** Updated
+- `backend/app/schemas/*.py` (other) - Defines request/response data structures.
   - **Provides:** Data validation and structure.
   - **Depends on:** `pydantic`.
-  - **Status:** Identified (May need updates for new API signatures)
+  - **Status:** Identified (May need updates for new API signatures or naming scheme)
 - `backend/app/core/config.py` - Contains configuration like private keys and provider URLs.
   - **Provides:** `PRIVATE_KEY`, `WALLET_ADDRESS`, `WEB3_PROVIDER_URL`, `CONTRACT_ADDRESS`.
   - **Depends on:** Environment variables or `.env` file.
-  - **Status:** Identified (`PRIVATE_KEY`/`WALLET_ADDRESS` usage in `share_router.py` to be removed)
+  - **Status:** Identified (`PRIVATE_KEY`/`WALLET_ADDRESS` usage removed from routers)
 - `backend/app/core/dependencies.py` - Provides dependency injection setup.
   - **Provides:** Service/DB instances to routers.
   - **Depends on:** Service classes, DB connection logic.
-  - **Status:** Identified (DB dependency related to `public_keys` to be removed)
+  - **Status:** Identified (DB dependency for `public_keys` removed from most routers)
 - `frontend/services/api.js` - Central API client module for the Nuxt frontend.
   - **Provides:** Functions to call all backend endpoints.
   - **Depends on:** `axios`, `frontend/config.ts`, Backend API.

@@ -3,6 +3,11 @@ Share router for managing secret shares in the system.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from collections import defaultdict
+# Signature verification imports
+import json
+from eth_account.messages import encode_defunct
+from eth_account import Account
+from web3 import Web3 # Needed for checksum address comparison
 
 from app.core.dependencies import get_blockchain_service, get_db
 from app.core.error_handling import handle_blockchain_error
@@ -27,30 +32,63 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/shares", tags=["Shares"])
 
+# Renamed function to reflect its purpose (verification + eligibility check)
 @router.post("/submit-share/{election_id}")
-async def submit_share_signed_data(
+async def verify_share_submission_request(
     election_id: int, 
-    data: ShareListSubmitRequest,
-    blockchain_service: BlockchainService = Depends(get_blockchain_service), 
+    data: ShareListSubmitRequest, # Contains shares, public_key, signature
+    blockchain_service: BlockchainService = Depends(get_blockchain_service),
 ):
-    # Access public key string directly from validated data
-    public_key_hex = data.public_key
-    if not public_key_hex.startswith('0x'):
-        public_key_hex = "0x" + public_key_hex
+    """Verify holder signature and eligibility before frontend submits shares."""
+    public_key_input = data.public_key
+    # Ensure the input key is checksummed for comparison
+    try:
+        submitter_address = Web3.to_checksum_address(public_key_input)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid public key format provided.")
 
     try:
-        # Check if holder is active for this election using contract
-        is_active = await blockchain_service.is_holder_active(election_id, public_key_hex)
+        # --- Eligibility Checks --- 
+        is_active = await blockchain_service.is_holder_active(election_id, submitter_address)
         if not is_active:
             raise HTTPException(status_code=403, detail="Public key is not an active holder for this election")
 
-        # Check if shares have already been submitted using contract
-        has_submitted = await blockchain_service.has_holder_submitted(election_id, public_key_hex)
+        has_submitted = await blockchain_service.has_holder_submitted(election_id, submitter_address)
         if has_submitted:
              raise HTTPException(status_code=409, detail="Shares already submitted by this holder for this election")
 
-        logger.info(f"Holder {public_key_hex} signature verified for election {election_id}. (Placeholder)")
+        # --- Signature Verification --- 
+        # 1. Reconstruct the message payload exactly as signed by the frontend
+        #    Sort shares by vote_id for deterministic payload
+        sorted_shares = sorted(data.shares, key=lambda x: x.vote_id)
+        vote_indices = [item.vote_id for item in sorted_shares]
+        share_strings = [item.share for item in sorted_shares]
+        
+        # Define the message structure (needs to match frontend signing)
+        # Using JSON dumps for lists and f-string for simple structure
+        # Consider adding chainId or a nonce for stronger replay protection if needed.
+        message_payload = f"SubmitShares:{election_id}:{json.dumps(vote_indices)}:{json.dumps(share_strings)}:{submitter_address}"
+        message_hash = encode_defunct(text=message_payload)
 
+        # 2. Recover the signer's address from the signature and message hash
+        try:
+            recovered_address = Account.recover_message(message_hash, signature=data.signature)
+            logger.info(f"Recovered address: {recovered_address}")
+            logger.info(f"Submitter address: {submitter_address}")
+        except Exception as e:
+            # Handle potential exceptions during recovery (e.g., invalid signature format)
+            logger.error(f"Signature recovery failed: {str(e)}")
+            raise HTTPException(status_code=400, detail="Invalid signature format or recovery failed.")
+
+        # 3. Compare the recovered address with the submitter's address
+        if recovered_address.lower() != submitter_address.lower():
+            logger.warning(f"Signature verification failed. Expected {submitter_address}, got {recovered_address}")
+            raise HTTPException(status_code=403, detail="Signature verification failed. Signer does not match provided public key.")
+
+        logger.info(f"Signature verified successfully for {submitter_address} in election {election_id}.")
+
+        # --- Return Response --- 
+        # If verification passes, return success. Frontend will handle tx submission.
         return StandardResponse(
             success=True,
             message="Holder eligibility and signature verified. Proceed with transaction submission."
@@ -59,7 +97,7 @@ async def submit_share_signed_data(
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        logger.error(f"Error processing share submission request for {public_key_hex} in election {election_id}: {str(e)}")
+        logger.error(f"Error processing share submission request for {submitter_address} in election {election_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error during share submission processing")
 
 
