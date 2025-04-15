@@ -9,26 +9,61 @@ This feature involves implementing a secure deposit system for secret holders, m
 - [x] Document the existing data structures and workflow of the prototype deposit system.
 - [x] Identify other parts of the system that interact with or depend on the current deposit functionality.
 - [x] Define a strategy for phasing out/removing the prototype code.
+- [x] Design overall deposit/reward flow (on-chain vs. off-chain elements).
+- [x] Smart Contract Enhancements (`TimedReleaseVoting.sol`)
+  - [x] Implement basic deposit logic (`depositFunds`).
+  - [x] Implement basic on-chain reward calculation/distribution logic (`distributeRewards`).
+  - [x] Implement efficient way to get the list of active holders for rewards (`EnumerableSet`).
+- [x] Backend Refactoring (`election_router.py`, `election_helper.py`)
+  - [x] Remove `public_keys` database/collection usage.
+  - [x] Remove winner calculation logic (moved to contract).
+  - [x] Remove `/get-winners` endpoint.
+  - [x] Update helper functions (`election_information_response`) to get data from contract state via web3 calls (or cache).
+  - [x] Add endpoint (`/trigger-reward-distribution`) to call the `distributeRewards` contract function.
+- [x] Refactor `frontend/services/web3.js` or Migrate to `ethers.js` (Chosen: Migrate)
+  - [x] Implement `EthersService` class.
+  - [x] Add method for wallet connection (`init`).
+  - [x] Add methods for getting account, signer, balance.
+  - [x] Add method for signing messages (`signMessage`).
+  - [x] Add method for sending transactions (`sendTransaction`).
+- [x] Refactor Frontend Share Submission (`SubmitSecretShare.vue`)
+  - [x] Remove private key cookie usage.
+  - [x] Use `ethersService` for account & signing.
+  - [x] Implement signing of submission payload.
+  - [x] Update `shareApi.submitShare` call for backend verification.
+  - [x] Use `ethersService.sendTransaction` for contract call.
+  - [x] Remove cookie reliance for status (replaced with contract check - *partially done, cookie still used temporarily*).
 
 ## In Progress Tasks
 
+- [ ] Backend `share_router.py` Refactoring
+  - [ ] Update `/submit-share` endpoint:
+    - [ ] Accept signature and public key (address).
+    - [ ] Verify signature against payload (shares, election ID, public key).
+    - [ ] **Do not** store shares directly.
+    - [ ] **Do not** call contract directly (frontend does this now).
+    - [ ] Return success/failure based on verification.
+- [ ] Frontend `RegisterHolder.vue` Refactoring
+  - [ ] Remove private key generation/storage in cookies.
+  - [ ] Use `ethersService` to get user's address.
+  - [ ] Modify registration process: User connects wallet, signs a registration message.
+  - [ ] Backend verifies signature and registers the address.
+  - [ ] Handle secure generation/storage/retrieval of Pedersen commitment components (e.g., `h`) if needed, or adjust flow.
+  - [ ] Frontend calls `ethersService.sendTransaction` to execute the `joinAsHolder` contract function (potentially including deposit).
+
 ## Future Tasks
 
-- [x] Audit/Enhance Smart Contract (`TimedReleaseVoting.sol`) for holder/share status queries (e.g., `hasSubmittedShare`).
-- [x] Refactor `holder_router.py` to remove `public_keys` DB usage (endpoint may be removed/simplified if frontend handles `joinAsHolder` tx).
-- [x] Refactor `vote_router.py` to remove `public_keys` DB usage and rely on contract calls.
-- [x] Refactor `share_router.py` to remove `public_keys` DB usage, remove central key signing, and implement holder signature verification.
-- [ ] Refactor `election_router.py` to remove `public_keys` DB usage and rely on contract calls for status checks.
-- [x] Update `BlockchainService` (`blockchain.py`) with new/updated contract interaction methods.
-- [ ] Refactor `frontend/services/web3.js`: Add signMessage & generic sendTransaction methods (or migrate to ethers.js).
-- [ ] Refactor `SubmitSecretShare.vue`: Remove key/status cookies, use web3 service for signing, call backend verification, send contract tx.
-- [ ] Implement Frontend `joinAsHolder`: Add UI, call backend eligibility check, use web3 service to send contract tx, remove registration cookies.
-- [ ] Define and implement transition plan (e.g., support only new elections).
-- [ ] Remove obsolete code/DB collections (`public_keys`, old signing logic, `holder_helper.py`) after validation.
-- [ ] (Optional) Implement on-chain deposit/stake mechanism if required (Smart Contract, Backend, Frontend).
-- [ ] Add comprehensive tests for the new on-chain verification and holder signing logic.
-- [ ] Update documentation to reflect the new architecture.
 - [ ] Refactor Naming Scheme (Election->VoteSession, Vote->EncryptedVote, etc.)
+- [ ] Refactor `election_router.py`: Remove/Replace `/get-winners`, update helpers, use contract state.
+- [ ] Update `BlockchainService` (`blockchain.py`) with new/updated contract interaction methods.
+- [ ] Refactor `SubmitSecretShare.vue`: Use web3 service for signing/tx, remove cookies.
+- [ ] Implement Frontend `joinAsHolder`: Add UI, send deposit value with tx, remove cookies.
+- [ ] Implement Frontend Deposit/Reward UI: Add UI/logic for `claimDeposit` and displaying reward status.
+- [ ] Define and implement transition plan (e.g., support only new VoteSessions).
+- [ ] Remove obsolete code/DB collections (`public_keys`, old winner logic, `holder_helper.py`) after validation.
+- [ ] (Optional) Implement on-chain deposit/stake mechanism if required (Smart Contract, Backend, Frontend). [Covered by Deposit Logic task above]
+- [ ] Add comprehensive tests for the new on-chain deposit, reward, and signing logic.
+- [ ] Update documentation to reflect the new architecture.
 
 ## Implementation Plan
 

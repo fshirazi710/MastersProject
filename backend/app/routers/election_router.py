@@ -117,7 +117,7 @@ async def create_election(data: ExtendedElectionCreateRequest, blockchain_servic
 
 
 @router.get("/all-elections", response_model=StandardResponse[List[Dict[str, Any]]])
-async def get_all_elections(blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+async def get_all_elections(blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
     try:
         elections = []
         num_of_elections = await blockchain_service.call_contract_function("electionCount")
@@ -161,6 +161,15 @@ async def get_all_elections(blockchain_service: BlockchainService = Depends(get_
             participant_count = total_secret_holders 
             # --- End Contract Data Counts --- 
 
+            # Fetch metadata (Requires DB)
+            metadata = await db.election_metadata.find_one({"election_id": election_id})
+            slider_config_parsed = None
+            if metadata and metadata.get('sliderConfig'):
+                try:
+                    slider_config_parsed = json.loads(metadata.get('sliderConfig'))
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse sliderConfig JSON for election {election_id}")
+
             elections.append(await election_information_response(
                 election_info, 
                 election_status, 
@@ -168,7 +177,9 @@ async def get_all_elections(blockchain_service: BlockchainService = Depends(get_
                 required_keys, 
                 released_keys, 
                 total_secret_holders, 
-                blockchain_service
+                blockchain_service,
+                metadata.get('displayHint') if metadata else None,
+                slider_config_parsed
             ))
 
         return StandardResponse(
@@ -182,7 +193,7 @@ async def get_all_elections(blockchain_service: BlockchainService = Depends(get_
 
 
 @router.get("/election/{election_id}", response_model=StandardResponse[Dict[str, Any]])
-async def get_election_information(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+async def get_election_information(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
     try:
         election_info = await blockchain_service.call_contract_function("getElection", election_id)
         
@@ -222,23 +233,16 @@ async def get_election_information(election_id: int, blockchain_service: Blockch
         participant_count = total_secret_holders
         # --- End Contract Data Counts --- 
 
-        # Fetch metadata (still requires DB)
-        # metadata = await db.election_metadata.find_one({"election_id": election_id})
-        # slider_config_parsed = json.loads(metadata.get('sliderConfig')) if metadata and metadata.get('sliderConfig') else None
+        # Fetch metadata (Requires DB)
+        metadata = await db.election_metadata.find_one({"election_id": election_id})
+        slider_config_parsed = None
+        if metadata and metadata.get('sliderConfig'):
+            try:
+                slider_config_parsed = json.loads(metadata.get('sliderConfig'))
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse sliderConfig JSON for election {election_id}")
 
-        # election_data = await election_information_response(
-        #     election_info, 
-        #     election_status, 
-        #     participant_count, 
-        #     required_keys, 
-        #     released_keys, 
-        #     total_secret_holders,
-        #     blockchain_service,
-        #     metadata.get('displayHint') if metadata else None,
-        #     slider_config_parsed
-        # )
-
-        # TEMP: Call helper without metadata until DB dependency is fully resolved
+        # Call helper with metadata
         election_data = await election_information_response(
             election_info, 
             election_status, 
@@ -246,7 +250,9 @@ async def get_election_information(election_id: int, blockchain_service: Blockch
             required_keys, 
             released_keys, 
             total_secret_holders,
-            blockchain_service
+            blockchain_service,
+            metadata.get('displayHint') if metadata else None,
+            slider_config_parsed
         )
 
         return StandardResponse(
@@ -262,41 +268,50 @@ async def get_election_information(election_id: int, blockchain_service: Blockch
         raise handle_blockchain_error("get election information", e)
 
 
-@router.post("/get-winners/{election_id}")
-async def get_winners(election_id: int, data: dict, db=Depends(get_db)):
-    
-    # Get the requester's public key from the request data using the correct key name
-    requester_pk_hex = data.get("requesterPublicKey")
-    if not requester_pk_hex or not isinstance(requester_pk_hex, str):
-        raise HTTPException(status_code=422, detail="Missing or invalid 'requesterPublicKey' field.")
-    
-    # Ensure 0x prefix for consistency
-    if not requester_pk_hex.startswith('0x'):
-        requester_pk_hex = '0x' + requester_pk_hex
+@router.post("/trigger-reward-distribution/{election_id}", response_model=StandardResponse[TransactionResponse])
+async def trigger_reward_distribution(
+    election_id: int,
+    blockchain_service: BlockchainService = Depends(get_blockchain_service)
+    # TODO: Add Auth dependency to ensure only authorized user can call this
+):
+    """Triggers the on-chain reward distribution for an election."""
+    # Basic check: Ensure election exists (getElection will raise error if not)
+    try:
+        await blockchain_service.call_contract_function("getElection", election_id)
+    except Exception:
+         raise HTTPException(status_code=404, detail=f"Election {election_id} not found.")
 
     try:
-        # Check if winners have already been selected for this election
-        already_selected = await check_winners_already_selected(election_id, db)
-        if already_selected:
-            results, winner_info = await check_winners(election_id, db)
+        # Build transaction to call distributeRewards
+        # This needs to be sent by an authorized account (e.g., backend wallet)
+        # that has gas. The contract handles the actual transfers.
+        distribute_tx = blockchain_service.contract.functions.distributeRewards(election_id).build_transaction({
+            'from': WALLET_ADDRESS, # Use backend wallet
+            'nonce': blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS),
+            # Estimate gas dynamically if possible, otherwise set a reasonable limit
+            # 'gas': estimated_gas,
+            # 'gasPrice': blockchain_service.w3.eth.gas_price,
+        })
+
+        # Sign and send
+        signed_tx = blockchain_service.w3.eth.account.sign_transaction(distribute_tx, PRIVATE_KEY)
+        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+        receipt = await asyncio.to_thread(blockchain_service.w3.eth.wait_for_transaction_receipt, tx_hash, timeout=120) # Use await asyncio.to_thread for sync wait_for
+
+        if receipt.status == 1:
             return StandardResponse(
                 success=True,
-                message="Winners already selected",
-                data={"results": results, "winnerInfo": winner_info}
+                message=f"Reward distribution triggered successfully for election {election_id}.",
+                data=TransactionResponse(transaction_hash=receipt.transactionHash.hex())
             )
+        else:
+             logger.error(f"On-chain reward distribution failed for election {election_id}. Tx: {receipt.transactionHash.hex()}")
+             raise HTTPException(status_code=500, detail="Reward distribution transaction failed on-chain.")
 
-        # Generate winners
-        results, winner_info = await generate_winners(election_id, db)
-
-        # Return response
-        return StandardResponse(
-            success=True,
-            message="Successfully generated and retrieved winners",
-            data={"results": results, "winnerInfo": winner_info}
-        )
     except Exception as e:
-        logger.error(f"Error getting or generating winners: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"failed to get or generate winners: {str(e)}")
+        logger.error(f"Error triggering reward distribution for election {election_id}: {str(e)}")
+        # Handle specific web3 errors if needed (e.g., gas estimation, revert reasons)
+        raise HTTPException(status_code=500, detail="Failed to trigger reward distribution.")
 
 
 @router.post("/submit-email/{election_id}")

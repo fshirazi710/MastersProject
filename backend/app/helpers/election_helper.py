@@ -9,6 +9,7 @@ from app.core.config import WALLET_ADDRESS, PRIVATE_KEY
 import logging
 import random
 from typing import Optional
+import asyncio
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -31,10 +32,13 @@ async def get_election_status(start_timestamp, end_timestamp):
 async def election_information_response(
     election_info, 
     election_status, 
-    participant_count, 
+    participant_count,
     required_keys,
     released_keys,
-    blockchain_service: BlockchainService = Depends(get_blockchain_service)
+    total_secret_holders,
+    blockchain_service: BlockchainService = Depends(get_blockchain_service),
+    displayHint: Optional[str] = None,
+    sliderConfig: Optional[dict] = None
 ):
     # Constructs a response containing election information
     return {
@@ -49,12 +53,14 @@ async def election_information_response(
         ),
         "status": election_status,
         "participant_count": participant_count,
-        "secret_holder_count": 0,
+        "secret_holder_count": total_secret_holders,
         "options": election_info[5],
         "reward_pool": blockchain_service.w3.from_wei(election_info[6], 'ether') if len(election_info) > 6 else 0,
         "required_deposit": blockchain_service.w3.from_wei(election_info[7], 'ether') if len(election_info) > 7 else 0,
         "required_keys": required_keys,
         "released_keys": released_keys,
+        "displayHint": displayHint,
+        "sliderConfig": sliderConfig
     }
 
 
@@ -106,73 +112,3 @@ async def create_election_transaction(
     
     # Return response
     return receipt
-
-
-async def generate_winners(election_id, db=Depends(get_db)):
-    """Generates winners based on reward tokens and stores them.
-    Returns a tuple: (list_of_winner_public_keys, status_message)
-    """
-    # Retrieve the list of users who voted in the given election
-    users = await db.public_keys.find({"vote_id": election_id}).to_list(None)
-
-    # Check if there are no users
-    if not users:
-        logger.warning(f"No users found for election {election_id}")
-        return [], "No participants found for this election." # Return empty list and message
-    
-    # Initialize an empty list to hold the raffle entries    
-    raffle = []
-    for user in users:
-        public_key = user["public_key"] # Assuming this is the raw hex string
-        # Get reward token directly from DB (defaults to 0 if missing)
-        reward_token = user.get("reward_token", 0)
-        
-        # REMOVED check for released_secret - rely solely on reward_token value
-        
-        # Add public key to the raffle based on reward tokens
-        # Ensure reward_token is an integer
-        try:
-            num_entries = int(reward_token)
-        except (ValueError, TypeError):
-            logger.warning(f"Invalid reward_token '{reward_token}' for user {public_key}, skipping entries.")
-            num_entries = 0
-            
-        if num_entries > 0:
-            raffle.extend([public_key] * num_entries)
-
-    # If no valid entries in the raffle, print a message and return
-    if not raffle:
-        logger.warning(f"No valid raffle entries for election {election_id}, no winners selected.")
-        return [], "No participants eligible for rewards." # Return empty list and message
-
-    # Randomly select up to 5 winners from the raffle
-    winners = []
-    while len(winners) < 5 and raffle:
-        winner = random.choice(raffle)
-        winners.append(winner)
-        # Remove all instances of the winner from the raffle
-        raffle = [entry for entry in raffle if entry != winner]
-
-    # Store the winners in the database
-    await db.winners.insert_one({"election_id": election_id, "winners": winners})
-    logger.info(f"Generated {len(winners)} winners for election {election_id}: {winners}")
-    
-    # Return the list of winners and a success message
-    return winners, f"Successfully generated {len(winners)} winners."
-
-
-async def check_winners_already_selected(election_id: int, db=Depends(get_db)):
-    # Checks if winners have already been selected
-    return bool(await db.winners.find_one({"election_id": election_id}))
-
-
-async def check_winners(election_id, db=Depends(get_db)):
-    """Gets previously selected winners and returns them.
-    Returns a tuple: (list_of_winner_public_keys, status_message)
-    """
-    winner_doc = await db.winners.find_one({"election_id": election_id})
-    if winner_doc and "winners" in winner_doc:
-        winners = winner_doc["winners"]
-        return winners, f"Retrieved {len(winners)} previously selected winners."
-    else:
-        return [], "No winners previously selected or found."
