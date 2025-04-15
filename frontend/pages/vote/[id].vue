@@ -70,8 +70,10 @@
     <template v-if="vote?.status === 'join'">
       <RegisterToVote 
         v-if="!isRegisteredForVote"
-        :vote-id="route.params.id"
+        :election-id="route.params.id"
         :endDate="vote.endDate"
+        :rewardPool="vote.rewardPool"
+        :requiredDeposit="vote.requiredDeposit"
         @registration-successful="handleRegistrationSuccess"
       />
       <div v-else class="status-message info">

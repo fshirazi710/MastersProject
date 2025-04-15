@@ -40,16 +40,16 @@ This feature involves implementing a secure deposit system for secret holders, m
   - [x] Backend verifies signature and registers the address. (Note: Backend verification of registration message not implemented, registration is direct contract call now)
   - [x] Handle secure generation/storage/retrieval of Pedersen commitment components (e.g., `h`) if needed, or adjust flow. (Note: Pedersen logic not added, adjust flow implemented)
   - [x] Frontend calls `ethersService.sendTransaction` to execute the `joinAsHolder` contract function (potentially including deposit).
+- [x] Backend `share_router.py` Refactoring
+  - [x] Update `/submit-share` endpoint:
+    - [x] Accept signature and public key (address).
+    - [x] Verify signature against payload (shares, election ID, public key).
+    - [x] **Do not** store shares directly.
+    - [x] **Do not** call contract directly (frontend does this now).
+    - [x] Return success/failure based on verification.
 
 ## In Progress Tasks
 
-- [ ] Backend `share_router.py` Refactoring
-  - [ ] Update `/submit-share` endpoint:
-    - [ ] Accept signature and public key (address).
-    - [ ] Verify signature against payload (shares, election ID, public key).
-    - [ ] **Do not** store shares directly.
-    - [ ] **Do not** call contract directly (frontend does this now).
-    - [ ] Return success/failure based on verification.
 - [ ] Frontend `RegisterHolder.vue` Refactoring
   - [ ] Remove private key generation/storage in cookies.
   - [ ] Use `ethersService` to get user's address.
@@ -63,7 +63,13 @@ This feature involves implementing a secure deposit system for secret holders, m
 - [ ] Refactor Naming Scheme (Election->VoteSession, Vote->EncryptedVote, etc.)
 - [ ] Refactor `election_router.py`: Remove/Replace `/get-winners`, update helpers, use contract state.
 - [ ] Update `BlockchainService` (`blockchain.py`) with new/updated contract interaction methods.
-- [ ] Refactor `SubmitSecretShare.vue`: Use web3 service for signing/tx, remove cookies.
+- [ ] Refactor `SubmitSecretShare.vue`:
+  - [ ] Remove private key cookie usage.
+  - [ ] Use `ethersService` for account & signing.
+  - [ ] Implement signing of submission payload.
+  - [ ] Update `shareApi.submitShare` call for backend verification.
+  - [ ] Use `ethersService.sendTransaction` for contract call.
+- [ ] Remove cookie reliance for status (use `ethersService.readContract('getHolderStatus')`).
 - [ ] Implement Frontend `joinAsHolder`: Add UI, send deposit value with tx, remove cookies.
 - [ ] Implement Frontend Deposit/Reward UI: Add UI/logic for `claimDeposit` and displaying reward status.
 - [ ] Refactor `frontend/services/cryptography.js`:
@@ -130,12 +136,13 @@ This feature involves implementing a secure deposit system for secret holders, m
 
 - `backend/app/routers/share_router.py` - Handles API requests for submitting secret shares.
   - **Provides:** `POST /shares/submit-share/{election_id}` (now verifies signature).
+  - **Key Function:** `verify_share_submission_request`.
   - **Depends on:** `BlockchainService`, Schemas (`ShareListSubmitRequest`), `eth_account`, `web3.py`.
   - **Status:** Refactored (Removed DB/Central Signing, Added Sig Verification)
 - `backend/app/services/blockchain.py` - Provides low-level interaction with the blockchain/smart contract.
   - **Provides:** Connection (`w3`), Contract object, `call_contract_function`, `is_holder_active`, `has_holder_submitted`.
   - **Depends on:** `web3.py`, Contract ABI (`TimedReleaseVoting.json`), `settings`.
-  - **Status:** Updated
+  - **Status:** Updated (Reduced scope of key usage)
 - `backend/app/routers/holder_router.py` - Handles API requests for secret holder registration.
   - **Provides:** `POST /holders/join/{election_id}` (now checks eligibility, frontend sends tx).
   - **Depends on:** `BlockchainService`.
@@ -191,7 +198,8 @@ This feature involves implementing a secure deposit system for secret holders, m
   - **Depends on:** `axios`, `frontend/config.ts`, Backend API.
   - **Status:** Identified (Needs updates for API changes, particularly share submission flow)
 - `frontend/services/ethersService.js` (Formerly `web3.js`) - Frontend wallet interaction service.
-  - **Provides:** Connection to MetaMask/wallets, signing, transaction sending.
+  - **Provides:** Wallet connection, account access, signing, transaction sending, contract reading.
+  - **Key Functions:** `init`, `getAccount`, `signMessage`, `sendTransaction`, `readContract`.
   - **Depends on:** Wallet provider (e.g., MetaMask), `ethers.js`.
   - **Status:** Refactored (Implemented `EthersService` class)
 - `frontend/services/cryptography.js` - Frontend cryptographic utilities.
@@ -203,10 +211,12 @@ This feature involves implementing a secure deposit system for secret holders, m
   - **Depends on:** `services/api.js`, `services/ethersService.js`, Child Components (`RegisterToVote`, `SubmitSecretShare`, etc.). (`js-cookie` to be removed).
   - **Status:** Identified (Needs updates for new state management/component interactions, cookie removal)
 - `frontend/components/vote/SubmitSecretShare.vue` - Component handling secret share submission.
-  - **Provides:** UI for share submission, signing payload, initiating transaction.
+  - **Provides:** UI for share submission.
+  - **Key Function:** `prepareAndSubmitShare` (handles signing, verification API call, contract tx).
   - **Depends on:** `services/api.js`, `services/ethersService.js`, `services/cryptography.js` (pending refactor), `fast-json-stable-stringify`. (`js-cookie` to be removed).
   - **Status:** Partially Refactored (Signing added, TX sending added, Needs Crypto Logic Update & cookie removal)
 - `frontend/components/vote/RegisterToVote.vue` - Component handling voter/holder registration for a session.
-  - **Provides:** UI for registration, initiating `joinAsHolder` transaction.
-  - **Depends on:** `services/api.js`, `services/ethersService.js`.
-  - **Status:** Identified (Target for Refactor: Implement `joinAsHolder` frontend tx logic & deposit handling)
+  - **Provides:** UI for registration and deposit.
+  - **Key Functions:** `checkRegistrationStatus`, `registerAndDeposit`, `connectWallet`.
+  - **Depends on:** `services/ethersService.js`, `config`, `ethers`.
+  - **Status:** Refactored (Wallet integration, deposit handling via contract call)

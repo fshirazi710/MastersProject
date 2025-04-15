@@ -41,7 +41,7 @@
     import { ethersService } from '~/services/ethersService.js'; // Use ethersService
     import { generateShares } from '@/services/cryptography.js'; // getPublicKeyFromPrivate removed
     import { config } from '@/config'; // Assuming config has contract address/abi
-    import Cookies from "js-cookie"; // Still used for status cookie (TEMP - should be removed)
+    // import Cookies from "js-cookie"; // Removed cookie usage
     import { ethers } from 'ethers'; // Import ethers for utils if needed (e.g., keccak256)
     import jsonStableStringify from 'fast-json-stable-stringify'; // For deterministic JSON stringify
 
@@ -56,9 +56,10 @@
     const hasSubmittedShare = ref(false);
     const isWalletConnected = ref(false);
     const currentAccount = ref(null);
+    const isCheckingStatus = ref(true); // Loading state for initial status check
 
     // TEMP: Still using cookie for initial check, should be replaced by contract check
-    const shareSubmittedCookie = `vote_${props.voteId}_shareSubmitted`;
+    // const shareSubmittedCookie = `vote_${props.voteId}_shareSubmitted`;
 
     // --- Deadline Calculation ---
     const submissionDeadline = computed(() => {
@@ -84,24 +85,54 @@
 
     onMounted(async () => {
         // Check initial submission status from cookie (TEMP)
-        if (Cookies.get(shareSubmittedCookie) === 'true') {
-            hasSubmittedShare.value = true;
-        }
+        // if (Cookies.get(shareSubmittedCookie) === 'true') {
+        //     hasSubmittedShare.value = true;
+        // }
         // Check wallet connection status
         try {
             // Attempt init gently, might already be connected
             if (ethersService.getAccount()) {
                  isWalletConnected.value = true;
                  currentAccount.value = ethersService.getAccount();
+                 // If connected, check submission status
+                 await checkSubmissionStatus(); 
             } else {
-                 // Optional: Automatically prompt connection? Or rely on user action.
+                 isWalletConnected.value = false;
+                 currentAccount.value = null;
+                // Optional: Automatically prompt connection? Or rely on user action.
             }
             // TODO: Replace cookie check with call to contract getHolderStatus via backend/api
         } catch (e) {
-            console.warn("Wallet not connected on mount or init failed:", e);
+            console.warn("Wallet check/init or status check failed on mount:", e);
             isWalletConnected.value = false;
+        } finally {
+            isCheckingStatus.value = false;
         }
     });
+
+    // New function to check submission status from contract
+    async function checkSubmissionStatus() {
+        if (!currentAccount.value || !props.voteId) return;
+        isCheckingStatus.value = true;
+        console.log(`Checking share submission status for ${currentAccount.value} in election ${props.voteId}...`);
+        try {
+            const statusResult = await ethersService.readContract(
+                config.contract.address,
+                config.contract.abi,
+                'getHolderStatus', 
+                [parseInt(props.voteId), currentAccount.value]
+            );
+            // Index 1 corresponds to hasSubmitted bool in the returned tuple
+            hasSubmittedShare.value = statusResult[1]; 
+            console.log("On-chain share submission status:", hasSubmittedShare.value);
+
+        } catch (err) {
+            console.error("Error checking share submission status:", err);
+            hasSubmittedShare.value = false; // Assume not submitted on error
+        } finally {
+            isCheckingStatus.value = false;
+        }
+    }
 
     // Renamed function
     const prepareAndSubmitShare = async () => {
@@ -206,7 +237,7 @@
             // console.log('Transaction confirmed:', receipt);
 
             hasSubmittedShare.value = true;
-            Cookies.set(shareSubmittedCookie, 'true', { expires: 365 }); // TEMP: Set cookie on tx *sent*
+            // Cookies.set(shareSubmittedCookie, 'true', { expires: 365 }); // TEMP: Set cookie on tx *sent*
             error.value = null;
             loadingMessage.value = 'Success!'; // Keep loading true briefly to show success
             setTimeout(() => loading.value = false, 1500);
