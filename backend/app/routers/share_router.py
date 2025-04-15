@@ -2,26 +2,17 @@
 Share router for managing secret shares in the system.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from collections import defaultdict
 # Signature verification imports
 import json
 from eth_account.messages import encode_defunct
 from eth_account import Account
 from web3 import Web3 # Needed for checksum address comparison
 
-from app.core.dependencies import get_blockchain_service, get_db
+from app.core.dependencies import get_blockchain_service
 from app.core.error_handling import handle_blockchain_error
 from app.schemas import (
-    ShareSubmitRequest, 
-    ShareVerificationRequest, 
-    ShareVerificationResponse,
-    StandardResponse,
-    TransactionResponse,
-    ShareListSubmitRequest
-)
-from app.core.config import (
-    WALLET_ADDRESS,
-    PRIVATE_KEY,
+    ShareListSubmitRequest,
+    StandardResponse
 )
 from app.services.blockchain import BlockchainService
 

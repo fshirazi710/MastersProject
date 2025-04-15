@@ -1,4 +1,3 @@
-// NOTE: Requires installation: npm install ethers@6
 import { ethers } from 'ethers';
 import { config } from '../config'; // Assuming config holds contract address/abi
 

@@ -218,7 +218,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { electionApi } from '@/services/api'
-import { web3Service } from '@/services/web3'
+import { web3Service } from '~/services/ethersService'
 
 const router = useRouter();
 const loading = ref(false);

@@ -119,14 +119,17 @@ async def create_election(data: ExtendedElectionCreateRequest, blockchain_servic
 @router.get("/all-elections", response_model=StandardResponse[List[Dict[str, Any]]])
 async def get_all_elections(blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
     try:
+        # Get total number of votes from the smart contract
         elections = []
         num_of_elections = await blockchain_service.call_contract_function("electionCount")
 
+        # Iterate through each vote and retrieve its data
         for election_id in range(num_of_elections):
+
+            # Retrieve election information from the blockchain
             election_info = await blockchain_service.call_contract_function("getElection", election_id)
-            # logger.info("election_info: ", election_info)
-            # logger.info("election_info[3]: ", election_info[3])
-            # logger.info("election_info[4]: ", election_info[4])
+            
+            # Calculate the status of the election
             election_status = await get_election_status(election_info[3], election_info[4])
 
             # --- Calculate counts using Contract Data --- 

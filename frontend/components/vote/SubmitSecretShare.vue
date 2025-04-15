@@ -38,7 +38,7 @@
     import { ref, computed, onMounted, watch } from 'vue';
     import { useRoute } from 'vue-router';
     import { voteApi, shareApi } from '@/services/api';
-    import { ethersService } from '@/services/web3.js'; // Use ethersService
+    import { ethersService } from '~/services/ethersService.js'; // Use ethersService
     import { generateShares } from '@/services/cryptography.js'; // getPublicKeyFromPrivate removed
     import { config } from '@/config'; // Assuming config has contract address/abi
     import Cookies from "js-cookie"; // Still used for status cookie (TEMP - should be removed)
