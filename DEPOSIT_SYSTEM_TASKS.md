@@ -20,8 +20,9 @@ This feature involves implementing a secure deposit system for secret holders, m
 - [x] Refactor `share_router.py` to remove `public_keys` DB usage, remove central key signing, and implement holder signature verification.
 - [ ] Refactor `election_router.py` to remove `public_keys` DB usage and rely on contract calls for status checks.
 - [x] Update `BlockchainService` (`blockchain.py`) with new/updated contract interaction methods.
-- [ ] Implement wallet signing integration in Frontend (`services/api.js`, `services/web3.js`, relevant pages/components) for share submission.
-- [ ] Implement frontend logic to initiate/sign `joinAsHolder` contract transaction.
+- [ ] Refactor `frontend/services/web3.js`: Add signMessage & generic sendTransaction methods (or migrate to ethers.js).
+- [ ] Refactor `SubmitSecretShare.vue`: Remove key/status cookies, use web3 service for signing, call backend verification, send contract tx.
+- [ ] Implement Frontend `joinAsHolder`: Add UI, call backend eligibility check, use web3 service to send contract tx, remove registration cookies.
 - [ ] Define and implement transition plan (e.g., support only new elections).
 - [ ] Remove obsolete code/DB collections (`public_keys`, old signing logic, `holder_helper.py`) after validation.
 - [ ] (Optional) Implement on-chain deposit/stake mechanism if required (Smart Contract, Backend, Frontend).
@@ -138,4 +139,16 @@ This feature involves implementing a secure deposit system for secret holders, m
 - `frontend/services/web3.js` - Frontend wallet interaction service.
   - **Provides:** Connection to MetaMask/wallets.
   - **Depends on:** Wallet provider (e.g., MetaMask), `ethers.js` or similar.
-  - **Status:** Identified (Will be used for holder signing)
+  - **Status:** Identified (Target for refactoring: add signMessage/sendTransaction)
+- `frontend/pages/vote/[id].vue` - Main page for displaying and interacting with a specific vote session.
+  - **Provides:** UI container for registration, voting, share submission, results.
+  - **Depends on:** `services/api.js`, Child Components (`RegisterToVote`, `SubmitSecretShare`, etc.), `js-cookie` (to be removed).
+  - **Status:** Identified (Needs updates to handle new state management/component interactions)
+- `frontend/components/vote/SubmitSecretShare.vue` - Component handling secret share submission.
+  - **Provides:** UI for share submission.
+  - **Depends on:** `services/api.js`, `services/cryptography.js`, `js-cookie`.
+  - **Status:** Identified (Target for major refactor: remove key storage, add signing, add tx sending)
+- `frontend/components/vote/RegisterToVote.vue` - Component handling voter/holder registration for a session.
+  - **Provides:** UI for registration.
+  - **Depends on:** `services/api.js`.
+  - **Status:** Identified (Target for refactor: implement frontend `joinAsHolder` transaction logic)
