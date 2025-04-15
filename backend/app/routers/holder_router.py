@@ -9,7 +9,6 @@ from app.schemas import (
     HolderCountResponse,
     JoinHolderStringRequest,
 )
-from app.helpers.holder_helper import join_as_holder_transaction
 from app.services.blockchain import BlockchainService
 
 import logging

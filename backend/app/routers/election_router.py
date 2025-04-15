@@ -5,6 +5,10 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
 from app.core.dependencies import get_blockchain_service, get_db
+# Import configuration variables
+from app.core.config import WALLET_ADDRESS, PRIVATE_KEY
+# Import error handling utility
+from app.core.error_handling import handle_blockchain_error 
 from app.schemas import (
     StandardResponse,
     TransactionResponse,

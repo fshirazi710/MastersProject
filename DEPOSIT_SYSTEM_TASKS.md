@@ -134,12 +134,12 @@ This feature involves implementing a secure deposit system for secret holders, m
   - **Depends on:** `BlockchainService`.
   - **Status:** Refactored (Removed Tx Submission Logic)
 - `backend/app/routers/vote_router.py` - Handles vote submission and participant key management.
-  - **Provides:** `POST /votes/submit-vote/{election_id}`.
-  - **Depends on:** `BlockchainService`, Smart Contract (`submitVote`).
-  - **Status:** Refactored (Removed DB Endpoints)
+  - **Provides:** `POST /votes/submit-vote/{election_id}`, `POST /get-vote-information/{election_id}`.
+  - **Depends on:** `BlockchainService`, Schemas (`VoteCreateRequest`, `VoteSubmitRequest`, etc.), `app.routers.auth_router` (for `get_current_user`), Smart Contract (`submitVote`, `getVotes`), `datetime`.
+  - **Status:** Refactored (Removed election creation/listing endpoints, added vote info endpoint)
 - `backend/app/routers/election_router.py` - Manages election lifecycle and status.
   - **Provides:** Endpoints for creating/querying elections, reward distribution trigger.
-  - **Depends on:** `BlockchainService`, Database (`election_metadata` collection), Smart Contract, `asyncio`, `logging`, `json`.
+  - **Depends on:** `BlockchainService`, Database (`election_metadata` collection), Schemas (`ExtendedElectionCreateRequest`, etc.), Helpers (`election_helper.py`), Smart Contract, `asyncio`, `logging`, `json`, `datetime`, `app.core.config`, `app.core.error_handling`.
   - **Status:** Partially Refactored (Trigger added, `/get-winners` removed, helper updated, needs confirmation on all state queries)
 - `TimedReleaseVoting.json` (Located at `/` in backend runtime, likely in project root or `backend/` dir) - ABI for the smart contract.
   - **Provides:** Smart contract function definitions.

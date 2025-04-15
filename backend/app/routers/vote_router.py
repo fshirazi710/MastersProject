@@ -1,9 +1,11 @@
 """
 Vote router for managing votes in the system.
 """
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
 
+from app.routers.auth_router import get_current_user
 from app.core.dependencies import get_blockchain_service, get_db
 from app.core.error_handling import handle_blockchain_error, handle_validation_error
 from app.core.config import (
@@ -19,6 +21,7 @@ from app.schemas import (
     StandardResponse,
     TransactionResponse,
 )
+from app.schemas.vote import VoteCreateRequest
 from app.services.blockchain import BlockchainService
 
 import logging
@@ -210,76 +213,76 @@ async def get_vote_information(election_id: int, blockchain_service: BlockchainS
 @router.post("/submit-vote/{election_id}", response_model=StandardResponse[TransactionResponse])
 async def submit_vote(election_id: int, request: dict, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     
-    # --- Validate and process voter public key --- 
-    voter_hex = request.get("voter")
-    if not voter_hex or not isinstance(voter_hex, str):
+    # --- Validate and process voter address --- 
+    voter_address = request.get("voter")
+    if not voter_address or not isinstance(voter_address, str):
         raise HTTPException(status_code=422, detail="Missing or invalid 'voter' field (string expected).")
-    # Ensure '0x' prefix
-    if not voter_hex.startswith('0x'):
-        voter_hex = '0x' + voter_hex
+    # Ensure checksum address
+    try:
+        voter_address = blockchain_service.w3.to_checksum_address(voter_address)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid voter address format.")
 
     # --- Check if voter already voted --- 
-    # Index [5] verified to be the 'voter' string based on the updated contract struct.
     votes_from_chain = await blockchain_service.call_contract_function("getVotes", election_id) 
-    if (any(entry[5] == voter_hex for entry in votes_from_chain)):
-        raise HTTPException(status_code=400, detail="public key has already cast a vote")
+    if (any(entry[5] == voter_address for entry in votes_from_chain)): # Index 5 is voter address in Vote struct
+        raise HTTPException(status_code=400, detail="Voter has already cast a vote in this election")
         
-    # --- Validate and process list of holder public keys --- 
-    public_keys_input = request.get("public_keys")
-    if not public_keys_input or not isinstance(public_keys_input, list):
-        raise HTTPException(status_code=422, detail="Missing or invalid 'public_keys' field (list expected).")
+    # --- Validate and process list of holder addresses --- 
+    holder_addresses_input = request.get("holderAddresses") # Match Vote struct field name
+    if not holder_addresses_input or not isinstance(holder_addresses_input, list):
+        raise HTTPException(status_code=422, detail="Missing or invalid 'holderAddresses' field (list expected).")
     
-    public_keys_hex_list = []
-    for key_str in public_keys_input:
-        if not isinstance(key_str, str):
-             raise HTTPException(status_code=422, detail=f"Invalid item type in 'public_keys' list (string expected, got {type(key_str)}). Item: {key_str}")
-        pk_hex = key_str
-        # Ensure '0x' prefix for each key in the list
-        if not pk_hex.startswith('0x'):
-            pk_hex = '0x' + pk_hex
-        public_keys_hex_list.append(pk_hex)
+    holder_addresses_checksummed = []
+    for addr_str in holder_addresses_input:
+        if not isinstance(addr_str, str):
+             raise HTTPException(status_code=422, detail=f"Invalid item type in 'holderAddresses' list (string expected). Item: {addr_str}")
+        try:
+            checksummed_addr = blockchain_service.w3.to_checksum_address(addr_str)
+            holder_addresses_checksummed.append(checksummed_addr)
+        except ValueError:
+             raise HTTPException(status_code=422, detail=f"Invalid holder address format in list: {addr_str}")
     
     # --- Validate other required fields --- 
-    required_fields = ["election_id", "ciphertext", "g1r", "g2r", "alpha", "threshold"]
+    required_fields = ["ciphertext", "g1r", "g2r", "alpha", "threshold"]
     for field in required_fields:
         if field not in request:
             raise HTTPException(status_code=422, detail=f"Missing required field: {field}")
             
-    # TODO: Add type validation for these fields if necessary (e.g., threshold is int)
-    
-    # --- Prepare Transaction --- 
-    nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
-    
-    # Ensure election_id and threshold are integers
+    # Ensure threshold is integer
     try:
-        election_id_int = int(request["election_id"])
         threshold_int = int(request["threshold"])
     except (ValueError, TypeError):
-        raise HTTPException(status_code=422, detail="'election_id' and 'threshold' must be valid integers.")
-        
+        raise HTTPException(status_code=422, detail="'threshold' must be a valid integer.")
+
+    # --- Prepare Transaction --- 
+    # Ensure election_id is int
+    try:
+        election_id_int = int(election_id)
+    except (ValueError, TypeError):
+         raise HTTPException(status_code=400, detail="Invalid election_id format.") # Should be caught by path param validation, but good practice
+
+    nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
+
+    # Arguments for submitVote contract function
+    args = [
+        election_id_int,              # uint256 electionId
+        holder_addresses_checksummed, # address[] memory _holderAddresses
+        request["ciphertext"],       # string memory ciphertext
+        request["g1r"],               # string memory g1r
+        request["g2r"],               # string memory g2r
+        request["alpha"],             # string[] memory alpha
+        threshold_int                 # uint256 threshold
+        # Note: 'voter' (msg.sender) is implicit in the contract call
+    ]
+    
     # Estimate Gas
-    estimated_gas = blockchain_service.contract.functions.submitVote(
-        election_id_int,
-        public_keys_hex_list, # Use corrected list of hex strings
-        request["ciphertext"],
-        request["g1r"],
-        request["g2r"],
-        request["alpha"],
-        voter_hex, # Use corrected voter hex string
-        threshold_int 
-    ).estimate_gas({"from": WALLET_ADDRESS})
+    estimated_gas = blockchain_service.contract.functions.submitVote(*args).estimate_gas({
+        "from": WALLET_ADDRESS # This tx must be sent from the backend wallet
+    })
 
     # Build Transaction
-    create_vote_tx = blockchain_service.contract.functions.submitVote(
-        election_id_int,
-        public_keys_hex_list, # Use corrected list of hex strings
-        request["ciphertext"],
-        request["g1r"],
-        request["g2r"],
-        request["alpha"],
-        voter_hex, # Use corrected voter hex string
-        threshold_int
-    ).build_transaction({
+    create_vote_tx = blockchain_service.contract.functions.submitVote(*args).build_transaction({
         'from': WALLET_ADDRESS,
         'gas': estimated_gas,
         'gasPrice': blockchain_service.w3.eth.gas_price,
@@ -288,7 +291,7 @@ async def submit_vote(election_id: int, request: dict, blockchain_service: Block
 
     signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_vote_tx, PRIVATE_KEY)
     tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-    receipt = blockchain_service.w3.eth.wait_for_transaction_receipt(tx_hash)
+    receipt = await blockchain_service.w3.eth.wait_for_transaction_receipt(tx_hash)
     
     if receipt.status == 1:
         return StandardResponse(
@@ -296,4 +299,16 @@ async def submit_vote(election_id: int, request: dict, blockchain_service: Block
             message="Successfully submitted vote"
         )
     else:
-        raise HTTPException(status_code=500, detail="vote failed to be submitted")
+        # Attempt to get revert reason (optional, may fail)
+        revert_reason = "Vote submission transaction failed."
+        try:
+            tx = await blockchain_service.w3.eth.get_transaction(tx_hash)
+            revert_data = await blockchain_service.w3.eth.call({'to': tx['to'], 'from': tx['from'], 'value': tx['value'], 'data': tx['input']}, tx['blockNumber'] - 1)
+            # Decode revert reason (requires knowing the error ABI, often just Error(string))
+            # This is a simplified example, actual decoding can be complex
+            if revert_data.startswith(b'\x08\xc3y\xa0'): # Error(string) selector
+                 revert_reason += " Reason: " + blockchain_service.w3.codec.decode(['string'], revert_data[4:])[0]
+        except Exception as e:
+             logger.warning(f"Could not retrieve revert reason for tx {tx_hash.hex()}: {e}")
+
+        raise HTTPException(status_code=500, detail=revert_reason)
