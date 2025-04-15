@@ -2,7 +2,6 @@ import { bls12_381 } from "@noble/curves/bls12-381";
 import { mod } from "@noble/curves/abstract/modular";
 import { Buffer } from "buffer";
 import { bls } from "@noble/curves/abstract/bls";
-import { babelParse } from "vue/compiler-sfc";
 
 const FIELD_ORDER = BigInt("0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001");
 
@@ -81,12 +80,17 @@ function stringToBigInt(str) {
 }
 
 export async function AESEncrypt(text, key) {
+    // Consider adding input type validation (text is string, key is CryptoKey)
+    if (typeof text !== 'string' || !(key instanceof CryptoKey)) {
+        console.error("Invalid input types for AESEncrypt");
+        throw new Error("Invalid arguments for AES encryption.");
+    }
     try {
-        const iv = window.crypto.getRandomValues(new Uint8Array(12)); // Generate IV
+        const iv = randomBytes(12); // Use our randomBytes helper
         const encodedText = new TextEncoder().encode(text);
         const ciphertext = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encodedText);
-
-        return bytesToHex(iv) + bytesToHex(new Uint8Array(ciphertext));
+        // Prepend IV to ciphertext for storage
+        return bytesToHex(iv) + bytesToHex(new Uint8Array(ciphertext)); 
     } catch (error) {
         console.error("Encryption failed:", error);
         throw error;
@@ -94,19 +98,21 @@ export async function AESEncrypt(text, key) {
 }
 
 export async function AESDecrypt(encryptedHex, key) {
+    // Consider adding input type validation
+    if (typeof encryptedHex !== 'string' || encryptedHex.length < 24 || !(key instanceof CryptoKey)) {
+        console.error("Invalid input types or format for AESDecrypt");
+        throw new Error("Invalid arguments for AES decryption.");
+    }
     const iv = hexToBytes(encryptedHex.slice(0, 24));
     const ciphertext = hexToBytes(encryptedHex.slice(24));
 
     try {
-        const decryptedBuffer = await window.crypto.subtle.decrypt({ 
-            name: "AES-GCM", 
-            iv 
-        }, key, ciphertext);
-
+        const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
         return new TextDecoder().decode(decryptedBuffer);
     } catch (error) {
         console.error("Decryption failed:", error);
-        throw new Error("Decryption failed");
+        // Provide a more generic error to the user, log the specific one
+        throw new Error("Decryption failed. Check password or data integrity."); 
     }
 }
 
@@ -128,20 +134,33 @@ export async function getKAndSecretShares(pubkeys, threshold, total) {
 }
 
 export function generateShares(g1r_hex, privateKey) {
-    const bigIntPrivateKey = BigInt("0x" + privateKey); 
-    const modBigIntPrivateKey = mod(bigIntPrivateKey, FIELD_ORDER);
-    const g1r_point = bls12_381.G1.ProjectivePoint.fromHex(g1r_hex);
-    const result = g1r_point.multiply(modBigIntPrivateKey);
-    return bigIntToHex(pointToBigint(result))
-}
+    // Input validation/conversion
+    let bigIntPrivateKey;
+    if (typeof privateKey === 'bigint') {
+        bigIntPrivateKey = privateKey;
+    } else if (typeof privateKey === 'string') {
+        try {
+             // Ensure hex strings start with 0x, handle potential errors
+            const keyHex = privateKey.startsWith('0x') ? privateKey : '0x' + privateKey;
+            bigIntPrivateKey = BigInt(keyHex);
+        } catch (e) {
+            console.error("Invalid private key string format for BigInt conversion:", privateKey, e);
+            throw new Error("Invalid private key format.");
+        }
+    } else {
+        throw new Error("Invalid private key type provided to generateShares.");
+    }
 
-export function generateShares2(g1r_hex, privateKey) {
-    const bigIntPrivateKey = BigInt("0x" + privateKey); 
     const modBigIntPrivateKey = mod(bigIntPrivateKey, FIELD_ORDER);
-    const g1r_point = bls12_381.G1.ProjectivePoint.fromHex(g1r_hex);
-    const result = g1r_point.multiply(modBigIntPrivateKey);
-    console.log(result.toRawBytes(true))
-    return bytesToHex(result.toRawBytes(true)); // Compressed form (48 bytes)
+    // Handle potential errors during point deserialization
+    try {
+        const g1r_point = bls12_381.G1.ProjectivePoint.fromHex(g1r_hex);
+        const result = g1r_point.multiply(modBigIntPrivateKey);
+        return bigIntToHex(pointToBigint(result))
+    } catch (e) {
+        console.error("Error during share generation (point operation):", e);
+        throw new Error(`Failed to generate share from g1r: ${g1r_hex}`);
+    }
 }
 
 export function verifyShares(share, share2, publicKey, g2r) {
@@ -414,5 +433,52 @@ async function importBigIntAsCryptoKey(bigintKey) {
     } catch (error) {
         console.error("Error importing CryptoKey:", error);
         throw error;
+    }
+}
+
+// --- Password-Based Key Derivation (PBKDF2) ---
+
+// Default PBKDF2 parameters (can be adjusted)
+const PBKDF2_ITERATIONS = 250000; // Higher = more secure, but slower
+const PBKDF2_HASH = 'SHA-256';
+const AES_KEY_LENGTH_BITS = 256; // For AES-256
+
+/**
+ * Derives a cryptographic key from a password and salt using PBKDF2.
+ * @param {string} password The user's password.
+ * @param {Uint8Array} salt A random salt (should be stored alongside the encrypted data).
+ * @returns {Promise<CryptoKey>} A CryptoKey suitable for AES-GCM encryption/decryption.
+ */
+export async function deriveKeyFromPassword(password, salt) {
+    try {
+        const passwordBuffer = new TextEncoder().encode(password);
+        
+        // Import the password as a base key material for PBKDF2
+        const baseKey = await window.crypto.subtle.importKey(
+            "raw",
+            passwordBuffer,
+            { name: "PBKDF2" },
+            false, // not extractable
+            ["deriveKey"]
+        );
+
+        // Derive the AES key using PBKDF2
+        const derivedKey = await window.crypto.subtle.deriveKey(
+            {
+                name: "PBKDF2",
+                salt: salt,
+                iterations: PBKDF2_ITERATIONS,
+                hash: PBKDF2_HASH,
+            },
+            baseKey,
+            { name: "AES-GCM", length: AES_KEY_LENGTH_BITS }, // Specify AES-GCM key type
+            true, // key is extractable (optional, set false if never needed raw)
+            ["encrypt", "decrypt"] // Key usages
+        );
+
+        return derivedKey;
+    } catch (error) {
+        console.error("Password key derivation failed:", error);
+        throw new Error("Failed to derive encryption key from password.");
     }
 }

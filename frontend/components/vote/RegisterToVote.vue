@@ -26,7 +26,41 @@
       <!-- Registration Action -->
       <div v-if="isWalletConnected && !isRegistered && !isCheckingStatus">
           <p>Connected Account: {{ currentAccount }}</p>
-          <button @click="registerAndDeposit" class="btn primary" :disabled="loading">
+
+          <!-- Password Inputs -->
+          <div class="form-group">
+            <label for="reg-password">Create Election Key Password:</label>
+            <input 
+              type="password" 
+              id="reg-password" 
+              v-model="password"
+              placeholder="Enter a strong password"
+              required
+              class="form-input"
+            />
+            <small>This password encrypts your election-specific key. Store it securely, it's needed to submit shares!</small>
+          </div>
+          <div class="form-group">
+            <label for="reg-confirm-password">Confirm Password:</label>
+            <input 
+              type="password" 
+              id="reg-confirm-password" 
+              v-model="confirmPassword"
+              placeholder="Confirm your password"
+              required
+              class="form-input"
+            />
+          </div>
+          <p v-if="password && confirmPassword && !isPasswordValid" class="error-message small">
+              Passwords do not match.
+          </p>
+
+          <!-- Join Button -->
+          <button 
+            @click="registerAndDeposit" 
+            class="btn primary" 
+            :disabled="loading || !isPasswordValid"
+          >
               {{ loading ? 'Processing Deposit...' : 'Join as Holder & Deposit' }}
           </button>
       </div>
@@ -47,6 +81,13 @@
   import { ref, computed, onMounted } from 'vue'
   import { ethers } from 'ethers'
   import { ethersService } from '@/services/ethersService.js'
+  import { 
+    generateBLSKeyPair, 
+    deriveKeyFromPassword, 
+    AESEncrypt, 
+    bytesToHex, 
+    randomBytes // Need this for salt generation
+  } from '@/services/cryptography.js'
   import { config } from '@/config'
 
   const props = defineProps({
@@ -74,8 +115,14 @@
   const currentAccount = ref(null)
   const isRegistered = ref(false)
   const isCheckingStatus = ref(true)
+  const password = ref('')
+  const confirmPassword = ref('')
 
   const emit = defineEmits(['registration-successful'])
+
+  const isPasswordValid = computed(() => {
+    return password.value && password.value === confirmPassword.value;
+  });
 
   onMounted(async () => {
     await checkWalletConnection()
@@ -145,62 +192,109 @@
 
   async function registerAndDeposit() {
     if (!isWalletConnected.value || !currentAccount.value) {
-      error.value = "Please connect your wallet first."
-      return
+      error.value = "Please connect your wallet first.";
+      return;
     }
     if (isRegistered.value) {
-      error.value = "You are already registered as a holder for this election."
-      return
+      error.value = "You are already registered as a holder for this election.";
+      return;
+    }
+    // Check password validity again before proceeding (belt and suspenders)
+    if (!isPasswordValid.value) {
+       error.value = "Please enter matching passwords.";
+       return;
     }
 
-    loading.value = true
-    error.value = null
+    loading.value = true;
+    error.value = null;
+    let txResponse = null; // Define txResponse outside try block
 
     try {
-      console.log(`Attempting to register ${currentAccount.value} for election ${props.electionId} with deposit ${props.requiredDeposit} ETH`)
+      console.log(`Attempting to register ${currentAccount.value} for election ${props.electionId} with deposit ${props.requiredDeposit} ETH`);
 
-      let depositInWei
+      // 1. Convert deposit amount (passed as string/number in ETH) to Wei
+      let depositInWei;
       try {
-        depositInWei = ethers.parseEther(props.requiredDeposit.toString())
-        if (depositInWei <= 0n) {
-          throw new Error("Deposit amount must be positive.")
-        }
+          depositInWei = ethers.parseEther(props.requiredDeposit.toString());
+          if (depositInWei <= 0n) {
+               throw new Error("Deposit amount must be positive.");
+          }
       } catch (e) {
-        console.error("Invalid deposit amount:", props.requiredDeposit, e)
-        throw new Error("Invalid required deposit amount provided.")
+           console.error("Invalid deposit amount:", props.requiredDeposit, e);
+           throw new Error("Invalid required deposit amount provided.");
       }
-      console.log(`Deposit amount in Wei: ${depositInWei.toString()}`)
+      console.log(`Deposit amount in Wei: ${depositInWei.toString()}`);
 
+      // 2. Prepare arguments for the smart contract function
       const contractArgs = [
-        parseInt(props.electionId)
-      ]
+          parseInt(props.electionId) // Ensure electionId is number (uint256)
+      ];
 
+      // 3. Prepare transaction options (including the deposit value)
       const txOptions = {
-        value: depositInWei
-      }
+          value: depositInWei
+      };
 
-      console.log("Sending joinAsHolder transaction...")
-      const txResponse = await ethersService.sendTransaction(
-        config.contract.address,
-        config.contract.abi,
-        'joinAsHolder',
-        contractArgs,
-        txOptions
-      )
+      // 4. Send the transaction via ethersService
+      console.log("Sending joinAsHolder transaction...");
+      txResponse = await ethersService.sendTransaction(
+          config.contract.address,
+          config.contract.abi,
+          'joinAsHolder',      // Contract method name
+          contractArgs,       // Arguments for the method
+          txOptions           // Transaction options (like value)
+      );
+      console.log("Transaction sent, hash:", txResponse.hash);
+      
+      // --- Post-Transaction Steps (Key Generation, Encryption, Storage) ---
+      console.log("Transaction sent. Generating and encrypting election key...");
+      const { sk, pk } = generateBLSKeyPair(); // sk is BigInt, pk is Point object
+      const blsPrivateKeyHex = sk.toString(16);
+      const blsPublicKeyHex = pk.toHex();
+      console.log("Generated BLS Public Key:", blsPublicKeyHex);
+      
+      // Derive encryption key from password
+      const salt = randomBytes(16); // Generate a random 16-byte salt
+      const derivedKey = await deriveKeyFromPassword(password.value, salt);
+      console.log("Derived encryption key."); // Don't log the key itself!
 
-      console.log("Transaction sent, hash:", txResponse.hash)
-      loading.value = true
-      isRegistered.value = true
-      error.value = null
-      emit('registration-successful')
+      // Encrypt the BLS private key
+      const encryptedPrivateKeyHex = await AESEncrypt(blsPrivateKeyHex, derivedKey);
+      console.log("Encrypted BLS private key.");
+      
+      // Store in localStorage (scoped by election and user)
+      const storageKeyBase = `election_${props.electionId}_${currentAccount.value}`;
+      localStorage.setItem(`${storageKeyBase}_bls_pk`, blsPublicKeyHex);
+      localStorage.setItem(`${storageKeyBase}_bls_sk_enc`, encryptedPrivateKeyHex);
+      localStorage.setItem(`${storageKeyBase}_bls_salt`, bytesToHex(salt)); // Store salt (as hex) for later key derivation
+      console.log(`Stored keys for election ${props.electionId} user ${currentAccount.value}`);
+      
+      // ---------------------------------------------------------------------
 
-      console.log("Registration and deposit successful (transaction sent).")
+      // If transaction sent successfully, assume registration is done (or wait for receipt)
+      isRegistered.value = true;
+      error.value = null; // Clear previous errors
+      emit('registration-successful'); // Notify parent component
+
+      console.log("Registration and deposit successful (transaction sent).");
+
     } catch (err) {
-      console.error("Failed during registration & deposit:", err)
-      error.value = err.message || "An unexpected error occurred during registration."
-      isRegistered.value = false
+      console.error("Failed during registration & deposit process:", err);
+      error.value = err.message || "An unexpected error occurred during registration.";
+      isRegistered.value = false; // Ensure state is correct on error
+
+      // Clear any potentially stored keys if tx failed AFTER generation started (unlikely but possible)
+      // Optional: Add more robust cleanup based on where the error occurred.
+      const storageKeyBase = `election_${props.electionId}_${currentAccount.value}`;
+      localStorage.removeItem(`${storageKeyBase}_bls_pk`);
+      localStorage.removeItem(`${storageKeyBase}_bls_sk_enc`);
+      localStorage.removeItem(`${storageKeyBase}_bls_salt`); // Also remove salt on error
+
     } finally {
-      loading.value = false
+      loading.value = false;
+      // Clear password fields after attempt
+      password.value = '';
+      confirmPassword.value = '';
     }
   }
   </script>
@@ -258,5 +352,41 @@
     color: var(--danger);
     background-color: var(--danger-light);
     border: 1px solid var(--danger);
+  }
+
+  .form-group {
+    margin-bottom: 15px;
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+    .form-input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-sm);
+      background-color: var(--background-light);
+      color: var(--text-primary);
+      box-sizing: border-box; // Ensure padding doesn't add to width
+      &:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.2);
+      }
+    }
+    small {
+        display: block;
+        margin-top: 5px;
+        font-size: 0.85em;
+        color: var(--text-secondary);
+    }
+  }
+  .error-message.small {
+      font-size: 0.9em;
+      padding: 5px 10px;
+      margin-top: -5px; /* Adjust spacing */
+      margin-bottom: 10px;
+      text-align: left;
   }
   </style>

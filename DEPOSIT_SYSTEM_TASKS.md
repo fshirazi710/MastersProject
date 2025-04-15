@@ -50,13 +50,15 @@ This feature involves implementing a secure deposit system for secret holders, m
 
 ## In Progress Tasks
 
-- [ ] Frontend `RegisterHolder.vue` Refactoring
-  - [ ] Remove private key generation/storage in cookies.
-  - [ ] Use `ethersService` to get user's address.
-  - [ ] Modify registration process: User connects wallet, signs a registration message.
-  - [ ] Backend verifies signature and registers the address.
-  - [ ] Handle secure generation/storage/retrieval of Pedersen commitment components (e.g., `h`) if needed, or adjust flow.
-  - [ ] Frontend calls `ethersService.sendTransaction` to execute the `joinAsHolder` contract function (potentially including deposit).
+- [ ] Implement Secure BLS Key Handling during Registration (`RegisterToVote.vue`):
+    - [ ] Upon successful `joinAsHolder` transaction:
+        - [+] Generate election-specific BLS key pair (`generateBLSKeyPair` in `cryptography.js`). (Called in RegisterToVote)
+        - [ ] Prompt user for a secure password specifically for this election key. (UI added)
+        - [ ] Implement/Use robust password-based key derivation (e.g., PBKDF2) in `cryptography.js` to create an encryption key from the password. (Next Step)
+        - [ ] Encrypt the generated BLS private key using the derived key (e.g., AES-GCM via `cryptography.js`). (Next Step)
+        - [+] Store the *encrypted* BLS private key and the *unencrypted* BLS public key in localStorage, scoped by election ID and user address. (Placeholder storage added)
+    - [+] Update `RegisterToVote.vue` UI to include password input/confirmation. (Done)
+    - [+] Update status in Relevant Files section for `RegisterToVote.vue`. (Done)
 
 ## Future Tasks
 
@@ -64,23 +66,25 @@ This feature involves implementing a secure deposit system for secret holders, m
 - [ ] Refactor `election_router.py`: Remove/Replace `/get-winners`, update helpers, use contract state.
 - [ ] Update `BlockchainService` (`blockchain.py`) with new/updated contract interaction methods.
 - [ ] Refactor `SubmitSecretShare.vue`:
-  - [ ] Remove private key cookie usage.
-  - [ ] Use `ethersService` for account & signing.
-  - [ ] Implement signing of submission payload.
-  - [ ] Update `shareApi.submitShare` call for backend verification.
-  - [ ] Use `ethersService.sendTransaction` for contract call.
-- [ ] Remove cookie reliance for status (use `ethersService.readContract('getHolderStatus')`).
-- [ ] Implement Frontend `joinAsHolder`: Add UI, send deposit value with tx, remove cookies.
-- [ ] Implement Frontend Deposit/Reward UI: Add UI/logic for `claimDeposit` and displaying reward status.
+  - [ ] Remove cookie reliance for status (use `ethersService.readContract('getHolderStatus')`).
+  - [ ] Implement secure BLS private key retrieval:
+      - [ ] Prompt user for the password created during registration.
+      - [ ] Retrieve encrypted BLS private key from localStorage.
+      - [ ] Use password and key derivation function (from `cryptography.js`) to get decryption key.
+      - [ ] Decrypt the BLS private key (using AES-GCM via `cryptography.js`).
+  - [ ] Use the *decrypted* BLS private key when calling `generateShares`.
+  - [ ] Ensure the decrypted private key is cleared from memory after use.
+  - [ ] Update UI to include password prompt for share submission.
 - [ ] Refactor `frontend/services/cryptography.js`:
-  - [ ] Remove functions relying on direct private key input (`generateShares`, `generateShares2`, `getPublicKeyFromPrivate`).
-  - [ ] Define and implement secure method for share generation/retrieval (e.g., pre-computation during registration, derivation, or other secure storage mechanism).
-  - [ ] Remove unused imports (`babelParse`).
-  - [ ] Review/update related functions (`verifyShares`, etc.) based on the new deposit/signing flow.
-  - [ ] Investigate/Implement Pedersen commitment logic if required by the updated registration/verification process.
+  - [ ] Review/Implement robust password-based key derivation (PBKDF2 recommended).
+  - [ ] Ensure AES functions (`AESEncrypt`, `AESDecrypt`) are suitable for key encryption (consider using `SubtleCrypto` directly for better control if needed).
+- [ ] Remove functions relying on direct private key input (`generateShares`, `generateShares2`, `getPublicKeyFromPrivate`). (Partially done - `generateShares` still takes key, `generateShares2` removed).
+- [+] Define and implement secure method for share generation/retrieval (e.g., pre-computation during registration, derivation, or other secure storage mechanism). (Addressed by secure storage/retrieval plan above).
+- [+] Remove unused imports (`babelParse`). (Completed)
+- [ ] Review/update related functions (`verifyShares`, etc.) based on the new deposit/signing flow.
+- [ ] Investigate/Implement Pedersen commitment logic if required by the updated registration/verification process.
 - [ ] Define and implement transition plan (e.g., support only new VoteSessions).
 - [ ] Remove obsolete code/DB collections (`public_keys`, old winner logic, `holder_helper.py`) after validation.
-- [ ] (Optional) Implement on-chain deposit/stake mechanism if required (Smart Contract, Backend, Frontend). [Covered by Deposit Logic task above]
 - [ ] Add comprehensive tests for the new on-chain deposit, reward, and signing logic.
 - [ ] Update documentation to reflect the new architecture.
 
@@ -204,8 +208,8 @@ This feature involves implementing a secure deposit system for secret holders, m
   - **Status:** Refactored (Implemented `EthersService` class)
 - `frontend/services/cryptography.js` - Frontend cryptographic utilities.
   - **Provides:** BLS operations, AES encryption/decryption, share generation (needs rework), key recomputation.
-  - **Depends on:** `@noble/curves/bls12-381`, `@noble/curves/abstract/modular`, `@noble/curves/abstract/bls`, `buffer`. (Removed `babelParse`).
-  - **Status:** Identified (Requires Major Refactor - Remove private key usage, secure share handling)
+  - **Depends on:** `@noble/curves/bls12-381`, `@noble/curves/abstract/modular`, `@noble/curves/abstract/bls`, `buffer`, `window.crypto.subtle`.
+  - **Status:** Identified (Requires Major Refactor - Remove direct private key usage, secure share handling, implement PBKDF2).
 - `frontend/pages/vote/[id].vue` - Main page for displaying and interacting with a specific vote session.
   - **Provides:** UI container for registration, voting, share submission, results.
   - **Depends on:** `services/api.js`, `services/ethersService.js`, Child Components (`RegisterToVote`, `SubmitSecretShare`, etc.). (`js-cookie` to be removed).
@@ -213,10 +217,10 @@ This feature involves implementing a secure deposit system for secret holders, m
 - `frontend/components/vote/SubmitSecretShare.vue` - Component handling secret share submission.
   - **Provides:** UI for share submission.
   - **Key Function:** `prepareAndSubmitShare` (handles signing, verification API call, contract tx).
-  - **Depends on:** `services/api.js`, `services/ethersService.js`, `services/cryptography.js` (pending refactor), `fast-json-stable-stringify`. (`js-cookie` to be removed).
-  - **Status:** Partially Refactored (Signing added, TX sending added, Needs Crypto Logic Update & cookie removal)
+  - **Depends on:** `services/api.js`, `services/ethersService.js`, `services/cryptography.js` (pending refactor), `fast-json-stable-stringify`, localStorage.
+  - **Status:** Partially Refactored (Signing added, TX sending added, contract status check added. Needs secure BLS key retrieval/decryption and crypto logic update).
 - `frontend/components/vote/RegisterToVote.vue` - Component handling voter/holder registration for a session.
   - **Provides:** UI for registration and deposit.
   - **Key Functions:** `checkRegistrationStatus`, `registerAndDeposit`, `connectWallet`.
-  - **Depends on:** `services/ethersService.js`, `config`, `ethers`.
-  - **Status:** Refactored (Wallet integration, deposit handling via contract call)
+  - **Depends on:** `services/ethersService.js`, `services/cryptography.js`, `config`, `ethers`, localStorage.
+  - **Status:** In Progress (Wallet integration done, Needs secure BLS key generation/storage).
