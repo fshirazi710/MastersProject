@@ -143,6 +143,43 @@ class EthersService {
         throw new Error(reason);
     }
   }
+
+  // New method for reading from contracts
+  async readContract(contractAddress, contractAbi, methodName, args = []) {
+    // Use provider for read-only calls
+    if (!this.provider) {
+       // If the wallet isn't connected/initialized, try creating a default provider
+       // This allows reading data even if the user hasn't connected their wallet yet
+       // You might want to use a specific provider URL from your config here
+       console.warn('Wallet provider not initialized for read, attempting default provider...');
+       try {
+           // Replace with your actual provider URL if needed
+           const defaultProvider = new ethers.JsonRpcProvider(config.providerUrl || 'http://localhost:8545'); 
+           this.provider = defaultProvider;
+       } catch (e) {
+           console.error("Failed to create default provider for read operation:", e);
+           throw new Error('Provider not available for contract read.');
+       }
+    }
+    if (!contractAddress || !contractAbi) {
+        throw new Error('Contract address and ABI must be provided for read operation.');
+    }
+    try {
+      // Create contract instance with the provider (read-only)
+      const contract = new ethers.Contract(contractAddress, contractAbi, this.provider);
+      console.log(`Reading contract ${contractAddress} -> ${methodName}(${args.join(', ')})`);
+      
+      // Call the view/pure function
+      const result = await contract[methodName](...args);
+      console.log(`Read result from ${methodName}:`, result);
+      return result;
+
+    } catch (error) {
+        console.error(`Error reading contract (${methodName}):`, error);
+        // Add specific error handling if needed (e.g., contract doesn't exist, invalid args)
+        throw new Error(`Failed to read contract method ${methodName}.`);
+    }
+  }
 }
 
 // Export a single instance

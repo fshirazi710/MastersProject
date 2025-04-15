@@ -33,6 +33,13 @@ This feature involves implementing a secure deposit system for secret holders, m
   - [x] Update `shareApi.submitShare` call for backend verification.
   - [x] Use `ethersService.sendTransaction` for contract call.
   - [x] Remove cookie reliance for status (replaced with contract check - *partially done, cookie still used temporarily*).
+- [x] Frontend `RegisterHolder.vue` Refactoring
+  - [x] Remove private key generation/storage in cookies.
+  - [x] Use `ethersService` to get user's address.
+  - [x] Modify registration process: User connects wallet, calls contract.
+  - [x] Backend verifies signature and registers the address. (Note: Backend verification of registration message not implemented, registration is direct contract call now)
+  - [x] Handle secure generation/storage/retrieval of Pedersen commitment components (e.g., `h`) if needed, or adjust flow. (Note: Pedersen logic not added, adjust flow implemented)
+  - [x] Frontend calls `ethersService.sendTransaction` to execute the `joinAsHolder` contract function (potentially including deposit).
 
 ## In Progress Tasks
 
@@ -149,6 +156,12 @@ This feature involves implementing a secure deposit system for secret holders, m
   - **Provides:** On-chain logic for elections, voting, holder registration, share submission, deposit, rewards.
   - **Depends on:** Solidity (`^0.8.0`), `@openzeppelin/contracts` (`ReentrancyGuard`, `EnumerableSet`).
   - **Status:** Enhanced (Added deposits, rewards, efficient status queries)
+  - **Key Functions:**
+    - `joinAsHolder(uint256 electionId) payable`: Allows user to register and deposit.
+    - `submitShares(uint256 electionId, uint256[] voteIndices, uint256[] shareIndices, string[] shareDataList)`: Submits shares (called by user).
+    - `getHolderStatus(uint256 electionId, address holderAddress) view returns (bool isActive, bool hasSubmitted, uint256 deposit)`: Checks holder status.
+    - `distributeRewards(uint256 electionId)`: Distributes rewards (called by backend/admin).
+    - `claimDeposit(uint256 electionId)`: Allows holder to claim back deposit.
 - Database Collection: `public_keys` - Stores holder information and tracks share submission status.
   - **Provides:** State tracking (`share_submitted_successfully`, `released_secret` flags).
   - **Depends on:** Database instance (likely MongoDB).
