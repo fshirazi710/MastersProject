@@ -88,8 +88,8 @@
   <script setup>
   import { ref, computed, onMounted, watch } from 'vue'
   import { holderApi, voteApi } from '@/services/api'
-  import { getPublicKeyFromPrivate, getKAndSecretShares, AESEncrypt } from '@/services/cryptography';
-  import Cookies from 'js-cookie';
+  import { getKAndSecretShares, AESEncrypt } from '@/services/cryptography';
+  import { ethersService } from '@/services/ethersService';
   // Import the new custom slider component
   import CustomSlider from '@/components/shared/CustomSlider.vue'
 
@@ -164,15 +164,20 @@
   // Method to validate the key pair
   const validateKeyPair = async () => {
     try {
-      // Get the vote-specific private key cookie
-      const privateKeyCookie = `vote_${props.voteId}_privateKey`;
-      const privateKeyHex = Cookies.get(privateKeyCookie);
-
-      if (!privateKeyHex) {
-        throw new Error("No private key found for this vote. Please register first.");
+      // Get user address from ethersService
+      const userAddress = await ethersService.getAccount();
+      if (!userAddress) {
+        throw new Error("Wallet not connected. Please connect your wallet.");
       }
 
-      const publicKeyHex = getPublicKeyFromPrivate(privateKeyHex)
+      // Construct localStorage key and retrieve public key
+      const publicKeyStorageKey = `election_${props.voteId}_user_${userAddress}_blsPublicKey`;
+      const publicKeyHex = localStorage.getItem(publicKeyStorageKey);
+
+      if (!publicKeyHex) {
+        console.error(`BLS Public Key not found in localStorage for key: ${publicKeyStorageKey}`);
+        throw new Error("Your election-specific key pair was not found. Please ensure you have registered correctly for this vote.");
+      }
 
       const response = await voteApi.validatePublicKey({ public_key: publicKeyHex });
       return response.data.success
@@ -240,10 +245,6 @@
       const threshold = thresholdToUse; // Assign to variable used below
       // --------------------------------------
 
-      const privateKeyCookie = `vote_${props.voteId}_privateKey`;
-      const privateKeyHex = Cookies.get(privateKeyCookie);
-      const publicKeyHex = getPublicKeyFromPrivate(privateKeyHex);
-
       // Pass the determined threshold to crypto function
       const [k, g1r, g2r, alpha] = await getKAndSecretShares(public_keys, threshold, totalHolders);
       g1rValue.value = g1r;
@@ -253,7 +254,7 @@
       
       const voteResponse = await voteApi.submitVote(props.voteId, {
         election_id: props.voteId,
-        voter: publicKeyHex,
+        voter: public_keys[0], // Assuming the first public key is the voter's
         public_keys: public_keys,
         ciphertext: ciphertext,
         g1r: g1r,
