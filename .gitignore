@@ -16,6 +16,7 @@ Cargo.lock
 # Virtual environment
 .venv/
 venv/
+.cursor
 
 # Nuxt build output
 .nuxt/
