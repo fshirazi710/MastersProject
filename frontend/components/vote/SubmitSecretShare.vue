@@ -11,9 +11,24 @@
         <template v-if="!hasSubmittedShare">
             <!-- Message/Button before deadline -->
             <div v-if="!isDeadlinePassed">
-                <button @click="prepareAndSubmitShare" type="submit" class="btn primary" :disabled="loading || !isWalletConnected">
+                <!-- Password Input for Decryption -->
+                <div v-if="isWalletConnected" class="form-group">
+                    <label for="decrypt-password">Enter Election Key Password:</label>
+                    <input 
+                        type="password" 
+                        id="decrypt-password" 
+                        v-model="decryptionPassword"
+                        placeholder="Password used during registration"
+                        required
+                        class="form-input"
+                    />
+                    <small>Needed to decrypt your key and generate shares.</small>
+                </div>
+
+                <button @click="prepareAndSubmitShare" type="submit" class="btn primary" :disabled="loading || !isWalletConnected || !decryptionPassword">
                     <span v-if="!isWalletConnected">Connect Wallet First</span>
                     <span v-else-if="loading">{{ loadingMessage }}</span>
+                    <span v-else-if="!decryptionPassword">Enter Password Above</span>
                     <span v-else>Submit Secret Share</span>
                 </button>
                 <p v-if="error" class="error-message">{{ error }}</p>
@@ -39,7 +54,12 @@
     import { useRoute } from 'vue-router';
     import { voteApi, shareApi } from '@/services/api';
     import { ethersService } from '~/services/ethersService.js'; // Use ethersService
-    import { generateShares } from '@/services/cryptography.js'; // getPublicKeyFromPrivate removed
+    import { 
+        generateShares, 
+        deriveKeyFromPassword, 
+        AESDecrypt, 
+        hexToBytes 
+    } from '@/services/cryptography.js'; 
     import { config } from '@/config'; // Assuming config has contract address/abi
     // import Cookies from "js-cookie"; // Removed cookie usage
     import { ethers } from 'ethers'; // Import ethers for utils if needed (e.g., keccak256)
@@ -57,6 +77,7 @@
     const isWalletConnected = ref(false);
     const currentAccount = ref(null);
     const isCheckingStatus = ref(true); // Loading state for initial status check
+    const decryptionPassword = ref(''); // Add password state for decryption
 
     // TEMP: Still using cookie for initial check, should be replaced by contract check
     // const shareSubmittedCookie = `vote_${props.voteId}_shareSubmitted`;
@@ -137,12 +158,33 @@
     // Renamed function
     const prepareAndSubmitShare = async () => {
         error.value = null;
-        if (loading.value || !isWalletConnected.value || !currentAccount.value) return;
+        if (loading.value || !isWalletConnected.value || !currentAccount.value || !decryptionPassword.value) {
+            error.value = "Please connect wallet and enter password.";
+            return;
+        }
 
         loading.value = true;
-        loadingMessage.value = 'Fetching vote data...';
+        loadingMessage.value = 'Retrieving encrypted key...';
+        let decryptedPrivateKeyHex = null; // To store the key temporarily
 
         try {
+            // --- Key Retrieval and Decryption ---
+            const storageKeyBase = `election_${props.voteId}_${currentAccount.value}`;
+            const encryptedKeyHex = localStorage.getItem(`${storageKeyBase}_bls_sk_enc`);
+            const saltHex = localStorage.getItem(`${storageKeyBase}_bls_salt`);
+
+            if (!encryptedKeyHex || !saltHex) {
+                throw new Error("Could not retrieve stored key details. Did you register for this election in this browser?");
+            }
+
+            loadingMessage.value = 'Decrypting key...';
+            const saltBytes = hexToBytes(saltHex);
+            const derivedKey = await deriveKeyFromPassword(decryptionPassword.value, saltBytes);
+            decryptedPrivateKeyHex = await AESDecrypt(encryptedKeyHex, derivedKey);
+            console.log("BLS key decrypted successfully."); // Avoid logging the key!
+            // --- End Key Retrieval and Decryption ---
+
+            loadingMessage.value = 'Fetching vote data...';
             // 1. Fetch necessary vote data (may contain g1r needed for share generation)
             //    NOTE: This relies on the cryptography service. If shares are pre-computed
             //    and stored elsewhere, this step changes.
@@ -151,33 +193,25 @@
                 throw new Error("Could not retrieve necessary vote information.");
             }
 
-            // TEMP: Assuming private key is needed for generateShares
-            // THIS IS THE CORE PROBLEM - PRIVATE KEY SHOULD NOT BE HERE
-            // This part needs rethinking based on how shares are generated/retrieved
-            // securely without exposing the private key to the frontend.
-            // If shares were generated during registration and stored securely (e.g., localStorage
-            // encrypted with a user password, or derived non-persistently), retrieve them here.
-            // For now, we comment out the insecure parts and assume shares are available somehow.
-
-            // const privateKeyCookie = `vote_${props.voteId}_privateKey`;
-            // const privateKeyHex = Cookies.get(privateKeyCookie);
-            // if (!privateKeyHex) {
-            //     throw new Error('Private key not found for this vote.');
-            // }
-
             // Generate shares (using placeholder - replace with secure retrieval/generation)
             loadingMessage.value = 'Generating shares...';
             const sharesToSubmit = [];
             for (const vote of voteInformation) {
                  if (vote.g1r) {
-                    // TODO: Replace placeholder/insecure generation
-                    // const generatedShare = generateShares(vote.g1r, privateKeyHex);
-                    const placeholderShare = "0x" + vote.vote_id.toString().padStart(64, '0'); // Example placeholder
-                    sharesToSubmit.push({ vote_id: vote.vote_id, share: placeholderShare });
+                    // Use the decrypted key to generate the actual share
+                    if (!decryptedPrivateKeyHex) {
+                        throw new Error("Decrypted key is not available for share generation."); // Should not happen if decryption succeeded
+                    }
+                    const generatedShare = generateShares(vote.g1r, decryptedPrivateKeyHex);
+                    sharesToSubmit.push({ vote_id: vote.vote_id, share: generatedShare });
                  } else {
                      console.error("g1r is not set for vote ID:", vote.vote_id);
                  }
             }
+
+            // Clear the decrypted key from memory ASAP after use
+            decryptedPrivateKeyHex = null;
+            console.log("Decrypted key cleared from memory.");
 
             if (sharesToSubmit.length === 0) {
                 throw new Error("No shares could be generated or retrieved.");
@@ -246,6 +280,11 @@
             console.error("Failed during share submission process:", err);
             error.value = err.message || 'An unexpected error occurred.';
             loading.value = false;
+        } finally {
+            // Ensure sensitive variables are cleared even on error
+            decryptedPrivateKeyHex = null;
+            // Clear password field after attempt
+            decryptionPassword.value = ''; 
         }
     };
 
@@ -328,6 +367,36 @@
   i.late-icon {
     font-size: 1.2em;
     color: var(--warning);
+  }
+}
+
+/* Add form-group styles if not already present globally */
+.form-group {
+  margin-bottom: 15px;
+  label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+  }
+  .form-input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    background-color: var(--background-light);
+    color: var(--text-primary);
+    box-sizing: border-box; // Ensure padding doesn't add to width
+    &:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.2);
+    }
+  }
+  small {
+    display: block;
+    margin-top: 5px;
+    font-size: 0.85em;
+    color: var(--text-secondary);
   }
 }
 </style>

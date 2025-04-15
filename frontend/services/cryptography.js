@@ -18,16 +18,6 @@ export function generateBLSKeyPair() {
     return { sk: skBigInt, pk: pkPoint }; 
 }
 
-export function getPublicKeyFromPrivate(privateKey) {
-    // Ensure private key is a BigInt
-    const sk = typeof privateKey === 'string' ? BigInt("0x" + privateKey) : privateKey;
-    // Calculate the public key Point object
-    const pkPoint = bls12_381.G1.ProjectivePoint.BASE.multiply(sk);
-    // Return the standard hexadecimal string representation of the public key
-    // (Changed from returning raw Uint8Array to ensure consistency)
-    return pkPoint.toHex(); 
-}
-
 function genR() {
     const randomBytes = new Uint8Array(32);
     window.crypto.getRandomValues(randomBytes);
