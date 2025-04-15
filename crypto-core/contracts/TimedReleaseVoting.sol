@@ -14,74 +14,6 @@ contract TimedReleaseVoting {
     event LogUint(string label, uint256 value);
     event LogAddress(address addr);
 
-    struct Election {
-        uint256 id;
-        string title;
-        string description;
-        uint256 startDate;
-        uint256 endDate;
-        string[] options;
-        uint256 rewardPool;
-        uint256 electionDeposit;
-    }
-
-    mapping(uint256 => Election) public election;
-    uint256 public electionCount;
-
-    event ElectionCreated(uint256 id, string title);
-
-    event ElectionCreatedEvent (
-        uint256 id,
-        string title,
-        string description,
-        uint256 startDate,
-        uint256 endDate,
-        string[] options,
-        uint256 rewardPool,
-        uint256 electionDeposit
-    );
-
-    function createElection(
-        string memory title,
-        string memory description,
-        uint256 startDate,
-        uint256 endDate,
-        string[] memory options,
-        uint256 rewardPool,
-        uint256 electionDeposit
-    ) public returns (uint256) {
-
-        election[electionCount] = Election(electionCount, title, description, startDate, endDate, options, rewardPool, electionDeposit);
-        emit ElectionCreated(electionCount, title);
-        emit ElectionCreatedEvent(
-            electionCount, 
-            title, 
-            description, 
-            startDate, 
-            endDate, 
-            options, 
-            rewardPool, 
-            electionDeposit
-        );
-        electionCount++;
-        return electionCount - 1;
-    }
-    
-    function getElection(uint256 voteId) public view returns (
-        uint256 id,
-        string memory title,
-        string memory description,
-        uint256 startDate,
-        uint256 endDate,
-        string[] memory options,
-        uint256 rewardPool,
-        uint256 electionDeposit
-    ) {
-        require(voteId < electionCount, "Election does not exist");
-        Election memory v = election[voteId];
-        return (v.id, v.title, v.description, v.startDate, v.endDate, v.options, v.rewardPool, v.electionDeposit);
-    }
-
     // ======== State Variables ========
 
     struct Vote {
@@ -118,7 +50,7 @@ contract TimedReleaseVoting {
         bool active;
         uint256 rewards;
     }
-    
+
     struct SecretKey {
         string secretkey;
     }
@@ -127,7 +59,7 @@ contract TimedReleaseVoting {
     uint256 public constant REQUIRED_DEPOSIT = 1 ether;  // Required deposit to become a holder
     uint256 public constant MIN_HOLDERS = 3;  // Minimum number of holders required for a vote
     uint256 public constant REWARD_PER_VOTE = 0.1 ether;  // Reward amount per vote to be distributed
-    
+
     // State
     string[] public holderAddresses;
     uint256 public electionCount;
@@ -136,12 +68,25 @@ contract TimedReleaseVoting {
     mapping(uint256 => Election) public election;
     mapping(uint256 => Vote[]) public votes;
     mapping(uint256 => Shares[]) public shares;
-    mapping(uint256 => string[]) public secret_keys; 
-    
+    mapping(uint256 => string[]) public secret_keys;
+    // New mappings for efficient status checks
+    mapping(uint256 => mapping(string => bool)) public isHolderActiveForElection; // electionId => holderPublicKey => isActive
+    mapping(uint256 => mapping(string => bool)) public hasSubmittedSharesForElection; // electionId => holderPublicKey => hasSubmitted
+
     // ======== Events ========
-    
+
     event HolderJoined(string indexed publicKey, uint256 electionId);
     event ElectionCreated(uint256 id, string title);
+    event ElectionCreatedEvent (
+        uint256 id,
+        string title,
+        string description,
+        uint256 startDate,
+        uint256 endDate,
+        string[] options,
+        uint256 rewardPool,
+        uint256 electionDeposit
+    );
     event VoteSubmitted(
         uint256 electionId,
         string[] publicKey,
@@ -164,7 +109,7 @@ contract TimedReleaseVoting {
     );
 
     // ======== Core Functions ========
-    
+
     function submitSecretKey(uint256 electionId, string memory secretKey) public {
         require(electionId < electionCount, "Election does not exist");
         secret_keys[electionId].push(secretKey);
@@ -185,8 +130,19 @@ contract TimedReleaseVoting {
         uint256 rewardPool,
         uint256 electionDeposit
     ) public returns (uint256) {
+
         election[electionCount] = Election(electionCount, title, description, startDate, endDate, options, rewardPool, electionDeposit);
         emit ElectionCreated(electionCount, title);
+        emit ElectionCreatedEvent(
+            electionCount,
+            title,
+            description,
+            startDate,
+            endDate,
+            options,
+            rewardPool,
+            electionDeposit
+        );
         electionCount++;
         return electionCount - 1;
     }
@@ -229,7 +185,10 @@ contract TimedReleaseVoting {
     }
     
     function joinAsHolder(uint256 electionId, string memory publicKey) external payable {
-        require(!holders[publicKey].active, "Already a holder");
+        require(!holders[publicKey].active, "Already a holder"); // Basic check if globally registered
+
+        // Check if already active for this specific election
+        require(!isHolderActiveForElection[electionId][publicKey], "Already active for this election");
 
         holders[publicKey] = Holder({
             publicKey: publicKey,
@@ -239,6 +198,7 @@ contract TimedReleaseVoting {
         });
 
         holderAddresses.push(publicKey);
+        isHolderActiveForElection[electionId][publicKey] = true; // Mark as active for this election
 
         emit HolderJoined(publicKey, electionId);
     }
@@ -275,7 +235,15 @@ contract TimedReleaseVoting {
         string[] memory shareList
     ) public {
         require(electionId < electionCount, "Election does not exist");
+        // Check if the sender is an active holder for this election
+        require(isHolderActiveForElection[electionId][publicKey], "Not an active holder for this election");
+        // Prevent submitting shares multiple times
+        require(!hasSubmittedSharesForElection[electionId][publicKey], "Shares already submitted for this election");
 
+        // The loop to find the holder's index seems redundant if the index within the activeHolders list
+        // isn't critical elsewhere. We can directly store shares.
+        // If index IS needed, it should be calculated more efficiently or passed in.
+        /*
         uint256 index;
         string[] memory activeHolders = getHoldersByElection(electionId);
 
@@ -285,11 +253,21 @@ contract TimedReleaseVoting {
                 break;
             }
         }
+        */
 
+        // We assume the 'index' stored in the Shares struct might relate to the order
+        // within the vote's public key list or similar, rather than the holder's index in the election.
+        // For simplicity, let's use a placeholder or decide if index is needed.
+        // If index relates to the position in the shareList/voteIndex, use j.
         for (uint256 j = 0; j < shareList.length; j++) {
-            shares[electionId].push(Shares(voteIndex[j], publicKey, shareList[j], index));
-            emit ShareSubmitted(electionId, publicKey, shareList[j], index);
+             // Using 'j' as the index, assuming it relates to the share's position in the submitted list.
+             // Clarify the exact meaning of 'index' in the Shares struct if different.
+            shares[electionId].push(Shares(voteIndex[j], publicKey, shareList[j], j));
+            emit ShareSubmitted(electionId, publicKey, shareList[j], j);
         }
+
+        // Mark shares as submitted for this holder in this election
+        hasSubmittedSharesForElection[electionId][publicKey] = true;
     }
 
     function getShares(uint256 electionId) public view returns (Shares[] memory) {

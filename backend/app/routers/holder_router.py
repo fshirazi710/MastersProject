@@ -54,34 +54,40 @@ async def get_holder_count(election_id: int, blockchain_service: BlockchainServi
         raise HTTPException(status_code=500, detail="failed to retrieve number of secret holders")
 
 
-@router.post("/join/{election_id}", response_model=StandardResponse[TransactionResponse])
-async def join_as_holder(
+# Updated endpoint: Checks eligibility, does not submit transaction
+@router.post("/join/{election_id}", response_model=StandardResponse)
+async def check_holder_join_eligibility(
     election_id: int,
     request: JoinHolderStringRequest,
     blockchain_service: BlockchainService = Depends(get_blockchain_service)
 ):
-    # Pydantic has already validated that request.public_key is a string
+    """Check if a public key is eligible to join an election as a holder."""
     public_key_hex = request.public_key
-    
+
     # Ensure 0x prefix
     if not public_key_hex.startswith('0x'):
         public_key_hex = "0x" + public_key_hex
-    
-    # Retrieve the list of secret holders already registered for the given election
-    secret_holders = await blockchain_service.call_contract_function("getHoldersByElection", election_id)
-    
-    # Check if the public key is already registered; if so, raise an error
-    if public_key_hex in secret_holders:
-        raise HTTPException(status_code=400, detail="this public key has already been registered")
-    
-    # Call helper function to execute the transaction for joining as a holder   
-    receipt = await join_as_holder_transaction(election_id, public_key_hex, blockchain_service)
-    
-    # Check the transaction status and return response
-    if receipt.status == 1:
+
+    try:
+        # Use the new efficient check from BlockchainService
+        is_active = await blockchain_service.is_holder_active(election_id, public_key_hex)
+
+        # Check if the public key is already registered and active
+        if is_active:
+            # Raise 409 Conflict, as the state already exists
+            raise HTTPException(status_code=409, detail="Public key is already registered as an active holder for this election")
+
+        # If not active, the key is eligible to join via frontend transaction
         return StandardResponse(
             success=True,
-            message="Successfully joined as a secret holder"
+            message="Public key is eligible to join as a holder for this election"
+            # No transaction data to return
         )
-    else:
-        raise HTTPException(status_code=500, detail="secret holder failed to be stored on the blockchain")
+
+    except HTTPException as http_exc:
+        # Re-raise HTTP exceptions (like the 409)
+        raise http_exc
+    except Exception as e:
+        logger.error(f"Error checking holder eligibility for {public_key_hex} in election {election_id}: {str(e)}")
+        # Generic server error for other issues
+        raise HTTPException(status_code=500, detail="Failed to check holder eligibility")

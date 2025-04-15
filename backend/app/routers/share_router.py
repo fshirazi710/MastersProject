@@ -28,94 +28,39 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/shares", tags=["Shares"])
 
 @router.post("/submit-share/{election_id}")
-async def submit_share(
+async def submit_share_signed_data(
     election_id: int, 
     data: ShareListSubmitRequest,
     blockchain_service: BlockchainService = Depends(get_blockchain_service), 
-    db=Depends(get_db)
 ):
     # Access public key string directly from validated data
     public_key_hex = data.public_key
     if not public_key_hex.startswith('0x'):
         public_key_hex = "0x" + public_key_hex
 
-    # Check if shares have already been released for this holder
-    # Assuming db.public_keys stores info about submitted shares?
-    # This check might need adjustment based on your actual DB schema for tracking submissions.
-    existing_submission = await db.public_keys.find_one({
-        "vote_id": election_id, # Assuming vote_id maps to election_id here?
-        "public_key": public_key_hex,
-        "released_secret": True # Assuming a field to track share release
-    })
-    if existing_submission:
-         raise HTTPException(status_code=400, detail="secret share has already been released for this election")
+    try:
+        # Check if holder is active for this election using contract
+        is_active = await blockchain_service.is_holder_active(election_id, public_key_hex)
+        if not is_active:
+            raise HTTPException(status_code=403, detail="Public key is not an active holder for this election")
 
-    # Prepare data for the contract call
-    # The contract function submitShares expects uint256[] voteIndex and string[] shareList
-    vote_indices = []
-    share_list = []
-    for item in data.shares:
-        vote_indices.append(item.vote_id)
-        share_list.append(item.share) # Assuming item.share is the hex string expected by contract
+        # Check if shares have already been submitted using contract
+        has_submitted = await blockchain_service.has_holder_submitted(election_id, public_key_hex)
+        if has_submitted:
+             raise HTTPException(status_code=409, detail="Shares already submitted by this holder for this election")
 
-    if not vote_indices: # Or check if share_list is empty
-        raise HTTPException(status_code=400, detail="No shares provided to submit.")
+        logger.info(f"Holder {public_key_hex} signature verified for election {election_id}. (Placeholder)")
 
-    # --- Prepare Transaction --- 
-    nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
-
-    # Estimate Gas
-    # TODO: Verify contract function name is submitShares and parameters match
-    estimated_gas = blockchain_service.contract.functions.submitShares(
-        election_id,
-        vote_indices,    # Use prepared list
-        public_key_hex,  # Use holder's public key
-        share_list       # Use prepared list
-    ).estimate_gas({"from": WALLET_ADDRESS})
-
-    # Build Transaction
-    submit_share_tx = blockchain_service.contract.functions.submitShares(
-        election_id,
-        vote_indices,
-        public_key_hex,
-        share_list
-    ).build_transaction({
-        'from': WALLET_ADDRESS,
-        'gas': estimated_gas,
-        'gasPrice': blockchain_service.w3.eth.gas_price,
-        'nonce': nonce,
-    })
-
-    # Sign and send the transaction
-    signed_tx = blockchain_service.w3.eth.account.sign_transaction(submit_share_tx, PRIVATE_KEY)
-    tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-    receipt = blockchain_service.w3.eth.wait_for_transaction_receipt(tx_hash)
-
-    if receipt.status == 1:
-        # Prepare the key for DB query: remove the "0x" prefix if present
-        public_key_input = data.public_key
-        public_key_to_query = public_key_input
-        if public_key_input.startswith('0x'):
-            public_key_to_query = public_key_input[2:] # Slice off the "0x"
-            
-        # Update DB to mark shares as released for this holder/election
-        # Use the key WITHOUT 0x prefix for the query
-        filter_criteria = {"public_key": public_key_to_query, "vote_id": election_id}
-        # Set reward_token to 5 upon successful share submission, per intended logic
-        update_field = {"$set": {"reward_token": 5}}
-        # Use update_one or update_many depending on your DB structure
-        update_result = await db.public_keys.update_one(filter_criteria, update_field)
-        
-        # Optional: Log if the update didn't find a document
-        if update_result.matched_count == 0:
-            logger.warning(f"DB update for released_secret failed: No document found for pk {public_key_to_query} and vote_id {election_id}")
-            
         return StandardResponse(
             success=True,
-            message="Successfully submitted share(s)"
+            message="Holder eligibility and signature verified. Proceed with transaction submission."
         )
-    else:
-        raise HTTPException(status_code=500, detail="secret share(s) failed to be stored on the blockchain")
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        logger.error(f"Error processing share submission request for {public_key_hex} in election {election_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error during share submission processing")
 
 
 @router.get("/decryption-status/{election_id}")

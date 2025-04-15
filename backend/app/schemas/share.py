@@ -155,4 +155,8 @@ class ShareListSubmitRequest(BaseModel):
     public_key: str = Field(
         ...,
         description="Holder's public key hex string"
+    )
+    signature: str = Field(
+        ...,
+        description="Signature from the holder proving ownership of the public key and intent to submit these shares"
     ) 

@@ -66,3 +66,27 @@ class BlockchainService:
         except Exception as e:
             logger.error(f"Error calling contract function {function_name}: {str(e)}")
             raise e
+
+    async def is_holder_active(self, election_id: int, public_key: str) -> bool:
+        """Check if a public key is registered and active as a holder for a specific election."""
+        try:
+            # Access the public mapping directly
+            # Ensure public_key is passed correctly (might need prefix handling if stored differently in contract vs backend)
+            is_active = await self.call_contract_function("isHolderActiveForElection", election_id, public_key)
+            # Mappings return default value (false for bool) if key doesn't exist
+            return is_active
+        except Exception as e:
+            logger.error(f"Error checking if holder {public_key} is active for election {election_id}: {str(e)}")
+            # Depending on desired behavior, might return False or re-raise
+            raise e
+
+    async def has_holder_submitted(self, election_id: int, public_key: str) -> bool:
+        """Check if a holder has submitted shares for a specific election."""
+        try:
+            # Access the public mapping directly
+            has_submitted = await self.call_contract_function("hasSubmittedSharesForElection", election_id, public_key)
+            return has_submitted
+        except Exception as e:
+            logger.error(f"Error checking if holder {public_key} has submitted for election {election_id}: {str(e)}")
+            # Depending on desired behavior, might return False or re-raise
+            raise e

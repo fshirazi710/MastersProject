@@ -14,15 +14,16 @@ This feature involves implementing a secure deposit system for secret holders, m
 
 ## Future Tasks
 
-- [ ] Audit/Enhance Smart Contract (`TimedReleaseVoting.sol`) for holder/share status queries (e.g., `hasSubmittedShare`).
-- [ ] Refactor `holder_router.py` to remove `public_keys` DB usage and rely on contract calls.
+- [x] Audit/Enhance Smart Contract (`TimedReleaseVoting.sol`) for holder/share status queries (e.g., `hasSubmittedShare`).
+- [ ] Refactor `holder_router.py` to remove `public_keys` DB usage (endpoint may be removed/simplified if frontend handles `joinAsHolder` tx).
 - [ ] Refactor `vote_router.py` to remove `public_keys` DB usage and rely on contract calls.
 - [ ] Refactor `share_router.py` to remove `public_keys` DB usage, remove central key signing, and implement holder signature verification.
 - [ ] Refactor `election_router.py` to remove `public_keys` DB usage and rely on contract calls for status checks.
-- [ ] Update `BlockchainService` (`blockchain.py`) with new/updated contract interaction methods.
+- [x] Update `BlockchainService` (`blockchain.py`) with new/updated contract interaction methods.
 - [ ] Implement wallet signing integration in Frontend (`services/api.js`, `services/web3.js`, relevant pages/components) for share submission.
+- [ ] Implement frontend logic to initiate/sign `joinAsHolder` contract transaction.
 - [ ] Define and implement transition plan (e.g., support only new elections).
-- [ ] Remove obsolete code/DB collections (`public_keys`, old signing logic) after validation.
+- [ ] Remove obsolete code/DB collections (`public_keys`, old signing logic, `holder_helper.py`) after validation.
 - [ ] (Optional) Implement on-chain deposit/stake mechanism if required (Smart Contract, Backend, Frontend).
 - [ ] Add comprehensive tests for the new on-chain verification and holder signing logic.
 - [ ] Update documentation to reflect the new architecture.
