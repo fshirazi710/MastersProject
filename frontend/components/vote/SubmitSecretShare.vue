@@ -169,9 +169,11 @@
 
         try {
             // --- Key Retrieval and Decryption ---
-            const storageKeyBase = `election_${props.voteId}_${currentAccount.value}`;
-            const encryptedKeyHex = localStorage.getItem(`${storageKeyBase}_bls_sk_enc`);
-            const saltHex = localStorage.getItem(`${storageKeyBase}_bls_salt`);
+            const encryptedKeyStorageKey = `election_${props.voteId}_user_${currentAccount.value}_blsEncryptedPrivateKey`;
+            const saltStorageKey = `election_${props.voteId}_user_${currentAccount.value}_blsSalt`;
+            
+            const encryptedKeyHex = localStorage.getItem(encryptedKeyStorageKey);
+            const saltHex = localStorage.getItem(saltStorageKey);
 
             if (!encryptedKeyHex || !saltHex) {
                 throw new Error("Could not retrieve stored key details. Did you register for this election in this browser?");

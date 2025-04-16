@@ -263,10 +263,13 @@
       console.log("Encrypted BLS private key.");
       
       // Store in localStorage (scoped by election and user)
-      const storageKeyBase = `election_${props.electionId}_${currentAccount.value}`;
-      localStorage.setItem(`${storageKeyBase}_bls_pk`, blsPublicKeyHex);
-      localStorage.setItem(`${storageKeyBase}_bls_sk_enc`, encryptedPrivateKeyHex);
-      localStorage.setItem(`${storageKeyBase}_bls_salt`, bytesToHex(salt)); // Store salt (as hex) for later key derivation
+      const publicKeyStorageKey = `election_${props.electionId}_user_${currentAccount.value}_blsPublicKey`;
+      const encryptedPrivateKeyStorageKey = `election_${props.electionId}_user_${currentAccount.value}_blsEncryptedPrivateKey`;
+      const saltStorageKey = `election_${props.electionId}_user_${currentAccount.value}_blsSalt`;
+      
+      localStorage.setItem(publicKeyStorageKey, blsPublicKeyHex);
+      localStorage.setItem(encryptedPrivateKeyStorageKey, encryptedPrivateKeyHex);
+      localStorage.setItem(saltStorageKey, bytesToHex(salt)); // Store salt (as hex) for later key derivation
       console.log(`Stored keys for election ${props.electionId} user ${currentAccount.value}`);
       
       // ---------------------------------------------------------------------
@@ -285,10 +288,13 @@
 
       // Clear any potentially stored keys if tx failed AFTER generation started (unlikely but possible)
       // Optional: Add more robust cleanup based on where the error occurred.
-      const storageKeyBase = `election_${props.electionId}_${currentAccount.value}`;
-      localStorage.removeItem(`${storageKeyBase}_bls_pk`);
-      localStorage.removeItem(`${storageKeyBase}_bls_sk_enc`);
-      localStorage.removeItem(`${storageKeyBase}_bls_salt`); // Also remove salt on error
+      const publicKeyStorageKeyOnError = `election_${props.electionId}_user_${currentAccount.value}_blsPublicKey`;
+      const encryptedPrivateKeyStorageKeyOnError = `election_${props.electionId}_user_${currentAccount.value}_blsEncryptedPrivateKey`;
+      const saltStorageKeyOnError = `election_${props.electionId}_user_${currentAccount.value}_blsSalt`;
+
+      localStorage.removeItem(publicKeyStorageKeyOnError);
+      localStorage.removeItem(encryptedPrivateKeyStorageKeyOnError);
+      localStorage.removeItem(saltStorageKeyOnError); // Also remove salt on error
 
     } finally {
       loading.value = false;
