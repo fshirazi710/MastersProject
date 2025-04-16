@@ -70,7 +70,7 @@
     <template v-if="vote?.status === 'join'">
       <RegisterToVote 
         v-if="!isRegisteredForVote"
-        :election-id="route.params.id"
+        :vote-session-id="route.params.id"
         :endDate="vote.endDate"
         :rewardPool="vote.rewardPool"
         :requiredDeposit="vote.requiredDeposit"
@@ -119,7 +119,7 @@
 <script setup>
   import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
   import { useRoute } from 'vue-router'
-  import { holderApi, electionApi } from '@/services/api'
+  import { holderApi, voteSessionApi } from '@/services/api'
   import Cookies from 'js-cookie'
   import CastYourVote from '@/components/vote/CastYourVote.vue'
   import VoteResults from '@/components/vote/VoteResults.vue'
@@ -135,31 +135,26 @@
   const timeRemaining = ref('');
   const timeUpdateInterval = ref(null);
   const timerLabel = ref('Time Remaining:');
-  const isLocallyRegistered = ref(false); // Add local registration state
+  const isLocallyRegistered = ref(false);
 
   // Add state for metadata
   const displayHint = ref(null);
   const sliderConfig = ref(null);
 
-  // --- onBeforeUnmount Hook --- 
-  // Clear the main timer interval on unmount
   onBeforeUnmount(() => {
     if (timeUpdateInterval.value) {
         clearInterval(timeUpdateInterval.value);
-        timeUpdateInterval.value = null; 
+        timeUpdateInterval.value = null;
     }
   });
-  // ---------------------------
 
-  // Computed property to check if user is registered (checks for public key cookie)
   const isRegisteredForVote = computed(() => {
-    if (isLocallyRegistered.value) return true; // Check local state first
+    if (isLocallyRegistered.value) return true;
     if (!vote.value) return false;
     const publicKeyCookie = `vote_${vote.value.id}_publicKey`;
     return Cookies.get(publicKeyCookie) !== undefined;
   });
 
-  // Computed property to check if the user is registered as a holder for this vote via cookies
   const isRegisteredHolderForVote = computed(() => {
     if (!vote.value) return false;
     const isHolderCookie = `vote_${vote.value.id}_isHolder`;
@@ -167,75 +162,72 @@
   });
 
   const fetchVoteData = async (showLoading = true) => {
-      // --- Guard for voteId (kept for safety, though watch should prevent invalid calls mostly) --- 
-      const voteId = route.params.id;
-      if (!voteId || voteId === 'undefined' || voteId === ':id') { 
-          console.warn("fetchVoteData called with invalid voteId:", voteId);
-          error.value = "Invalid or missing vote ID.";
-          loading.value = false; 
-          vote.value = null; 
+      const voteSessionId = route.params.id;
+      if (!voteSessionId || voteSessionId === 'undefined' || voteSessionId === ':id') {
+          console.warn("fetchVoteData called with invalid voteSessionId:", voteSessionId);
+          error.value = "Invalid or missing Vote Session ID.";
+          loading.value = false;
+          vote.value = null;
           displayHint.value = null;
           sliderConfig.value = null;
-          if (timeUpdateInterval.value) { 
+          if (timeUpdateInterval.value) {
               clearInterval(timeUpdateInterval.value);
               timeUpdateInterval.value = null;
           }
-          return; 
+          return;
       }
-      // -------------------------
 
       if (showLoading) loading.value = true
-      error.value = null 
-      
+      error.value = null
+
       try {
-          const [voteResponse, holdersResponse, metadataResponse] = await Promise.all([
-              electionApi.getElectionById(voteId),
-              holderApi.getHolderCount(voteId),
-              electionApi.getElectionMetadata(voteId) 
+          const [sessionResponse, holdersResponse, metadataResponse] = await Promise.all([
+              voteSessionApi.getVoteSessionById(voteSessionId),
+              holderApi.getHolderCount(voteSessionId),
+              voteSessionApi.getVoteSessionMetadata(voteSessionId)
           ]);
-          
-          const metadata = metadataResponse.data.data; 
+
+          const metadata = metadataResponse.data.data;
           let parsedSliderConfig = null;
           if (metadata && typeof metadata.sliderConfig === 'string') {
               try { parsedSliderConfig = JSON.parse(metadata.sliderConfig); } catch (e) { console.error("Failed to parse sliderConfig JSON:", e); }
           } else if (metadata && typeof metadata.sliderConfig === 'object') { parsedSliderConfig = metadata.sliderConfig; }
 
-          const voteData = voteResponse.data.data;
+          const sessionData = sessionResponse.data.data;
           const holderData = holdersResponse.data.data;
           
           vote.value = {
-              id: voteData.id,
-              title: voteData.title || `Vote ${voteData.id}`,
-              description: voteData.description || 'No description available',
-              status: voteData.status || 'active',
-              startDate: voteData.start_date || new Date().toISOString(),
-              endDate: voteData.end_date || new Date(Date.now() + 86400000).toISOString(),
-              options: voteData.options || [], 
-              participantCount: voteData.participant_count || 0,
-              rewardPool: voteData.reward_pool || 0,
-              requiredDeposit: voteData.required_deposit || 0,
+              id: sessionData.id,
+              title: sessionData.title || `Vote Session ${sessionData.id}`,
+              description: sessionData.description || 'No description available',
+              status: sessionData.status || 'active',
+              startDate: sessionData.start_date || new Date().toISOString(),
+              endDate: sessionData.end_date || new Date(Date.now() + 86400000).toISOString(),
+              options: sessionData.options || [],
+              participantCount: sessionData.participant_count || 0,
+              rewardPool: sessionData.reward_pool || 0,
+              requiredDeposit: sessionData.required_deposit || 0,
               secretHolderCount: holderData.count || 0,
-              requiredKeys: voteData.required_keys || 0,
-              releasedKeys: voteData.released_keys || 0,
+              requiredKeys: sessionData.required_keys || 0,
+              releasedKeys: sessionData.released_keys || 0,
           }
           
-          displayHint.value = metadata?.displayHint; 
+          displayHint.value = metadata?.displayHint;
           sliderConfig.value = parsedSliderConfig;
           
       } catch (err) {
-          console.error("Failed to fetch vote data or metadata:", err)
-          let specificError = `Failed to load details for vote ${voteId}. Please try again later.`; // Default error
+          console.error("Failed to fetch vote session data or metadata:", err)
+          let specificError = `Failed to load details for Vote Session ${voteSessionId}. Please try again later.`;
           if (err.response) {
             const status = err.response.status;
             const detail = err.response.data?.detail || '';
-            // Check for 404 or specific backend error message
-            if (status === 404 || (typeof detail === 'string' && detail.includes('Election does not exist'))) {
-              specificError = `Vote with ID ${voteId} was not found. It may have been deleted or the ID is incorrect.`;
+            if (status === 404 || (typeof detail === 'string' && (detail.includes('Election does not exist') || detail.includes('Vote Session does not exist')))) {
+              specificError = `Vote Session with ID ${voteSessionId} was not found. It may have been deleted or the ID is incorrect.`;
             } else if (detail) {
-              specificError = `Error loading vote ${voteId}: ${detail}`; // Use backend detail if available and not 404
+              specificError = `Error loading Vote Session ${voteSessionId}: ${detail}`;
             }
           } else {
-            specificError = `Error loading vote ${voteId}: ${err.message || 'Network error or unknown issue'}`;
+            specificError = `Error loading Vote Session ${voteSessionId}: ${err.message || 'Network error or unknown issue'}`;
           }
           error.value = specificError;
           vote.value = null;
@@ -254,9 +246,8 @@
       }
   }
 
-  // Helper function to format time difference
   const formatTimeDifference = (diff) => {
-      if (diff <= 0) return '00:00:00'; // Handle ended/zero case
+      if (diff <= 0) return '00:00:00';
 
       const days = Math.floor(diff / (1000 * 60 * 60 * 24));
       const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -269,12 +260,10 @@
       return formattedTime;
   };
 
-  // Renamed and refactored function to update timer label and value based on vote state
   const updateTimerState = () => {
       if (!vote.value || !vote.value.startDate || !vote.value.endDate) {
           timerLabel.value = 'Status:';
           timeRemaining.value = 'Not available';
-          // Stop timer if running
           if (timeUpdateInterval.value) {
              clearInterval(timeUpdateInterval.value);
              timeUpdateInterval.value = null;
@@ -286,97 +275,74 @@
       const start = new Date(vote.value.startDate);
       const end = new Date(vote.value.endDate);
 
-      let needsDataRefresh = false;
-      let potentialStatusChange = false; // Flag to check if a refresh *might* change the state
+      let potentialStatusChange = false;
 
       if (now < start) {
-          // State: Pending (Before Start Date)
           timerLabel.value = 'Starts in:';
           const diffToStart = start - now;
           timeRemaining.value = formatTimeDifference(diffToStart);
 
-          // Check if start time just passed in this interval tick
           if (diffToStart <= 0) {
-               potentialStatusChange = true; // Status might change to active
-               timeRemaining.value = 'Starting...'; // Temp state
+               potentialStatusChange = true;
+               timeRemaining.value = 'Starting...';
           }
       } else if (now < end) {
-          // State: Active (Between Start and End Date)
           timerLabel.value = 'Ends in:';
           const diffToEnd = end - now;
           timeRemaining.value = formatTimeDifference(diffToEnd);
 
-          // If status is still pending/join, refresh to ensure it reflects active state
-           if (['pending', 'join'].includes(vote.value.status)) {
+          if (['pending', 'join'].includes(vote.value.status)) {
               potentialStatusChange = true;
-           }
+          }
 
-          // Check if end time just passed in this interval tick
           if (diffToEnd <= 0) {
-              potentialStatusChange = true; // Status might change to ended
-              timeRemaining.value = 'Ending...'; // Temp state
+              potentialStatusChange = true;
+              timeRemaining.value = 'Ending...';
           }
 
       } else {
-          // State: Ended (After End Date)
           timerLabel.value = 'Status:';
           timeRemaining.value = 'Ended';
 
-          // If status isn't 'ended' yet, refresh
           if (vote.value.status !== 'ended') {
                potentialStatusChange = true;
           }
 
-          // Stop the timer interval if it's still running
           if (timeUpdateInterval.value) {
               clearInterval(timeUpdateInterval.value);
               timeUpdateInterval.value = null;
           }
       }
 
-      // If a state transition likely occurred AND status isn't already 'ended'
       if (potentialStatusChange && vote.value.status !== 'ended') {
-          // Fetch data without showing loading spinner
-          // The next tick of the timer (if still running) will use the updated data/status
-          fetchVoteData(false); // This now calls startTimerUpdates in its finally block
+          fetchVoteData(false);
       }
   };
 
-  // Function to start the timer updates
   const startTimerUpdates = () => {
-    // Clear existing interval before starting a new one
     if (timeUpdateInterval.value) {
         clearInterval(timeUpdateInterval.value);
     }
-    // Update time immediately and then set interval
     updateTimerState(); 
     timeUpdateInterval.value = setInterval(updateTimerState, 1000);
   };
 
-  // Function to update the timer display
   const updateTimer = () => {
     updateTimerState();
   };
 
-  // --- Watch route parameter for changes --- 
   watch(() => route.params.id, (newId, oldId) => {
-      // Check if the new ID is valid before fetching
       if (newId && newId !== 'undefined' && newId !== ':id') {
-          // Clear old data before fetching new, show loading
           vote.value = null; 
           displayHint.value = null;
           sliderConfig.value = null;
           error.value = null;
-          // Stop timer associated with old vote ID
           if (timeUpdateInterval.value) {
               clearInterval(timeUpdateInterval.value);
               timeUpdateInterval.value = null;
           }
-          // Fetch data for the new valid ID
           fetchVoteData(true); 
       } else {
-          // Handle cases where the route changes to an invalid ID
-          // (e.g., navigating away or to a placeholder)
           error.value = "Invalid vote ID in route.";
           vote.value = null;
           displayHint.value = null;
@@ -387,8 +353,7 @@
               timeUpdateInterval.value = null;
           }
       }
-  }, { immediate: true }); // immediate: true runs the watcher once on component mount
-  // ----------------------------------------
+  }, { immediate: true });
 
   onMounted(() => {
   });
@@ -429,10 +394,8 @@
   })
 
   const handleRegistrationSuccess = () => {
-    isLocallyRegistered.value = true; // Set local flag on successful registration
-    // Re-fetch dynamic data (like participant count) after registration
+    isLocallyRegistered.value = true;
     fetchVoteData();
-    // No need to explicitly update isRegisteredForVote, computed property handles it
   };
 
   // Function to check and update vote status if needed
@@ -454,7 +417,7 @@
 
     // Refresh data if the calculated status differs from the current vote status
     if (vote.value.status !== expectedStatus) {
-        await fetchVoteData(false); // Fetch without showing the main loading spinner
+        await fetchVoteData(false);
     }
   };
 </script>

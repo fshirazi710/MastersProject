@@ -80,11 +80,19 @@ This feature involves implementing a secure deposit system for secret holders, m
 
 ## In Progress Tasks
 
-*(No tasks currently in progress)*
+- [ ] Refactor Naming Scheme (Election->VoteSession, Vote->EncryptedVote, etc.) 
+  - [x] Frontend UI Text (Create Vote Session, All Vote Sessions, Key Password Labels).
+  - [x] Frontend Code (`api.js`: Rename electionApi->voteSessionApi, voteApi->encryptedVoteApi; update functions, endpoints, params, exports).
+  - [x] Frontend Code (`all-vote-sessions.vue`: Update API calls, variable names).
+  - [x] Frontend Code (`create-vote-session.vue`: Update API calls, variable names).
+  - [x] Frontend Code (`pages/session/[id].vue`: Update API calls, variable names).
+  - [x] Frontend Code (`CastYourVote.vue`: Update API calls, function names).
+  - [x] Frontend Code (`VoteResults.vue`: Update API calls, function/variable names).
+  - [ ] Backend Code (Routers, Services, Helpers - Requires manual changes).
+  - [ ] Database Models/Schemas (Requires manual changes).
 
 ## Future Tasks
 
-- [ ] Refactor Naming Scheme (Election->VoteSession, Vote->EncryptedVote, etc.)
 - [ ] Review/update related backend functions (`verifyShares`, etc.) based on the new deposit/signing flow.
 - [ ] Investigate/Implement Pedersen commitment logic if required by the updated registration/verification process.
 - [ ] Define and implement transition plan (e.g., support only new VoteSessions).

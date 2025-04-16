@@ -47,120 +47,95 @@ export const authApi = {
   },
 };
 
-// --- Resolved Conflict Area 1 ---
-// Kept the start of electionApi from user-testing branch
-// API service for elections
-export const electionApi = {
-  // Create a new election (from user-testing)
-  createElection: (electionData) => {
-    return apiClient.post('/api/elections/create-election', electionData);
+// Rename: electionApi -> voteSessionApi
+export const voteSessionApi = {
+  // Rename: createElection -> createVoteSession, update endpoint
+  createVoteSession: (voteSessionData) => {
+    return apiClient.post('/api/vote-sessions/create', voteSessionData);
   },
 
-  // Get all elections (common part)
-  getAllElections: () => {
-    return apiClient.get('/api/elections/all-elections');
+  // Rename: getAllElections -> getAllVoteSessions, update endpoint
+  getAllVoteSessions: () => {
+    return apiClient.get('/api/vote-sessions/all');
   },
 
-  // Check winners (common part)
-  checkWinners: (election_id, data) => {
-    return apiClient.post(`/api/elections/get-winners/${election_id}`, data);
+  // Rename: getElectionById -> getVoteSessionById, update endpoint and param
+  getVoteSessionById: (voteSessionId) => {
+    return apiClient.get(`/api/vote-sessions/session/${voteSessionId}`);
   },
 
-  // Submit email (common part)
-  submitEmail: (election_id, data) => {
-    return apiClient.post(`/api/elections/submit-email/${election_id}`, data);
-  },
-
-// --- Resolved Conflict Area 2 ---
-  // Get election by ID (from user-testing)
-  getElectionById: (electionId) => {
-    return apiClient.get(`/api/elections/election/${electionId}`);
-  },
-  // Note: Discarded createVote from the main branch here, as it logically belongs in voteApi below.
-
-  // --- Add function to get metadata --- (common part after conflict)
-  getElectionMetadata: (electionId) => {
-    return apiClient.get(`/api/elections/election/${electionId}/metadata`);
+  // Rename: getElectionMetadata -> getVoteSessionMetadata, update endpoint and param
+  getVoteSessionMetadata: (voteSessionId) => {
+    return apiClient.get(`/api/vote-sessions/session/${voteSessionId}/metadata`);
   }
-  // -----------------------------------
-}; // End of electionApi
+};
 
-// API service for votes (this contains functions previously defined in main/elsewhere)
-export const voteApi = {
-  // Submit a vote
-  submitVote: (electionId, voteData) => {
-    return apiClient.post(`/api/votes/submit-vote/${electionId}`, voteData);
+// API service for votes (individual encrypted votes within a session)
+// Rename voteApi -> encryptedVoteApi
+export const encryptedVoteApi = {
+  // Rename submitVote -> submitEncryptedVote, update endpoint
+  submitEncryptedVote: (voteSessionId, voteData) => {
+    return apiClient.post(`/api/encrypted-votes/submit/${voteSessionId}`, voteData);
   },
 
-  // Retrieve vote information for a specific election
-  getVoteInformation: (electionId) => {
-    return apiClient.post(`/api/votes/get-vote-information/${electionId}`);
+  // Rename getVoteInformation -> getEncryptedVoteInfo, update endpoint
+  getEncryptedVoteInfo: (voteSessionId) => {
+    return apiClient.post(`/api/encrypted-votes/info/${voteSessionId}`);
   },
 
-  // Store Public Key
-  storePublicKey: (electionId, data) => {
-    return apiClient.post(`/api/votes/store-public-key/${electionId}`, data);
-  },
-
-  // Validate Public Key
+  // Keep validatePublicKey as is
   validatePublicKey: (data) => {
     return apiClient.post(`/api/votes/validate-public-key`, data);
   },
+};
 
-  // Note: If the 'getAllVotes' function from the main branch conflict (api/votes/all-elections)
-  // is still required, it should be added here within voteApi.
-  // For example:
-  // getAllVotes: () => {
-  //   return apiClient.get('/api/votes/all-elections');
-  // },
-}; // End of voteApi
-
-// API service for holders
+// API service for holders (participants acting as secret holders for a session)
 export const holderApi = {
-  // Get all holders
-  getAllHolders: (election_id) => {
-    return apiClient.get(`/api/holders/${election_id}`);
+  // Rename param: election_id -> voteSessionId, update endpoint
+  getAllHolders: (voteSessionId) => {
+    return apiClient.get(`/api/holders/all/${voteSessionId}`);
   },
 
-  // Get holder count
-  getHolderCount: (election_id) => {
-    return apiClient.get(`/api/holders/count/${election_id}`);
+  // Rename param: election_id -> voteSessionId, update endpoint
+  getHolderCount: (voteSessionId) => {
+    return apiClient.get(`/api/holders/count/${voteSessionId}`);
   },
 
-  // Join as holder
-  joinAsHolder: (election_id, data) => {
-    return apiClient.post(`/api/holders/join/${election_id}`, data);
+  // Rename param: election_id -> voteSessionId, update endpoint
+  joinAsHolder: (voteSessionId, data) => {
+    return apiClient.post(`/api/holders/join/${voteSessionId}`, data);
   },
 };
 
-// API service for shares
+// API service for shares (secret shares related to a session)
 export const shareApi = {
-  // Submit a share
-  submitShare: (electionId, data) => {
-    return apiClient.post(`/api/shares/submit-share/${electionId}`, data)
+  // Rename param: electionId -> voteSessionId, update endpoint
+  submitShare: (voteSessionId, data) => {
+    return apiClient.post(`/api/shares/submit-share/${voteSessionId}`, data)
   },
 
-  // Decryption status
-  decryptionStatus: (electionId) => {
-    return apiClient.get(`/api/shares/decryption-status/${electionId}`)
+  // Rename param: electionId -> voteSessionId, update endpoint
+  decryptionStatus: (voteSessionId) => {
+    return apiClient.get(`/api/shares/decryption-status/${voteSessionId}`)
   },
 
-  // Verify a share
+  // Keep verifyShare as is (refers to individual vote_id)
   verifyShare: (voteId, holderAddress, share) => {
     return apiClient.post('/api/shares/verify', { vote_id: voteId, holder_address: holderAddress, share });
   },
 
-  // Get submitted shares for a vote
-  getShares: (voteId) => {
-    return apiClient.get(`/api/shares/get-shares/${voteId}`);
+  // Rename param: voteId -> voteSessionId, update endpoint
+  getShares: (voteSessionId) => {
+    return apiClient.get(`/api/shares/get-shares/${voteSessionId}`);
   },
 };
 
 // Ensure all necessary APIs are exported
 export default {
   auth: authApi,
-  vote: voteApi,
+  // Rename vote -> encryptedVote
+  encryptedVote: encryptedVoteApi,
   holder: holderApi,
   share: shareApi,
-  election: electionApi, // Make sure electionApi is included
+  voteSession: voteSessionApi, 
 };

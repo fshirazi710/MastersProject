@@ -1,6 +1,6 @@
 <template>
   <div class="create-vote">
-    <h1>Create New Vote</h1>
+    <h2>Create Vote Session</h2>
 
     <!-- Wallet connection status -->
     <div class="wallet-status" v-if="!walletConnected">
@@ -28,7 +28,7 @@
         <input 
           type="text" 
           id="title" 
-          v-model="voteData.title" 
+          v-model="voteSessionData.title" 
           required 
           minlength="3" 
           maxlength="100"
@@ -41,7 +41,7 @@
         <label for="description">Description</label>
         <textarea 
           id="description" 
-          v-model="voteData.description" 
+          v-model="voteSessionData.description" 
           required 
           minlength="10"
           maxlength="1000"
@@ -58,7 +58,7 @@
           <input 
             type="datetime-local" 
             id="startDate" 
-            v-model="voteData.start_date" 
+            v-model="voteSessionData.start_date" 
             required 
             class="form-input"
           >
@@ -70,7 +70,7 @@
           <input 
             type="datetime-local" 
             id="endDate" 
-            v-model="voteData.end_date" 
+            v-model="voteSessionData.end_date" 
             required 
             class="form-input"
           >
@@ -91,7 +91,7 @@
             <input 
               type="number"
               id="rewardPool"
-              v-model="voteData.reward_pool"
+              v-model="voteSessionData.reward_pool"
               required
               min="0.001"
               step="0.001"
@@ -105,7 +105,7 @@
             <input 
               type="number"
               id="requiredDeposit"
-              v-model="voteData.required_deposit"
+              v-model="voteSessionData.required_deposit"
               required
               min="0.001"
               step="0.001"
@@ -137,10 +137,10 @@
           <label>Options</label>
           <p class="helper-text">Minimum 2 options required</p>
           <!-- List of voting options with remove buttons -->
-          <div v-for="(option, index) in voteData.options" :key="index" class="option-row">
+          <div v-for="(option, index) in voteSessionData.options" :key="index" class="option-row">
             <input 
               type="text" 
-              v-model="voteData.options[index]" 
+              v-model="voteSessionData.options[index]" 
               :placeholder="'Option ' + (index + 1)"
               class="form-input"
               required
@@ -150,7 +150,7 @@
               type="button" 
               @click="removeOption(index)" 
               class="btn danger"
-              v-if="voteData.options.length > 2"
+              v-if="voteSessionData.options.length > 2"
             >
               Remove
             </button>
@@ -208,7 +208,7 @@
 
       <!-- Form submit button -->
       <button type="submit" class="btn primary" :disabled="loading || !walletConnected">
-        {{ loading ? 'Creating Vote...' : 'Create Vote' }}
+        {{ loading ? 'Creating Vote Session...' : 'Create Vote Session' }}
       </button>
     </form>
   </div>
@@ -217,7 +217,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { electionApi } from '@/services/api'
+import { voteSessionApi } from '@/services/api'
 import { ethersService } from '~/services/ethersService'
 
 const router = useRouter();
@@ -241,7 +241,7 @@ definePageMeta({
 })
 
 // Initialize form data with reactive reference
-const voteData = ref({
+const voteSessionData = ref({
   title: '',
   description: '',
   start_date: '',
@@ -266,26 +266,26 @@ const connectWallet = async () => {
 
 // Add a new empty option to the options array
 const addOption = () => {
-  voteData.value.options.push('')
+  voteSessionData.value.options.push('')
 }
 
 // Remove an option at the specified index
 const removeOption = (index) => {
-  voteData.value.options.splice(index, 1)
+  voteSessionData.value.options.splice(index, 1)
 }
 
 // Validation logic (computed property example)
 const isFormValid = computed(() => {
   // Basic checks (title, description, dates)
-  if (!voteData.value.title || voteData.value.title.length < 3 || voteData.value.title.length > 100) return false;
-  if (!voteData.value.description || voteData.value.description.length < 10 || voteData.value.description.length > 1000) return false;
-  if (!voteData.value.start_date || !voteData.value.end_date) return false;
+  if (!voteSessionData.value.title || voteSessionData.value.title.length < 3 || voteSessionData.value.title.length > 100) return false;
+  if (!voteSessionData.value.description || voteSessionData.value.description.length < 10 || voteSessionData.value.description.length > 1000) return false;
+  if (!voteSessionData.value.start_date || !voteSessionData.value.end_date) return false;
   // TODO: Add better date validation (end > start)
   
   // Options validation
   if (questionType.value === 'options') {
-    if (voteData.value.options.length < 2) return false;
-    if (voteData.value.options.some(opt => !opt.trim())) return false; // Ensure no empty options
+    if (voteSessionData.value.options.length < 2) return false;
+    if (voteSessionData.value.options.some(opt => !opt.trim())) return false; // Ensure no empty options
   }
 
   // Slider validation
@@ -302,7 +302,7 @@ const isFormValid = computed(() => {
   }
   
   // Check ETH values
-  if (voteData.value.reward_pool < 0.001 || voteData.value.required_deposit < 0.001) return false;
+  if (voteSessionData.value.reward_pool < 0.001 || voteSessionData.value.required_deposit < 0.001) return false;
 
   return true; // If all checks pass
 });
@@ -325,7 +325,7 @@ const handleSubmit = async () => {
     }
 
     // Check if user has enough balance
-    if (Number(walletBalance.value) < Number(voteData.value.reward_pool)) {
+    if (Number(walletBalance.value) < Number(voteSessionData.value.reward_pool)) {
       throw new Error('Insufficient balance for reward pool');
     }
 
@@ -393,7 +393,7 @@ const handleSubmit = async () => {
       }
       
     } else {
-      finalOptions = voteData.value.options.filter(opt => opt && opt.trim());
+      finalOptions = voteSessionData.value.options.filter(opt => opt && opt.trim());
     }
     // --- End option generation ---
 
@@ -415,44 +415,43 @@ const handleSubmit = async () => {
     };
 
     // Format core data for the contract part of the backend request
-    const coreElectionData = {
-      title: voteData.value.title,
-      description: voteData.value.description,
-      start_date: toBSTISOString(voteData.value.start_date),
-      end_date: toBSTISOString(voteData.value.end_date),
-      reward_pool: Number(voteData.value.reward_pool),
-      required_deposit: Number(voteData.value.required_deposit),
+    const coreVoteSessionData = {
+      title: voteSessionData.value.title,
+      description: voteSessionData.value.description,
+      start_date: toBSTISOString(voteSessionData.value.start_date),
+      end_date: toBSTISOString(voteSessionData.value.end_date),
+      reward_pool: Number(voteSessionData.value.reward_pool),
+      required_deposit: Number(voteSessionData.value.required_deposit),
       options: finalOptions, // Use the generated or original options
     };
 
     // Construct the full payload including metadata
     const fullPayload = {
-        election_data: coreElectionData,
+        vote_session_data: coreVoteSessionData,
         displayHint: displayHint, // Will be 'slider' or null
         sliderConfig: payloadSliderConfig // Will contain config or null
     };
     
     // Validate formatted dates
-    if (!coreElectionData.start_date || !coreElectionData.end_date) {
+    if (!coreVoteSessionData.start_date || !coreVoteSessionData.end_date) {
         throw new Error('Invalid start or end date format provided.');
     }
 
     console.log("Submitting Full Payload:", fullPayload); // Debug log
 
-    // Call the backend API
-    // NOTE: electionApi.createElection might need adjustment if it doesn't expect this nested structure
-    const response = await electionApi.createElection(fullPayload);
-    alert(response.data.message || 'Vote created successfully!');
-    router.push('/all-votes');
+    // Call the backend API using voteSessionApi.createVoteSession
+    const response = await voteSessionApi.createVoteSession(fullPayload);
+    alert(response.data.message || 'Vote Session created successfully!');
+    router.push('/all-vote-sessions');
   } catch (err) {
-    console.error("Vote creation failed:", err);
+    console.error("Vote Session creation failed:", err);
     // More specific error handling
     if (err.response?.data?.detail) {
       error.value = `Error: ${err.response.data.detail}`;
     } else if (err instanceof Error) {
       error.value = err.message;
     } else {
-      error.value = 'An unexpected error occurred during vote creation.';
+      error.value = 'An unexpected error occurred during vote session creation.';
     }
   } finally {
     loading.value = false;

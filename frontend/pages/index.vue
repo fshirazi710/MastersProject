@@ -7,7 +7,7 @@
       <!-- Call to action buttons with navigation -->
       <div class="cta-buttons">
         <NuxtLink v-if="!store.loggedIn" to="/login" class="btn primary">Login</NuxtLink>
-        <NuxtLink v-else to="/create-vote" class="btn primary">Create Vote</NuxtLink>
+        <NuxtLink v-else to="/create-vote-session" class="btn primary">Create Vote Session</NuxtLink>
         <NuxtLink to="/faq" class="btn secondary">Learn More</NuxtLink>
       </div>
     </section>

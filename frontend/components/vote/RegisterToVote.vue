@@ -2,7 +2,7 @@
     <div class="voting-section">
       <h2>Register as Holder</h2>
 
-      <!-- Display Election Deposit/Reward Info -->
+      <!-- Display Vote Session Deposit/Reward Info -->
       <div class="info-box">
         <p>To participate as a holder and be eligible for rewards, you need to deposit the required amount.</p>
         <p><strong>Required Deposit:</strong> {{ props.requiredDeposit }} ETH</p>
@@ -29,7 +29,7 @@
 
           <!-- Password Inputs -->
           <div class="form-group">
-            <label for="reg-password">Create Election Key Password:</label>
+            <label for="reg-password">Create Vote Session Key Password:</label>
             <input 
               type="password" 
               id="reg-password" 

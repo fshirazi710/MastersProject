@@ -59,19 +59,19 @@
       
       <!-- Standard Options Results (Bar Chart) -->
       <template v-if="!displayHint || displayHint === 'options'">
-         <h3>Vote Results</h3>
-          <div v-for="(votes, option) in decryptedVoteCounts" :key="option" class="result-item">
+         <h3>Tally Results</h3>
+          <div v-for="(count, option) in tallyResults" :key="option" class="result-item">
             <div class="result-header">
               <span class="option-text">{{ option }}</span>
             </div>
             <div class="progress-bar">
               <div 
                 class="progress" 
-                :style="{ width: `${totalVotes > 0 ? (votes / totalVotes) * 100 : 0}%` }"
+                :style="{ width: `${totalVotes > 0 ? (count / totalVotes) * 100 : 0}%` }"
               ></div>
             </div>
             <div class="percentage">
-              {{ totalVotes > 0 ? ((votes / totalVotes) * 100).toFixed(1) : '0.0' }}% ({{ votes }} votes)
+              {{ totalVotes > 0 ? ((count / totalVotes) * 100).toFixed(1) : '0.0' }}% ({{ count }} votes)
             </div>
           </div>
       </template>
@@ -163,7 +163,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
-import { voteApi, shareApi, electionApi } from '@/services/api';
+import { voteApi, shareApi, electionApi, encryptedVoteApi } from '@/services/api';
 import { recomputeKey, AESDecrypt } from '@/services/cryptography';
 // --- Import ethers --- 
 import { ethers } from 'ethers'; 
@@ -223,7 +223,7 @@ const props = defineProps({
 
 const loading = ref(false);
 const isDecrypted = ref(false);
-const decryptedVoteCounts = ref({});
+const tallyResults = ref({});
 const totalVotes = ref(0);
 const voteResults = ref('');
 const error = ref(null);
@@ -265,8 +265,8 @@ const distributionChartData = computed(() => {
         return { labels: [], datasets: [] };
     }
     
-    const labels = Object.keys(decryptedVoteCounts.value).sort((a, b) => Number(a) - Number(b)); // Sort numerically
-    const data = labels.map(label => decryptedVoteCounts.value[label] || 0); // Ensure count is number
+    const labels = Object.keys(tallyResults.value).sort((a, b) => Number(a) - Number(b));
+    const data = labels.map(label => tallyResults.value[label] || 0);
 
     return {
         labels: labels,
@@ -326,11 +326,11 @@ const distributionChartOptions = ref({
 // ----------------------
 
 onMounted(() => {
-  checkStatusAndDecrypt();
+  checkStatusAndDecryptVotes();
   // Also check holder status on mount
   checkHolderStatus(); 
   if (!submissionDeadlinePassed.value || (!isDecrypted.value && !submissionFailed.value)) {
-    statusCheckInterval = setInterval(checkStatusAndDecrypt, 30000);
+    statusCheckInterval = setInterval(checkStatusAndDecryptVotes, 30000);
   }
 })
 
@@ -345,7 +345,7 @@ watch([() => props.releasedKeys, () => props.requiredKeys], ([newReleased, newRe
         console.log(`Key counts changed: Released ${newReleased}/${newRequired}`);
         if (submissionDeadlinePassed.value && !isDecrypted.value && !submissionFailed.value) {
             console.log("Key count changed after deadline passed. Re-checking status and attempting decryption if possible.");
-            checkStatusAndDecrypt();
+            checkStatusAndDecryptVotes();
         }
     }
 });
@@ -357,15 +357,15 @@ watch(isDecrypted, (newValue) => {
 });
 
 const calculateSliderAverage = () => {
-    if (Object.keys(decryptedVoteCounts.value).length === 0 || totalVotes.value === 0) {
+    if (Object.keys(tallyResults.value).length === 0 || totalVotes.value === 0) {
         sliderAverage.value = 0; // Default to 0 if no votes
         return;
     }
 
     let weightedSum = 0;
-    for (const optionStr in decryptedVoteCounts.value) {
+    for (const optionStr in tallyResults.value) {
         const optionNum = Number(optionStr);
-        const count = decryptedVoteCounts.value[optionStr];
+        const count = tallyResults.value[optionStr];
         if (!isNaN(optionNum) && typeof count === 'number') {
             weightedSum += optionNum * count;
         }
@@ -373,7 +373,7 @@ const calculateSliderAverage = () => {
     sliderAverage.value = totalVotes.value > 0 ? weightedSum / totalVotes.value : 0;
 };
 
-const checkStatusAndDecrypt = async () => {
+const checkStatusAndDecryptVotes = async () => {
   if (props.endDate) {
     const now = new Date();
     const endDateTime = new Date(props.endDate);
@@ -391,7 +391,7 @@ const checkStatusAndDecrypt = async () => {
       } else if (props.releasedKeys >= props.requiredKeys && !isDecrypted.value && !submissionFailed.value) {
          // Deadline passed, enough keys, and not yet decrypted or failed
          console.log("Submission deadline passed with enough keys. Attempting decryption...");
-         await decryptVotes(); // Attempt decryption
+         await decryptSubmittedVotes(); // Attempt decryption
          // Stop checking interval regardless of decryption outcome (it either worked or failed definitively)
          if (statusCheckInterval) clearInterval(statusCheckInterval);
       } else {
@@ -494,7 +494,7 @@ const claimDepositHandler = async () => {
   }
 };
 
-const decryptVotes = async () => {
+const decryptSubmittedVotes = async () => {
   if (props.releasedKeys < props.requiredKeys) {
       console.warn("Attempted decryption without enough keys.");
       error.value = "Cannot decrypt results: Not enough secret shares have been released.";
@@ -507,14 +507,14 @@ const decryptVotes = async () => {
   }
 
   console.log("Starting decryption process...");
-  decryptedVoteCounts.value = {};
+  tallyResults.value = {};
   totalVotes.value = 0;
   sliderAverage.value = null;
   error.value = null;
 
   try {
     const sharesResponse = await shareApi.getShares(props.voteId);
-    const votesInfoResponse = await voteApi.getVoteInformation(props.voteId);
+    const votesInfoResponse = await encryptedVoteApi.getEncryptedVoteInfo(props.voteId);
 
     const indexes = sharesResponse.data[0];
     const shares = sharesResponse.data[1];
@@ -525,7 +525,7 @@ const decryptVotes = async () => {
     }
 
     if (!(shares[0] && shares[0].length >= props.requiredKeys)) {
-       console.warn("Not enough shares released for decryption (checked again inside decryptVotes).");
+       console.warn("Not enough shares released for decryption (checked again inside decryptSubmittedVotes).");
        error.value = "Cannot decrypt results: Not enough secret shares have been released.";
        submissionFailed.value = true; // Mark as failed
        return;
@@ -596,7 +596,7 @@ const decryptVotes = async () => {
     } // End for loop
 
     // --- Final Result Handling ---
-    decryptedVoteCounts.value = currentDecryptedCounts;
+    tallyResults.value = currentDecryptedCounts;
     totalVotes.value = currentTotalVotes;
 
     if (currentTotalVotes > 0 && decryptionErrors === 0) {

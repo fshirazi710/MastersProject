@@ -9,8 +9,8 @@
         </div>
         <div class="nav-links">
           <NuxtLink to="/" class="nav-link">Home</NuxtLink>
-          <NuxtLink to="/all-votes" class="nav-link">All Votes</NuxtLink>
-          <NuxtLink v-if="store.loggedIn" to="/create-vote" class="nav-link">Create Vote</NuxtLink>
+          <NuxtLink to="/all-vote-sessions" class="nav-link">All Vote Sessions</NuxtLink>
+          <NuxtLink v-if="store.loggedIn" to="/create-vote-session" class="nav-link">Create Vote Session</NuxtLink>
           <NuxtLink v-if="!store.loggedIn" to="/login" class="nav-link">Login</NuxtLink>
           <NuxtLink v-if="store.loggedIn" @click="handleLogout" class="nav-link">Logout</NuxtLink>
         </div>

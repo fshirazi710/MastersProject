@@ -16,7 +16,7 @@
         </div>
   
         <!-- Voting form (shown only if registered AND voting is active AND user hasn't voted yet) -->
-        <form v-else-if="status === 'active' && !hasVoted" @submit.prevent="handleVoteSubmit" class="voting-form">
+        <form v-else-if="status === 'active' && !hasVoted" @submit.prevent="handleEncryptedVoteSubmit" class="voting-form">
           
           <!-- Custom Slider (Conditional) -->
           <fieldset v-if="displayHint === 'slider' && sliderConfig && sliderSteps.length > 0">
@@ -87,7 +87,7 @@
   
   <script setup>
   import { ref, computed, onMounted, watch } from 'vue'
-  import { holderApi, voteApi } from '@/services/api'
+  import { holderApi, encryptedVoteApi } from '@/services/api'
   import { getKAndSecretShares, AESEncrypt } from '@/services/cryptography';
   import { ethersService } from '@/services/ethersService';
   // Import the new custom slider component
@@ -179,7 +179,7 @@
         throw new Error("Your election-specific key pair was not found. Please ensure you have registered correctly for this vote.");
       }
 
-      const response = await voteApi.validatePublicKey({ public_key: publicKeyHex });
+      const response = await encryptedVoteApi.validatePublicKey({ public_key: publicKeyHex });
       return response.data.success
     } catch (error) {
       console.error("Failed to validate key pair:", error);
@@ -188,7 +188,7 @@
   }
   
   // Handle vote submission
-  const handleVoteSubmit = async () => {
+  const handleEncryptedVoteSubmit = async () => {
     try {
       if (loading.value) return;
       loading.value = true;
@@ -252,9 +252,12 @@
       // Encrypt the determined option string
       const ciphertext = await AESEncrypt(optionToEncrypt, k);
       
-      const voteResponse = await voteApi.submitVote(props.voteId, {
-        election_id: props.voteId,
-        voter: public_keys[0], // Assuming the first public key is the voter's
+      // Use encryptedVoteApi.submitEncryptedVote
+      // Rename voteResponse -> submitResponse for clarity
+      const submitResponse = await encryptedVoteApi.submitEncryptedVote(props.voteId, { // Assuming voteId prop is actually voteSessionId
+        // Backend might expect voter public key here, ensure it's correct.
+        // Currently using public_keys[0] as placeholder.
+        voter: public_keys[0], // Placeholder - Needs Verification
         public_keys: public_keys,
         ciphertext: ciphertext,
         g1r: g1r,
@@ -264,7 +267,7 @@
       });
 
       hasVoted.value = true;
-      alert(voteResponse.data.message || 'Vote submitted successfully!');
+      alert(submitResponse.data.message || 'Vote submitted successfully!');
 
     } catch (error) {
       console.error('Failed to submit vote:', error.response?.data?.detail || error.message || error);

@@ -13,7 +13,7 @@
             <div v-if="!isDeadlinePassed">
                 <!-- Password Input for Decryption -->
                 <div v-if="isWalletConnected" class="form-group">
-                    <label for="decrypt-password">Enter Election Key Password:</label>
+                    <label for="decrypt-password">Enter Vote Session Key Password:</label>
                     <input 
                         type="password" 
                         id="decrypt-password" 
