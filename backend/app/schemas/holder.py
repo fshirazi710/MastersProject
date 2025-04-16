@@ -6,6 +6,16 @@ from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 import re
 
+# Add back the HolderJoinRequest schema
+class HolderJoinRequest(BaseModel):
+    """Schema for requesting to join a session as a holder."""
+    user_address: str = Field(
+        ...,
+        description="The Ethereum address of the user wanting to join",
+        pattern=r'^0x[a-fA-F0-9]{40}$', # Basic checksum pattern
+        examples=["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"]
+    )
+
 # class JoinHolderRequest(BaseModel):
 #     """Schema for joining as a secret holder."""
 #     public_key: List[int] = Field(
@@ -23,15 +33,6 @@ import re
 #         if len(v) != 2:
 #             raise ValueError("Public key must have exactly 2 components [x, y]")
 #         return v
-
-# New schema for joining with a public key string
-class JoinHolderStringRequest(BaseModel):
-    """Schema for joining as a secret holder using a public key string."""
-    public_key: str = Field(
-        ...,
-        description="BLS12-381 public key as a hex string",
-        examples=["0xabcdef12345..."]
-    )
 
 class HolderResponse(BaseModel):
     """Schema for secret holder data."""

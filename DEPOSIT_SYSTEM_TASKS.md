@@ -80,7 +80,7 @@ This feature involves implementing a secure deposit system for secret holders, m
 
 ## In Progress Tasks
 
-- [ ] Refactor Naming Scheme (Election->VoteSession, Vote->EncryptedVote, etc.) 
+- [x] Refactor Naming Scheme (Election->VoteSession, Vote->EncryptedVote, etc.) 
   - [x] Frontend UI Text (Create Vote Session, All Vote Sessions, Key Password Labels).
   - [x] Frontend Code (`api.js`: Rename electionApi->voteSessionApi, voteApi->encryptedVoteApi; update functions, endpoints, params, exports).
   - [x] Frontend Code (`all-vote-sessions.vue`: Update API calls, variable names).
@@ -88,8 +88,8 @@ This feature involves implementing a secure deposit system for secret holders, m
   - [x] Frontend Code (`pages/session/[id].vue`: Update API calls, variable names).
   - [x] Frontend Code (`CastYourVote.vue`: Update API calls, function names).
   - [x] Frontend Code (`VoteResults.vue`: Update API calls, function/variable names).
-  - [ ] Backend Code (Routers, Services, Helpers - Requires manual changes).
-  - [ ] Database Models/Schemas (Requires manual changes).
+  - [x] Backend Code (Routers, Services, Helpers - Requires manual changes).
+  - [x] Database Models/Schemas (Requires manual changes).
 
 ## Future Tasks
 

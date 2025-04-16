@@ -5,42 +5,6 @@ This module contains Pydantic models for share-related requests and responses.
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any, Tuple, Optional
 
-class ShareSubmitRequest(BaseModel):
-    """Schema for submitting a share for a vote."""
-    vote_id: int = Field(
-        ..., 
-        description="The ID of the vote",
-        ge=0,
-        examples=[1]
-    )
-    share_index: int = Field(
-        ..., 
-        description="The index of the share",
-        gt=0,
-        examples=[1]
-    )
-    share_value: int = Field(
-        ..., 
-        description="The value of the share",
-        examples=[123456789]
-    )
-    
-    @field_validator('vote_id')
-    @classmethod
-    def validate_vote_id(cls, v):
-        """Validate that the vote ID is non-negative."""
-        if v < 0:
-            raise ValueError("Vote ID must be non-negative")
-        return v
-    
-    @field_validator('share_index')
-    @classmethod
-    def validate_share_index(cls, v):
-        """Validate that the share index is positive."""
-        if v <= 0:
-            raise ValueError("Share index must be positive")
-        return v
-
 class ShareVerificationRequest(BaseModel):
     """Schema for verifying a share."""
     vote_id: int = Field(

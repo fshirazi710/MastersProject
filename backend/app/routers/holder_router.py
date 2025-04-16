@@ -3,11 +3,12 @@ Holder router for managing secret holders in the system.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.dependencies import get_blockchain_service
+from app.helpers.vote_session_helper import get_vote_session_status
 from app.schemas import (
     StandardResponse,
     TransactionResponse,
     HolderCountResponse,
-    JoinHolderStringRequest,
+    HolderJoinRequest,
 )
 from app.services.blockchain import BlockchainService
 
@@ -19,74 +20,108 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/holders", tags=["Holders"])
 
 
-@router.get("/{election_id}")
-async def get_all_holders(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+@router.get("/{vote_session_id}")
+async def get_all_holders(vote_session_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+    """Retrieve all registered holder addresses for a specific vote session."""
     try:
-        # Call the blockchain service to get all holders using the helper method
-        holders = await blockchain_service.call_contract_function("getHoldersByElection", election_id)
+        # Rename contract call: getHoldersByElection -> getHoldersByVoteSession
+        # Rename parameter: election_id -> vote_session_id
+        holders = await blockchain_service.call_contract_function("getHoldersByVoteSession", vote_session_id)
 
-        # Return response
+        # Return response using StandardResponse
         return StandardResponse(
             success=True,
-            message="Successfully retrieved all holders",
+            # Update message
+            message=f"Successfully retrieved all holders for session {vote_session_id}",
             data=holders
         )
     except Exception as e:
-        logger.error(f"Error getting all holders: {str(e)}")
-        raise HTTPException(status_code=500, detail="failed to retrieve list of all secret holders")
+        # Update log message
+        logger.error(f"Error getting all holders for session {vote_session_id}: {str(e)}")
+        # Update detail message
+        raise HTTPException(status_code=500, detail=f"failed to retrieve list of all secret holders for session {vote_session_id}")
 
 
-@router.get("/count/{election_id}", response_model=StandardResponse[HolderCountResponse])
-async def get_holder_count(election_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+@router.get("/count/{vote_session_id}", response_model=StandardResponse[HolderCountResponse])
+async def get_holder_count(vote_session_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+    """Retrieve the total number of registered holders for a specific vote session."""
     try:
-        # Call the blockchain service to get the holder count using the helper method
-        count = await blockchain_service.call_contract_function("getNumHoldersByElection", election_id)
+        # Rename contract call: getNumHoldersByElection -> getNumHoldersByVoteSession
+        # Rename parameter: election_id -> vote_session_id
+        count = await blockchain_service.call_contract_function("getNumHoldersByVoteSession", vote_session_id)
         
         # Return response
         return StandardResponse(
             success=True,
-            message="Successfully retrieved holder count",
+            # Update message
+            message=f"Successfully retrieved holder count for session {vote_session_id}",
             data=HolderCountResponse(count=count)
         )
     except Exception as e:
-        logger.error(f"Error getting holder count: {str(e)}")
-        raise HTTPException(status_code=500, detail="failed to retrieve number of secret holders")
+        # Update log message
+        logger.error(f"Error getting holder count for session {vote_session_id}: {str(e)}")
+        # Update detail message
+        raise HTTPException(status_code=500, detail=f"failed to retrieve number of secret holders for session {vote_session_id}")
 
 
 # Updated endpoint: Checks eligibility, does not submit transaction
-@router.post("/join/{election_id}", response_model=StandardResponse)
-async def check_holder_join_eligibility(
-    election_id: int,
-    request: JoinHolderStringRequest,
+@router.post("/join/{vote_session_id}", response_model=StandardResponse)
+async def join_vote_session(
+    vote_session_id: int,
+    data: HolderJoinRequest,
     blockchain_service: BlockchainService = Depends(get_blockchain_service)
 ):
-    """Check if a public key is eligible to join an election as a holder."""
-    public_key_hex = request.public_key
+    """
+    Checks eligibility for a user to join a vote session as a holder.
+    The actual joining (contract call with deposit) is done by the frontend.
+    """
+    # Ensure checksum address
+    try:
+        user_address = blockchain_service.w3.to_checksum_address(data.user_address)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user address format provided.")
 
-    # Ensure 0x prefix
-    if not public_key_hex.startswith('0x'):
-        public_key_hex = "0x" + public_key_hex
+    logger.info(f"Received request for user {user_address} to join session {vote_session_id}")
 
     try:
-        # Use the new efficient check from BlockchainService
-        is_active = await blockchain_service.is_holder_active(election_id, public_key_hex)
+        # 1. Check if session exists and is in 'join' phase
+        try:
+            # Rename contract call: getElection -> getVoteSession
+            # Rename parameter: election_id -> vote_session_id
+            session_info = await blockchain_service.call_contract_function("getVoteSession", vote_session_id)
+            # Assuming indices 3 and 4 are start/end timestamps
+            # Rename helper function: get_election_status -> get_vote_session_status
+            session_status = await get_vote_session_status(session_info[3], session_info[4])
+            if session_status != "join":
+                # Update message
+                logger.warning(f"Attempt to join session {vote_session_id} by {user_address} failed: Session status is {session_status}, not 'join'.")
+                raise HTTPException(status_code=400, detail=f"Vote session is not in the join phase (status: {session_status}).")
+        except Exception as e:
+            # Handle potential errors from contract call (e.g., session not found)
+            logger.error(f"Error fetching info for session {vote_session_id}: {e}")
+            # Update message
+            raise HTTPException(status_code=404, detail=f"Vote session {vote_session_id} not found or error retrieving status.")
 
-        # Check if the public key is already registered and active
-        if is_active:
-            # Raise 409 Conflict, as the state already exists
-            raise HTTPException(status_code=409, detail="Public key is already registered as an active holder for this election")
+        # 2. Check if user is already a holder for this session
+        # Rename contract call: isHolderActive -> is_holder_active
+        is_already_holder = await blockchain_service.is_holder_active(vote_session_id, user_address)
+        if is_already_holder:
+            logger.warning(f"User {user_address} attempted to join session {vote_session_id} but is already a holder.")
+            raise HTTPException(status_code=409, detail="User is already registered as a holder for this vote session.")
 
-        # If not active, the key is eligible to join via frontend transaction
+        # 3. Eligibility confirmed - Return success
+        # Frontend will now proceed with the joinAsHolder transaction
+        logger.info(f"User {user_address} is eligible to join session {vote_session_id}. Frontend should proceed with transaction.")
         return StandardResponse(
             success=True,
-            message="Public key is eligible to join as a holder for this election"
-            # No transaction data to return
+            # Update message
+            message="User is eligible to join the vote session as a holder."
         )
 
     except HTTPException as http_exc:
-        # Re-raise HTTP exceptions (like the 409)
-        raise http_exc
+        raise http_exc # Re-raise specific HTTP exceptions
     except Exception as e:
-        logger.error(f"Error checking holder eligibility for {public_key_hex} in election {election_id}: {str(e)}")
-        # Generic server error for other issues
-        raise HTTPException(status_code=500, detail="Failed to check holder eligibility")
+        # Update log message
+        logger.exception(f"Unexpected error during eligibility check for user {user_address} joining session {vote_session_id}: {e}")
+        # Update message
+        raise HTTPException(status_code=500, detail="Internal server error during eligibility check.")

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
-from app.routers.vote_router import router as vote_router
-from app.routers.election_router import router as election_router
+from app.routers.encrypted_vote_router import router as encrypted_vote_router
+from app.routers.vote_session_router import router as vote_session_router
 from app.routers.holder_router import router as holder_router
 from app.routers.auth_router import router as auth_router
 from app.routers.share_router import router as share_router
@@ -33,8 +33,8 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(vote_router, prefix="/api")
-app.include_router(election_router, prefix="/api")
+app.include_router(encrypted_vote_router, prefix="/api")
+app.include_router(vote_session_router, prefix="/api")
 app.include_router(holder_router, prefix="/api")
 app.include_router(share_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
