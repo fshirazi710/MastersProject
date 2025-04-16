@@ -21,7 +21,7 @@ from app.schemas import (
     StandardResponse,
     TransactionResponse,
 )
-from app.schemas.vote import VoteCreateRequest
+from app.schemas.election import ElectionCreateRequest
 from app.services.blockchain import BlockchainService
 
 import logging
@@ -33,7 +33,7 @@ router = APIRouter(prefix="/votes", tags=["Votes"])
 
 
 @router.post("/create-election", response_model=StandardResponse[TransactionResponse])
-async def create_election(data: VoteCreateRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service), current_user = Depends(get_current_user)):
+async def create_election(data: ElectionCreateRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service), current_user = Depends(get_current_user)):
     try:
         logger.error(data)
         start_timestamp = int(datetime.fromisoformat(data.start_date).timestamp())

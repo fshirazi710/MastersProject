@@ -59,57 +59,9 @@ class KeyRequest(BaseModel):
     """Schema for storing public key."""
     public_key: str = Field(
         ..., 
-        description="Title of the vote",
-        examples=["Presidential Election 2024"]
+        description="Public key of the voter or holder",
+        examples=["0xabc123..."]
     )
-    
-    @field_validator('start_date', 'end_date')
-    @classmethod
-    def validate_date_format(cls, v):
-        """Validate date format."""
-        try:
-            # Remove milliseconds and timezone indicator if present
-            if '.' in v:
-                v = v.split('.')[0]
-            if v.endswith('Z'):
-                v = v[:-1]
-            datetime.strptime(v, "%Y-%m-%dT%H:%M:%S")
-        except ValueError:
-            raise ValueError("Date must be in ISO format (YYYY-MM-DDTHH:MM:SS)")
-        return v
-    
-    @field_validator('end_date')
-    @classmethod
-    def validate_end_date(cls, v, info):
-        """Validate that end date is after start date."""
-        if 'start_date' in info.data:
-            # Clean up both dates before comparison
-            start_date = info.data['start_date']
-            if '.' in start_date:
-                start_date = start_date.split('.')[0]
-            if start_date.endswith('Z'):
-                start_date = start_date[:-1]
-                
-            end_date = v
-            if '.' in end_date:
-                end_date = end_date.split('.')[0]
-            if end_date.endswith('Z'):
-                end_date = end_date[:-1]
-                
-            start = datetime.strptime(start_date, "%Y-%m-%dT%H:%M:%S")
-            end = datetime.strptime(end_date, "%Y-%m-%dT%H:%M:%S")
-            if end <= start:
-                raise ValueError("End date must be after start date")
-        return v
-    
-    @field_validator('options')
-    @classmethod
-    def validate_options(cls, v):
-        """Validate that there are at least two options."""
-        if len(v) < 2:
-            raise ValueError("At least two options are required")
-        return v
-
 
 class VoteResponse(BaseModel):
     """Schema for vote data."""

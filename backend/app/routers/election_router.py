@@ -16,7 +16,7 @@ from app.schemas import (
     SliderConfig,
     ElectionMetadata
 )
-from app.helpers.election_helper import get_election_status, election_information_response, create_election_transaction, check_winners_already_selected, check_winners, generate_winners
+from app.helpers.election_helper import get_election_status, election_information_response, create_election_transaction
 from app.services.blockchain import BlockchainService
 import logging
 import json

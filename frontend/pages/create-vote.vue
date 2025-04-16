@@ -218,7 +218,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { electionApi } from '@/services/api'
-import { web3Service } from '~/services/ethersService'
+import { ethersService } from '~/services/ethersService'
 
 const router = useRouter();
 const loading = ref(false);
@@ -254,10 +254,10 @@ const voteData = ref({
 // Initialize Web3 and connect wallet
 const connectWallet = async () => {
   try {
-    await web3Service.init();
+    await ethersService.init();
     walletConnected.value = true;
-    walletAddress.value = await web3Service.getAccount();
-    walletBalance.value = await web3Service.getBalance();
+    walletAddress.value = await ethersService.getAccount();
+    walletBalance.value = await ethersService.getBalance();
   } catch (err) {
     console.error('Failed to connect wallet:', err);
     error.value = 'Failed to connect wallet. Please make sure MetaMask is installed and unlocked.';
@@ -461,6 +461,7 @@ const handleSubmit = async () => {
 
 // Connect wallet on mount
 onMounted(() => {
+  // Re-enable automatic connection
   connectWallet();
 });
 

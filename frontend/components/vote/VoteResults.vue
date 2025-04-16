@@ -100,6 +100,49 @@
       <!-- Display error if decryption succeeded partially -->
        <p v-if="error && isDecrypted" class="error-message" style="text-align: center;">{{ error }}</p>
     </div>
+
+    <!-- Holder Status Section -->
+    <div v-if="!isCheckingHolderStatus && isHolder" class="holder-status-section">
+      <h3>Your Holder Status</h3>
+      <ul>
+        <li>
+          <span class="status-label">Deposit Amount:</span>
+          <span class="status-value">{{ holderDeposit }} ETH</span>
+        </li>
+        <li>
+          <span class="status-label">Share Submitted:</span>
+          <span class="status-value">
+            {{ didHolderSubmitShare ? 'Yes' : 'No' }}
+            <span v-if="didHolderSubmitShare" class="status-icon">✅</span>
+            <span v-else class="status-icon">❌</span>
+          </span>
+        </li>
+        <li>
+          <span class="status-label">Reward Eligibility:</span>
+          <span class="status-value">
+             {{ didHolderSubmitShare ? 'Eligible' : 'Not Eligible' }}
+             <span v-if="didHolderSubmitShare" class="status-icon">🏆</span>
+             <span v-else class="status-icon"></span>
+          </span>
+        </li>
+         <li>
+          <span class="status-label">Deposit Refund Eligibility:</span>
+          <span class="status-value">
+             {{ didHolderSubmitShare ? 'Eligible' : 'Not Eligible' }}
+             <span v-if="didHolderSubmitShare" class="status-icon">↩️</span>
+             <span v-else class="status-icon"></span>
+          </span>
+        </li>
+        <li>
+          <span class="status-label">Reward Distribution:</span>
+          <span class="status-value">{{ rewardDistributionStatus }}</span>
+        </li>
+        <!-- Add Claim Deposit button here later -->
+      </ul>
+    </div>
+    <div v-else-if="isCheckingHolderStatus">
+        <p>Checking your holder status...</p>
+    </div>
   </div>
 </template>
 
@@ -107,6 +150,11 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { voteApi, shareApi, electionApi } from '@/services/api';
 import { recomputeKey, AESDecrypt } from '@/services/cryptography';
+// --- Import ethers --- 
+import { ethers } from 'ethers'; 
+// --- Re-import ethersService --- 
+import { ethersService } from '@/services/ethersService.js';
+import { config } from '@/config';
 
 // --- Import Chart.js components --- 
 import { Bar } from 'vue-chartjs'
@@ -173,6 +221,15 @@ let statusCheckInterval = null;
 // --- New refs for slider results --- 
 const sliderAverage = ref(null);
 const distributionData = ref({ labels: [], datasets: [] });
+// ---------------------------------
+
+// --- New refs for holder status ---
+const isHolder = ref(false);
+const holderDeposit = ref('0'); // Store as string formatted ETH
+const didHolderSubmitShare = ref(false);
+const rewardDistributionStatus = ref('Unknown'); // e.g., Pending, Distributed, Failed
+const isCheckingHolderStatus = ref(false);
+const currentAccount = ref(null);
 // ---------------------------------
 
 // --- Computed Property for Status Text ---
@@ -252,6 +309,8 @@ const distributionChartOptions = ref({
 
 onMounted(() => {
   checkStatusAndDecrypt();
+  // Also check holder status on mount
+  checkHolderStatus(); 
   if (!submissionDeadlinePassed.value || (!isDecrypted.value && !submissionFailed.value)) {
     statusCheckInterval = setInterval(checkStatusAndDecrypt, 30000);
   }
@@ -329,6 +388,45 @@ const checkStatusAndDecrypt = async () => {
     submissionDeadlinePassed.value = false;
     submissionFailed.value = false;
     if (statusCheckInterval) clearInterval(statusCheckInterval); // Stop checking if no date
+  }
+};
+
+const checkHolderStatus = async () => {
+  currentAccount.value = ethersService.getAccount();
+  if (!currentAccount.value) {
+    console.log("Wallet not connected, cannot check holder status.");
+    isHolder.value = false;
+    return;
+  }
+
+  isCheckingHolderStatus.value = true;
+  try {
+    const statusResult = await ethersService.readContract(
+        config.contract.address,
+        config.contract.abi,
+        'getHolderStatus',
+        [parseInt(props.voteId), currentAccount.value]
+    );
+
+    // Assuming getHolderStatus returns [isActive, hasSubmitted, deposit]
+    isHolder.value = statusResult[0];
+    didHolderSubmitShare.value = statusResult[1];
+    // Format deposit from Wei to ETH string
+    holderDeposit.value = ethers.formatEther(statusResult[2]); 
+
+    console.log(`Holder Status for ${currentAccount.value}: Active=${isHolder.value}, Submitted=${didHolderSubmitShare.value}, Deposit=${holderDeposit.value} ETH`);
+    
+    // Placeholder for fetching reward distribution status - needs implementation
+    // rewardDistributionStatus.value = await fetchRewardStatus();
+
+  } catch (err) {
+    console.error("Error checking holder status:", err);
+    // Don't set a user-facing error, but reset state
+    isHolder.value = false;
+    didHolderSubmitShare.value = false;
+    holderDeposit.value = '0';
+  } finally {
+    isCheckingHolderStatus.value = false;
   }
 };
 
@@ -677,5 +775,45 @@ $spacing-lg: 20px;
 
 .requirement-status.warning {
     color: var(--warning); /* Indicate submission window open */
+}
+
+/* Add styles for holder status section */
+.holder-status-section {
+  margin-top: 30px;
+  padding: 20px;
+  background-color: var(--background-alt);
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+
+  h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
+  }
+
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  li {
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .status-label {
+    font-weight: 500;
+  }
+
+  .status-value {
+    text-align: right;
+  }
+
+  .status-icon {
+    margin-left: 5px;
+  }
 }
 </style>

@@ -26,18 +26,19 @@ This feature involves implementing a secure deposit system for secret holders, m
   - [x] Add methods for getting account, signer, balance.
   - [x] Add method for signing messages (`signMessage`).
   - [x] Add method for sending transactions (`sendTransaction`).
+  - [x] Add method for reading contract state (`readContract`).
 - [x] Refactor Frontend Share Submission (`SubmitSecretShare.vue`)
   - [x] Remove private key cookie usage.
   - [x] Use `ethersService` for account & signing.
   - [x] Implement signing of submission payload.
   - [x] Update `shareApi.submitShare` call for backend verification.
   - [x] Use `ethersService.sendTransaction` for contract call.
-  - [x] Remove cookie reliance for status (replaced with contract check - *partially done, cookie still used temporarily*).
-- [x] Frontend `RegisterHolder.vue` Refactoring
+  - [x] Remove cookie reliance for status (replaced with `ethersService.readContract('getHolderStatus')`).
+- [x] Frontend `RegisterHolder.vue` Refactoring (Renamed to `RegisterToVote.vue`)
   - [x] Remove private key generation/storage in cookies.
   - [x] Use `ethersService` to get user's address.
   - [x] Modify registration process: User connects wallet, calls contract.
-  - [x] Backend verifies signature and registers the address. (Note: Backend verification of registration message not implemented, registration is direct contract call now)
+  - [x] Backend verifies signature and registers the address. (Note: Backend verification of registration message removed, registration is direct contract call now)
   - [x] Handle secure generation/storage/retrieval of Pedersen commitment components (e.g., `h`) if needed, or adjust flow. (Note: Pedersen logic not added, adjust flow implemented)
   - [x] Frontend calls `ethersService.sendTransaction` to execute the `joinAsHolder` contract function (potentially including deposit).
 - [x] Backend `share_router.py` Refactoring
@@ -47,53 +48,51 @@ This feature involves implementing a secure deposit system for secret holders, m
     - [x] **Do not** store shares directly.
     - [x] **Do not** call contract directly (frontend does this now).
     - [x] Return success/failure based on verification.
+- [x] Implement Secure BLS Key Handling during Registration (`RegisterToVote.vue`):
+    - [x] Upon successful `joinAsHolder` transaction:
+        - [x] Generate election-specific BLS key pair (`generateBLSKeyPair` in `cryptography.js`).
+        - [x] Prompt user for a secure password specifically for this election key (UI added).
+        - [x] Implement/Use robust password-based key derivation (PBKDF2) in `cryptography.js`.
+        - [x] Encrypt the generated BLS private key using the derived key (AES-GCM via `cryptography.js`).
+        - [x] Store the *encrypted* BLS private key, the *salt*, and the *unencrypted* BLS public key in localStorage, scoped by election ID and user address (using consistent key format `election_{id}_user_{addr}_bls...`).
+    - [x] Update `RegisterToVote.vue` UI to include password input/confirmation.
+- [x] Implement Secure BLS Key Handling during Share Submission (`SubmitSecretShare.vue`):
+    - [x] Prompt user for the password created during registration.
+    - [x] Retrieve encrypted BLS private key and salt from localStorage (using consistent key format).
+    - [x] Use password and PBKDF2 (from `cryptography.js`) to derive decryption key.
+    - [x] Decrypt the BLS private key (using AES-GCM via `cryptography.js`).
+    - [x] Use the *decrypted* BLS private key when calling `generateShares`.
+    - [x] Ensure the decrypted private key is cleared from memory after use.
+- [x] Refactor `frontend/services/cryptography.js`:
+    - [x] Implement robust password-based key derivation (PBKDF2 via `window.crypto.subtle`).
+    - [x] Implement AES-GCM functions (`AESEncrypt`, `AESDecrypt`) using `window.crypto.subtle`.
+    - [x] Remove obsolete `getPublicKeyFromPrivate` function.
+    - [x] `generateShares` still takes key, but this is now the decrypted key (Acceptable).
+    - [x] Remove unused imports (`babelParse`).
+- [x] Refactor `VoteResults.vue`:
+    - [x] Remove voter-centric winner check logic (`checkWinners`, `submitEmail`).
+    - [x] Remove associated UI elements (winner button, email form).
+    - [x] Remove reliance on `ethersService` (was only for winner check).
+- [x] Refactor `CastYourVote.vue`:
+    - [x] Retrieve BLS public key from localStorage instead of deriving from cookie/private key.
+    - [x] Remove `js-cookie` dependency and related logic.
+    - [x] Update `validateKeyPair` function.
 
 ## In Progress Tasks
 
-- [ ] Implement Secure BLS Key Handling during Registration (`RegisterToVote.vue`):
-    - [ ] Upon successful `joinAsHolder` transaction:
-        - [+] Generate election-specific BLS key pair (`generateBLSKeyPair` in `cryptography.js`). (Called in RegisterToVote)
-        - [ ] Prompt user for a secure password specifically for this election key. (UI added)
-        - [ ] Implement/Use robust password-based key derivation (e.g., PBKDF2) in `cryptography.js` to create an encryption key from the password. (Next Step)
-        - [ ] Encrypt the generated BLS private key using the derived key (e.g., AES-GCM via `cryptography.js`). (Next Step)
-        - [+] Store the *encrypted* BLS private key and the *unencrypted* BLS public key in localStorage, scoped by election ID and user address. (Placeholder storage added)
-    - [+] Update `RegisterToVote.vue` UI to include password input/confirmation. (Done)
-    - [+] Update status in Relevant Files section for `RegisterToVote.vue`. (Done)
+*(No tasks currently in progress)*
 
 ## Future Tasks
 
 - [ ] Refactor Naming Scheme (Election->VoteSession, Vote->EncryptedVote, etc.)
-- [ ] Refactor `election_router.py`: Remove/Replace `/get-winners`, update helpers, use contract state.
-- [ ] Update `BlockchainService` (`blockchain.py`) with new/updated contract interaction methods.
-- [ ] Refactor `SubmitSecretShare.vue`:
-  - [x] Remove cookie reliance for status (use `ethersService.readContract('getHolderStatus')`).
-  - [ ] Implement secure BLS private key retrieval:
-      - [+] Prompt user for the password created during registration.
-      - [+] Retrieve encrypted BLS private key from localStorage.
-      - [+] Use password and key derivation function (from `cryptography.js`) to get decryption key.
-      - [+] Decrypt the BLS private key (using AES-GCM via `cryptography.js`).
-  - [+] Use the *decrypted* BLS private key when calling `generateShares`.
-  - [+] Ensure the decrypted private key is cleared from memory after use.
-  - [+] Update UI to include password prompt for share submission.
-- [ ] Refactor `frontend/services/cryptography.js`:
-  - [x] Review/Implement robust password-based key derivation (PBKDF2 recommended).
-  - [x] Ensure AES functions (`AESEncrypt`, `AESDecrypt`) are suitable for key encryption (consider using `SubtleCrypto` directly for better control if needed).
-  - [x] Remove obsolete `getPublicKeyFromPrivate` function.
-  - [x] `generateShares` still takes key, but this is now the decrypted key (Acceptable).
-  - [+] Define and implement secure method for share generation/retrieval (e.g., pre-computation during registration, derivation, or other secure storage mechanism). (Addressed by secure storage/retrieval plan above).
-  - [+] Remove unused imports (`babelParse`). (Completed)
-- [ ] Review/update related functions (`verifyShares`, etc.) based on the new deposit/signing flow.
+- [ ] Review/update related backend functions (`verifyShares`, etc.) based on the new deposit/signing flow.
 - [ ] Investigate/Implement Pedersen commitment logic if required by the updated registration/verification process.
 - [ ] Define and implement transition plan (e.g., support only new VoteSessions).
 - [ ] Remove obsolete code/DB collections (`public_keys`, old winner logic, `holder_helper.py`) after validation.
 - [ ] Add comprehensive tests for the new on-chain deposit, reward, and signing logic.
 - [ ] Update documentation to reflect the new architecture.
-- [ ] Refactor `VoteResults.vue` to use stored BLS Public Key:
-  - [ ] Retrieve BLS public key from localStorage instead of deriving from cookie/private key.
-  - [ ] Update winner checking logic accordingly.
-- [ ] Refactor `CastYourVote.vue` to use stored BLS Public Key:
-  - [ ] Retrieve BLS public key from localStorage instead of deriving from cookie/private key.
-  - [ ] Update any logic relying on the derived public key.
+- [ ] Add UI elements to `VoteResults.vue` to display ETH reward pool status and distribution information for holders (Relates to Task 1 & 6).
+- [ ] Implement `claimDeposit` functionality (UI component + contract interaction via `ethersService`).
 
 ## Implementation Plan
 
@@ -214,13 +213,13 @@ This feature involves implementing a secure deposit system for secret holders, m
   - **Depends on:** Wallet provider (e.g., MetaMask), `ethers.js`.
   - **Status:** Refactored (Implemented `EthersService` class)
 - `frontend/services/cryptography.js` - Frontend cryptographic utilities.
-  - **Provides:** BLS operations, AES encryption/decryption, share generation (needs rework), key recomputation.
+  - **Provides:** BLS operations, AES encryption/decryption, share generation, key recomputation, PBKDF2.
   - **Depends on:** `@noble/curves/bls12-381`, `@noble/curves/abstract/modular`, `@noble/curves/abstract/bls`, `buffer`, `window.crypto.subtle`.
-  - **Status:** Refactored (PBKDF2/AES added, obsolete function removed. Requires calling components update).
+  - **Status:** Refactored (PBKDF2/AES implemented, obsolete function removed).
 - `frontend/pages/vote/[id].vue` - Main page for displaying and interacting with a specific vote session.
   - **Provides:** UI container for registration, voting, share submission, results.
-  - **Depends on:** `services/api.js`, `services/ethersService.js`, Child Components (`RegisterToVote`, `SubmitSecretShare`, etc.). (`js-cookie` to be removed).
-  - **Status:** Identified (Needs updates for new state management/component interactions, cookie removal)
+  - **Depends on:** `services/api.js`, `services/ethersService.js`, Child Components (`RegisterToVote`, `SubmitSecretShare`, etc.).
+  - **Status:** Identified (Needs updates for new state management/component interactions).
 - `frontend/components/vote/SubmitSecretShare.vue` - Component handling secret share submission.
   - **Provides:** UI for share submission.
   - **Key Function:** `prepareAndSubmitShare` (handles signing, verification API call, contract tx).
@@ -230,4 +229,16 @@ This feature involves implementing a secure deposit system for secret holders, m
   - **Provides:** UI for registration and deposit.
   - **Key Functions:** `checkRegistrationStatus`, `registerAndDeposit`, `connectWallet`.
   - **Depends on:** `services/ethersService.js`, `services/cryptography.js`, `config`, `ethers`, localStorage.
-  - **Status:** In Progress (Wallet integration done, Needs secure BLS key generation/storage).
+  - **Status:** Refactored (Secure BLS key generation/storage implemented).
+- `frontend/components/vote/CastYourVote.vue` - Component handling encrypted vote casting.
+  - **Provides:** UI for selecting vote option and submitting.
+  - **Key Function:** `handleVoteSubmit`, `validateKeyPair`.
+  - **Depends on:** `services/api.js`, `services/ethersService.js`, `services/cryptography.js`, localStorage.
+  - **Status:** Refactored (Uses localStorage for public key check, removed cookies).
+- `frontend/components/vote/VoteResults.vue` - Component displaying vote results and potentially winner info.
+  - **Provides:** UI for displaying decrypted vote counts/distribution.
+  - **Key Function:** `decryptVotes`.
+  - **Depends on:** `services/api.js`, `services/cryptography.js`.
+  - **Status:** Refactored (Removed voter winner check logic).
+
+*This list provides a snapshot based on the current understanding. Dependencies and status may evolve.*
