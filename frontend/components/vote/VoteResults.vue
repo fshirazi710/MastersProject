@@ -137,7 +137,22 @@
           <span class="status-label">Reward Distribution:</span>
           <span class="status-value">{{ rewardDistributionStatus }}</span>
         </li>
-        <!-- Add Claim Deposit button here later -->
+        <!-- Add Claim Deposit button here -->
+        <li v-if="didHolderSubmitShare && parseFloat(holderDeposit) > 0">
+            <span class="status-label">Deposit Action:</span>
+            <span class="status-value">
+                <button 
+                  @click="claimDepositHandler" 
+                  class="btn secondary btn-sm" 
+                  :disabled="isClaimingDeposit"
+                >
+                  {{ isClaimingDeposit ? 'Processing...' : 'Claim Deposit' }}
+                </button>
+            </span>
+        </li>
+        <li v-if="claimError" class="error-message-li">
+            <small>{{ claimError }}</small>
+        </li>
       </ul>
     </div>
     <div v-else-if="isCheckingHolderStatus">
@@ -230,6 +245,9 @@ const didHolderSubmitShare = ref(false);
 const rewardDistributionStatus = ref('Unknown'); // e.g., Pending, Distributed, Failed
 const isCheckingHolderStatus = ref(false);
 const currentAccount = ref(null);
+// --- Add loading state for claim button ---
+const isClaimingDeposit = ref(false);
+const claimError = ref(null); // Specific error ref for claiming
 // ---------------------------------
 
 // --- Computed Property for Status Text ---
@@ -427,6 +445,52 @@ const checkHolderStatus = async () => {
     holderDeposit.value = '0';
   } finally {
     isCheckingHolderStatus.value = false;
+  }
+};
+
+const claimDepositHandler = async () => {
+  if (!currentAccount.value || !isHolder.value || !didHolderSubmitShare.value || parseFloat(holderDeposit.value) <= 0) {
+    claimError.value = "Cannot claim deposit: Conditions not met.";
+    return;
+  }
+
+  isClaimingDeposit.value = true;
+  claimError.value = null;
+  try {
+    console.log(`Attempting to claim deposit for election ${props.voteId} by ${currentAccount.value}`);
+    
+    const contractArgs = [
+      parseInt(props.voteId)
+    ];
+
+    const txOptions = {}; // No value needed for claim
+
+    const txResponse = await ethersService.sendTransaction(
+      config.contract.address,
+      config.contract.abi,
+      'claimDeposit',
+      contractArgs,
+      txOptions
+    );
+
+    console.log("Claim deposit transaction sent:", txResponse.hash);
+    alert("Deposit claim transaction sent successfully! Waiting for confirmation...");
+
+    // Optional: Wait for confirmation, then refresh status
+    // await txResponse.wait(); 
+    // console.log("Claim transaction confirmed.");
+    // await checkHolderStatus(); // Refresh status after confirmation
+
+    // For now, refresh status immediately after sending for quicker UI update
+    // (though the deposit might not reflect 0 until confirmed on-chain)
+    await checkHolderStatus();
+
+  } catch (err) {
+    console.error("Failed to claim deposit:", err);
+    claimError.value = `Failed to claim deposit: ${err.message || 'Please try again.'}`;
+    alert(claimError.value); // Also show error in alert
+  } finally {
+    isClaimingDeposit.value = false;
   }
 };
 
@@ -815,5 +879,19 @@ $spacing-lg: 20px;
   .status-icon {
     margin-left: 5px;
   }
+}
+
+/* Style for claim error message within the list */
+.error-message-li {
+  justify-content: flex-end; /* Align error to the right */
+  small {
+    color: var(--danger);
+  }
+}
+
+/* Smaller button variant */
+.btn-sm {
+    padding: 4px 8px;
+    font-size: 0.85em;
 }
 </style>
