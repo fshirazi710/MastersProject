@@ -329,6 +329,26 @@ const handleSubmit = async () => {
       throw new Error('Insufficient balance for reward pool');
     }
 
+    // --- Start Date Validation ---
+    const now = Date.now();
+    const startDateStr = voteSessionData.value.start_date;
+    
+    if (!startDateStr) {
+        error.value = 'Please select a start date.';
+        loading.value = false;
+        return;
+    }
+
+    const selectedTimestamp = new Date(startDateStr).getTime();
+    const bufferMilliseconds = 60 * 1000; // 60 seconds buffer
+
+    if (selectedTimestamp <= (now + bufferMilliseconds)) {
+      error.value = 'Start date and time must be in the future (at least 1 minute from now).';
+      loading.value = false;
+      return;
+    }
+    // --- End Start Date Validation ---
+
     // --- Generate options if slider type --- 
     let finalOptions = [];
     let payloadSliderConfig = null;

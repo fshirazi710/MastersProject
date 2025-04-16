@@ -9,6 +9,8 @@ from app.core.config import WALLET_ADDRESS, PRIVATE_KEY
 import logging
 from typing import Optional
 import asyncio
+from app.schemas import SliderConfig
+import json
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -67,35 +69,38 @@ async def create_vote_session_transaction(
     core_session_data, # This is the core VoteSessionCreateRequest data 
     start_timestamp, 
     end_timestamp, 
-    reward_pool_wei, 
     required_deposit_wei, 
-    blockchain_service: BlockchainService = Depends(get_blockchain_service),
+    reward_pool_wei,
+    blockchain_service: BlockchainService = Depends(get_blockchain_service)
 ):
     # Get the latest transaction nonce for the sender's wallet
     nonce = blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS)
 
-    # Estimate gas required for the transaction execution
-    estimated_gas = blockchain_service.contract.functions.createVoteSession(
+    # --- Define arguments for contract function --- 
+    contract_args = (
         core_session_data.title,
         core_session_data.description,
         start_timestamp,
         end_timestamp,
-        core_session_data.options, # Pass options directly from core data
-        reward_pool_wei,
-        required_deposit_wei
-    ).estimate_gas({"from": WALLET_ADDRESS})
+        core_session_data.options,
+        required_deposit_wei,
+        ""
+    )
+
+    # Estimate gas required for the transaction execution
+    estimated_gas = blockchain_service.contract.functions.createVoteSession(
+        *contract_args # Pass arguments tuple
+    ).estimate_gas({
+        "from": WALLET_ADDRESS, 
+        "value": reward_pool_wei # Reward pool is sent as msg.value
+    })
     
     # Build the vote session creation transaction
     create_vote_session_tx = blockchain_service.contract.functions.createVoteSession(
-        core_session_data.title,
-        core_session_data.description,
-        start_timestamp,
-        end_timestamp,
-        core_session_data.options, # Pass options directly from core data
-        reward_pool_wei,
-        required_deposit_wei
+        *contract_args # Pass arguments tuple
     ).build_transaction({
         'from': WALLET_ADDRESS,
+        'value': reward_pool_wei, # Reward pool is sent as msg.value
         'gas': estimated_gas,
         'gasPrice': blockchain_service.w3.eth.gas_price,
         'nonce': nonce,

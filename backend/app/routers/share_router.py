@@ -109,10 +109,12 @@ async def submit_share(
 async def decryption_status(vote_session_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     # TODO: Review the logic of this endpoint. What is its purpose?
     # Does it need both shares and votes? Does it return anything?
-    # Rename contract call: getShares -> getEncryptedShares (ASSUMPTION)
+    # Use correct contract function name
     # Rename parameter: election_id -> vote_session_id
-    shares = await blockchain_service.call_contract_function("getEncryptedShares", vote_session_id)
+    shares = await blockchain_service.call_contract_function("getDecryptionShares", vote_session_id)
     
+    # Correct contract function name is already used here
+    # Rename parameter: election_id -> vote_session_id
     # Rename contract call: getVotes -> getEncryptedVotes
     # Rename parameter: election_id -> vote_session_id
     votes = await blockchain_service.call_contract_function("getEncryptedVotes", vote_session_id)
@@ -125,7 +127,7 @@ async def decryption_status(vote_session_id: int, blockchain_service: Blockchain
     vote_shares = defaultdict(list)
     share_indexes = defaultdict(list)
     
-    # Assuming shares tuple structure: (vote_index_within_session, public_key, share_data, holder_index_within_session)
+    # Assuming shares tuple structure: (vote_index_within_session, public_key, share_data, holder_index_within_session) 
     # Adjust indices if the Share struct in contract is different
     for vote_id, public_key, share, index in shares:
         vote_shares[vote_id].append(share) 
@@ -182,9 +184,9 @@ async def get_shares(vote_session_id: int, blockchain_service: BlockchainService
     # Docstring update
     """Retrieve all submitted shares for a specific vote session, grouped by vote index."""
     try:
-        # Rename contract call: getShares -> getEncryptedShares (ASSUMPTION)
+        # Use correct contract function name
         # Rename parameter: election_id -> vote_session_id
-        shares_from_chain = await blockchain_service.call_contract_function("getEncryptedShares", vote_session_id)
+        shares_from_chain = await blockchain_service.call_contract_function("getDecryptionShares", vote_session_id)
         
         # Create a dictionary to store the sorted shares and their corresponding indexes for each vote_id
         vote_shares_map = defaultdict(list)

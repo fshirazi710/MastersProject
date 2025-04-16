@@ -40,17 +40,18 @@ async def create_vote_session(data: ExtendedVoteSessionCreateRequest, blockchain
     end_timestamp = int(datetime.fromisoformat(core_session_data.end_date.replace('Z', '+00:00')).timestamp())
     
     # Convert reward pool and required deposit from Ether to Wei
-    reward_pool_wei = blockchain_service.w3.to_wei(core_session_data.reward_pool, 'ether')
     required_deposit_wei = blockchain_service.w3.to_wei(core_session_data.required_deposit, 'ether')
+    reward_pool_wei = blockchain_service.w3.to_wei(core_session_data.reward_pool, 'ether')
 
     # Call helper function with only core data
+    # Pass metadata components and reward pool value to helper
     receipt = await create_vote_session_transaction(
         core_session_data,
         start_timestamp, 
         end_timestamp, 
-        reward_pool_wei, 
         required_deposit_wei, 
-        blockchain_service,
+        reward_pool_wei,       # Pass reward_pool_wei for msg.value
+        blockchain_service
     )
     
     if receipt.status != 1:
