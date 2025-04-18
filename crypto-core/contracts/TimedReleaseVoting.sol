@@ -91,6 +91,9 @@ contract TimedReleaseVoting is ReentrancyGuard { // Inherit ReentrancyGuard
     // Add mapping to track if rewards have been distributed for a session
     mapping(uint256 => bool) public rewardsHaveBeenDistributed;
 
+    // Mapping: voteSessionId => holderAddress => BLS Public Key Hex
+    mapping(uint256 => mapping(address => string)) public holderBlsKeys;
+
     // --- Holder Set per Vote Session ---\n    // voteSessionId => set of active holder addresses
     mapping(uint256 => EnumerableSet.AddressSet) private _activeHolders; // Kept name
 
@@ -100,7 +103,7 @@ contract TimedReleaseVoting is ReentrancyGuard { // Inherit ReentrancyGuard
     mapping(uint256 => uint256) public totalRewardsHeld; // Kept name
 
     // ======== Events ========\n\n    // Renamed parameter electionId -> voteSessionId
-    event HolderJoined(address indexed holderAddress, uint256 indexed voteSessionId, uint256 depositAmount);
+    event HolderJoined(address indexed holderAddress, uint256 indexed voteSessionId, uint256 depositAmount, string blsPublicKeyHex);
     // Renamed event and parameter
     event VoteSessionCreated(uint256 indexed id, string title);
     // Renamed event and parameters, added metadata
@@ -184,7 +187,7 @@ contract TimedReleaseVoting is ReentrancyGuard { // Inherit ReentrancyGuard
     }
 
     // ======== Holder Management & Deposits ========\n\n    // Renamed parameter electionId -> voteSessionId
-    function joinAsHolder(uint256 voteSessionId) external payable nonReentrant {
+    function joinAsHolder(uint256 voteSessionId, string memory _blsPublicKeyHex) external payable nonReentrant {
         require(voteSessionId < voteSessionCount, "Vote Session does not exist"); // Use renamed counter
         VoteSession storage currentSession = voteSession[voteSessionId]; // Use renamed mapping, local var name
         require(block.timestamp < currentSession.startDate, "Vote Session already started"); // Use renamed var
@@ -193,6 +196,7 @@ contract TimedReleaseVoting is ReentrancyGuard { // Inherit ReentrancyGuard
 
         require(requiredDeposit > 0, "Deposit not set for session"); // Updated message
         require(msg.value == requiredDeposit, "Incorrect deposit amount sent");
+        require(bytes(_blsPublicKeyHex).length > 0, "BLS Public Key cannot be empty"); // Basic validation
 
         bool added = _activeHolders[voteSessionId].add(holderAddress);
         require(added, "Holder already active for this session"); // Updated message
@@ -201,11 +205,14 @@ contract TimedReleaseVoting is ReentrancyGuard { // Inherit ReentrancyGuard
         holderDeposits[voteSessionId][holderAddress] = msg.value;
         totalDepositsHeld[voteSessionId] += msg.value; // Track total deposits
 
+        // Store BLS Public Key
+        holderBlsKeys[voteSessionId][holderAddress] = _blsPublicKeyHex;
+
         // Mark as active (using the map for potentially faster single checks if needed)
         isHolderActiveForVoteSession[voteSessionId][holderAddress] = true; // Use renamed mapping
 
-        // Emit renamed event
-        emit HolderJoined(holderAddress, voteSessionId, msg.value);
+        // Emit renamed event (with BLS Key)
+        emit HolderJoined(holderAddress, voteSessionId, msg.value, _blsPublicKeyHex);
     }
 
     // --- Deposit Claim Function ---
@@ -247,6 +254,23 @@ contract TimedReleaseVoting is ReentrancyGuard { // Inherit ReentrancyGuard
         return _activeHolders[voteSessionId].values();
     }
 
+    // --- NEW FUNCTION: Get BLS Keys ---
+    function getHolderBlsKeys(uint256 voteSessionId)
+        public
+        view
+        returns (string[] memory)
+    {
+        require(voteSessionId < voteSessionCount, "Vote Session does not exist");
+        address[] memory activeHolderAddresses = _activeHolders[voteSessionId].values();
+        string[] memory blsKeys = new string[](activeHolderAddresses.length);
+
+        for (uint i = 0; i < activeHolderAddresses.length; i++) {
+            blsKeys[i] = holderBlsKeys[voteSessionId][activeHolderAddresses[i]];
+        }
+        return blsKeys;
+    }
+    // --- END NEW FUNCTION ---
+
     // Renamed function and parameter
     function isHolderInVoteSession(uint256 voteSessionId, address holderAddress) public view returns (bool) {
         require(voteSessionId < voteSessionCount, "Vote Session does not exist"); // Use renamed counter
@@ -280,6 +304,7 @@ contract TimedReleaseVoting is ReentrancyGuard { // Inherit ReentrancyGuard
     // ======== Voting ========\n\n    // Renamed function and parameter electionId -> voteSessionId
     function submitEncryptedVote( // Renamed from submitVote
         uint256 voteSessionId,
+        address voter,
         address[] memory _holderAddresses,
         bytes memory ciphertext,
         bytes memory g1r,
@@ -293,13 +318,9 @@ contract TimedReleaseVoting is ReentrancyGuard { // Inherit ReentrancyGuard
         require(block.timestamp <= currentSession.endDate, "Vote Session ended"); // Use renamed var
         require(_holderAddresses.length >= MIN_HOLDERS, "Not enough holders selected"); // Use constant
 
-        // Check if voter has already voted (Iterates through potentially large array - GAS HEAVY!)
+        // Check if the INTENDED voter has already voted
         // Replace loop check with mapping check for gas efficiency
-        require(!hasVotedInSession[voteSessionId][msg.sender], "Voter already voted");
-        // EncryptedVote[] storage submittedVotes = encryptedVotes[voteSessionId]; // Use renamed mapping
-        // for (uint i = 0; i < submittedVotes.length; i++) {
-        //     require(submittedVotes[i].voter != msg.sender, "Voter already voted");
-        // }
+        require(!hasVotedInSession[voteSessionId][voter], "Voter already voted");
 
         // Add the vote
         encryptedVotes[voteSessionId].push( // Use renamed mapping and struct
@@ -309,16 +330,16 @@ contract TimedReleaseVoting is ReentrancyGuard { // Inherit ReentrancyGuard
                 g1r: g1r,
                 g2r: g2r,
                 alpha: alpha,
-                voter: msg.sender,
+                voter: voter,
                 threshold: threshold
             })
         );
 
-        // Mark voter as having voted in this session
-        hasVotedInSession[voteSessionId][msg.sender] = true;
+        // Mark the INTENDED voter as having voted in this session
+        hasVotedInSession[voteSessionId][voter] = true;
 
         // Emit renamed event
-        emit EncryptedVoteSubmitted(voteSessionId, _holderAddresses, msg.sender, threshold);
+        emit EncryptedVoteSubmitted(voteSessionId, _holderAddresses, voter, threshold);
     }
 
     // Renamed function and parameter electionId -> voteSessionId

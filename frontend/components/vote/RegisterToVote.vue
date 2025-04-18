@@ -225,9 +225,20 @@
       }
       console.log(`Deposit amount in Wei: ${depositInWei.toString()}`);
 
+      // --- Generate BLS Key Pair FIRST --- 
+      // We need the public key to send it to the contract
+      console.log("Generating election-specific BLS key pair...");
+      const { sk, pk } = generateBLSKeyPair(); // sk is BigInt, pk is Point object
+      const blsPrivateKeyHex = sk.toString(16);
+      const blsPublicKeyHex = pk.toHex();
+      console.log("Generated BLS Public Key (to send to contract):", blsPublicKeyHex);
+      // -------------------------------------
+
       // 2. Prepare arguments for the smart contract function
+      // Include the BLS Public Key Hex as the second argument
       const contractArgs = [
-          parseInt(props.voteSessionId) // Use voteSessionId
+          parseInt(props.voteSessionId), // Use voteSessionId
+          blsPublicKeyHex
       ];
 
       // 3. Prepare transaction options (including the deposit value)
@@ -241,29 +252,26 @@
           config.contract.address,
           config.contract.abi,
           'joinAsHolder',      // Contract method name
-          contractArgs,       // Arguments for the method
+          contractArgs,       // Arguments for the method (NOW includes BLS key)
           txOptions           // Transaction options (like value)
       );
       // Note: sendTransaction now throws if confirmation fails or tx reverts
       console.log("Transaction confirmed, receipt:", txReceipt); 
       
-      // --- Post-Transaction Steps (Key Generation, Encryption, Storage) ---
-      console.log("Transaction confirmed. Generating and encrypting election key...");
-      const { sk, pk } = generateBLSKeyPair(); // sk is BigInt, pk is Point object
-      const blsPrivateKeyHex = sk.toString(16);
-      const blsPublicKeyHex = pk.toHex();
-      console.log("Generated BLS Public Key:", blsPublicKeyHex);
+      // --- Post-Transaction Steps (Key Encryption & Storage - NO KEY GENERATION NEEDED HERE) ---
+      console.log("Transaction confirmed. Encrypting and storing election key..."); // Updated log message
       
       // Derive encryption key from password
       const salt = randomBytes(16); // Generate a random 16-byte salt
       const derivedKey = await deriveKeyFromPassword(password.value, salt);
       console.log("Derived encryption key."); // Don't log the key itself!
 
-      // Encrypt the BLS private key
+      // Encrypt the BLS private key (generated earlier)
       const encryptedPrivateKeyHex = await AESEncrypt(blsPrivateKeyHex, derivedKey);
       console.log("Encrypted BLS private key.");
       
       // Store in localStorage (scoped by vote session and user)
+      // Use the BLS Public Key generated above
       const publicKeyStorageKey = `vote_session_${props.voteSessionId}_user_${currentAccount.value}_blsPublicKey`;
       const encryptedPrivateKeyStorageKey = `vote_session_${props.voteSessionId}_user_${currentAccount.value}_blsEncryptedPrivateKey`;
       const saltStorageKey = `vote_session_${props.voteSessionId}_user_${currentAccount.value}_blsSalt`;

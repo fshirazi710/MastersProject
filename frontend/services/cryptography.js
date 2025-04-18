@@ -78,9 +78,12 @@ export async function AESEncrypt(text, key) {
     try {
         const iv = randomBytes(12); // Use our randomBytes helper
         const encodedText = new TextEncoder().encode(text);
-        const ciphertext = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encodedText);
-        // Prepend IV to ciphertext for storage
-        return bytesToHex(iv) + bytesToHex(new Uint8Array(ciphertext)); 
+        const ciphertextBuffer = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encodedText);
+        // Return IV and Ciphertext separately as hex strings
+        return {
+            iv: bytesToHex(iv),
+            ciphertext: bytesToHex(new Uint8Array(ciphertextBuffer))
+        }; 
     } catch (error) {
         console.error("Encryption failed:", error);
         throw error;
@@ -354,7 +357,7 @@ function lagrangeInterpolate(basis, shares) {
     }, BigInt(0));
 }
 
-async function getKAndAlphas(r, tIndexes, tPubkeys, restIndexes, restPubkeys) {
+export async function getKAndAlphas(r, tIndexes, tPubkeys, restIndexes, restPubkeys) {
     const tShares = tPubkeys.map((pubkey) => {
         const pkr = computePkRValue(pubkey, r);
         return pointToBigint(pkr);
@@ -405,7 +408,7 @@ async function getKAndAlphas(r, tIndexes, tPubkeys, restIndexes, restPubkeys) {
     return [key, alphas];
 }
 
-async function importBigIntAsCryptoKey(bigintKey) {
+export async function importBigIntAsCryptoKey(bigintKey) {
     try {
         let hexKey = bigintKey.toString(16).padStart(64, '0'); 
         
