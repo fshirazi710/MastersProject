@@ -163,7 +163,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
-import { voteApi, shareApi, electionApi, encryptedVoteApi } from '@/services/api';
+import { shareApi, voteSessionApi, encryptedVoteApi } from '@/services/api';
 import { recomputeKey, AESDecrypt } from '@/services/cryptography';
 // --- Import ethers --- 
 import { ethers } from 'ethers'; 

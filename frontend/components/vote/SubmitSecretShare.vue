@@ -52,7 +52,7 @@
 <script setup>
     import { ref, computed, onMounted, watch } from 'vue';
     import { useRoute } from 'vue-router';
-    import { voteApi, shareApi } from '@/services/api';
+    import { encryptedVoteApi, shareApi } from '@/services/api';
     import { ethersService } from '~/services/ethersService.js'; // Use ethersService
     import { 
         generateShares, 
@@ -293,7 +293,7 @@
     // fetchVoteInformation (remains the same)
     const fetchVoteInformation = async () => {
         try {
-            const response = await voteApi.getVoteInformation(props.voteId);
+            const response = await encryptedVoteApi.getVoteInformation(props.voteId);
             return response.data.data
         } catch (error) {
             console.error("Failed to retrive vote information:", error);

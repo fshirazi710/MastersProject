@@ -37,7 +37,7 @@ function getG2R(r) {
     return result.toHex();
 }
 
-function randomBytes(size) {
+export function randomBytes(size) {
     return crypto.getRandomValues(new Uint8Array(size));
 }
 
@@ -47,7 +47,7 @@ function bigIntToHex(bigInt) {
     return hex;
 }
 
-function hexToBytes(hex) {
+export function hexToBytes(hex) {
     const bytes = new Uint8Array(hex.length / 2);
     for (let i = 0; i < hex.length; i += 2) {
         bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
@@ -55,7 +55,7 @@ function hexToBytes(hex) {
     return bytes;
 }
 
-function bytesToHex(bytes) {
+export function bytesToHex(bytes) {
     return Array.from(bytes)
         .map(byte => byte.toString(16).padStart(2, "0"))
         .join("");
