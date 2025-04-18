@@ -335,7 +335,7 @@
   };
 
   watch(() => route.params.id, async (newId, oldId) => {
-      if (newId && newId !== 'undefined' && newId !== ':id') {
+      if (newId && oldId && newId !== oldId && newId !== 'undefined' && newId !== ':id') {
           vote.value = null; 
           displayHint.value = null;
           sliderConfig.value = null;
@@ -348,7 +348,7 @@
           }
           await fetchVoteData(true);
           await checkActualRegistrationStatus();
-      } else {
+      } else if (!newId || newId === 'undefined' || newId === ':id') {
           error.value = "Invalid vote ID in route.";
           vote.value = null;
           displayHint.value = null;
@@ -361,9 +361,49 @@
               timeUpdateInterval.value = null;
           }
       }
-  }, { immediate: true });
+  });
 
   onMounted(async () => {
+      console.log("Vote Session page mounted. Initializing...");
+      loading.value = true;
+      isCheckingStatus.value = true;
+      error.value = null;
+  
+      try {
+          if (!ethersService.getAccount()) {
+              console.log("Attempting to initialize wallet connection...");
+              await ethersService.init(); 
+              console.log("Wallet initialized, account:", ethersService.getAccount());
+          } else {
+              console.log("Wallet connection already established, account:", ethersService.getAccount());
+          }
+  
+          const voteSessionId = route.params.id;
+          if (!voteSessionId || voteSessionId === 'undefined' || voteSessionId === ':id') {
+              throw new Error("Invalid or missing Vote Session ID on initial load.");
+          }
+          await fetchVoteData(false);
+          
+          if (vote.value) {
+             await checkActualRegistrationStatus();
+          }
+          
+      } catch (err) {
+          console.error("Error during component mount initialization:", err);
+          if (!error.value) {
+             error.value = err.message || "Failed to initialize vote session details or wallet connection.";
+          }
+          actualIsRegistered.value = false;
+          if (vote.value) {
+            loading.value = false; 
+          } else {
+            loading.value = false;
+          } 
+      } finally {
+          if(loading.value) loading.value = false;
+          if(isCheckingStatus.value) isCheckingStatus.value = false;
+          console.log("Initialization complete. Loading:", loading.value, "Checking Status:", isCheckingStatus.value);
+      }
   });
 
   // Format date strings for display

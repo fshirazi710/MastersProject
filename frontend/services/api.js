@@ -83,9 +83,10 @@ export const encryptedVoteApi = {
     return apiClient.post(`/api/encrypted-votes/info/${voteSessionId}`);
   },
 
-  // Keep validatePublicKey as is
+  // Keep validatePublicKey as is - CORRECT PATH NOW
   validatePublicKey: (data) => {
-    return apiClient.post(`/api/votes/validate-public-key`, data);
+    // Corrected path from /api/votes/ to /api/encrypted-votes/
+    return apiClient.post(`/api/encrypted-votes/validate-public-key`, data); 
   },
 };
 

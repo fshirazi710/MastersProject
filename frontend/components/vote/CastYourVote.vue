@@ -170,20 +170,22 @@
         throw new Error("Wallet not connected. Please connect your wallet.");
       }
 
-      // Construct localStorage key and retrieve public key
-      const publicKeyStorageKey = `election_${props.voteId}_user_${userAddress}_blsPublicKey`;
+      // --- CORRECTED localStorage key ---
+      const publicKeyStorageKey = `vote_session_${props.voteId}_user_${userAddress}_blsPublicKey`; 
       const publicKeyHex = localStorage.getItem(publicKeyStorageKey);
 
       if (!publicKeyHex) {
         console.error(`BLS Public Key not found in localStorage for key: ${publicKeyStorageKey}`);
         throw new Error("Your election-specific key pair was not found. Please ensure you have registered correctly for this vote.");
       }
+      // --------------------------------
 
       const response = await encryptedVoteApi.validatePublicKey({ public_key: publicKeyHex });
       return response.data.success
     } catch (error) {
       console.error("Failed to validate key pair:", error);
-      alert('Error validating key pair. Please try again.');
+      // Throw the error instead of alerting, let handleEncryptedVoteSubmit catch it
+      throw new Error(`Error validating key pair: ${error.message || 'Unknown error'}`); 
     }
   }
   
@@ -192,11 +194,8 @@
     try {
       if (loading.value) return;
       loading.value = true;
-      const response = await validateKeyPair();
-      if (!response) {
-        loading.value = false;
-        return;
-      }
+      // Call validateKeyPair (it will throw on error now)
+      await validateKeyPair(); 
 
       // --- Determine the actual option string to encrypt --- 
       let optionToEncrypt = null;
@@ -249,31 +248,36 @@
       const [k, g1r, g2r, alpha] = await getKAndSecretShares(public_keys, threshold, totalHolders);
       g1rValue.value = g1r;
 
-      // Encrypt the determined option string
-      const ciphertext = await AESEncrypt(optionToEncrypt, k);
-      
-      // Use encryptedVoteApi.submitEncryptedVote
-      // Rename voteResponse -> submitResponse for clarity
-      const submitResponse = await encryptedVoteApi.submitEncryptedVote(props.voteId, { // Assuming voteId prop is actually voteSessionId
-        // Backend might expect voter public key here, ensure it's correct.
-        // Currently using public_keys[0] as placeholder.
-        voter: public_keys[0], // Placeholder - Needs Verification
-        public_keys: public_keys,
-        ciphertext: ciphertext,
-        g1r: g1r,
-        g2r: g2r,
-        alpha: alpha,
-        threshold: threshold
-      });
+      // Encrypt the vote using the alpha value
+      const voteString = JSON.stringify({ vote: optionToEncrypt });
+      const { ciphertext, tag } = await AESEncrypt(voteString, alpha);
 
-      hasVoted.value = true;
-      alert(submitResponse.data.message || 'Vote submitted successfully!');
+      // Prepare the payload
+      const payload = {
+          g1r: g1r,
+          g2r: g2r,
+          encrypted_message: ciphertext,
+          tag: tag,
+          threshold: threshold // Include the threshold used for encryption
+      };
+
+      // Submit the encrypted vote
+      const submitResponse = await encryptedVoteApi.submitVote(props.voteId, payload);
+
+      if (submitResponse.data.success) {
+        console.log("Encrypted vote submitted successfully:", submitResponse.data);
+        hasVoted.value = true; // Update state to show success message
+        alert("Your encrypted vote has been successfully submitted!");
+      } else {
+        throw new Error(submitResponse.data.message || "Failed to submit encrypted vote.");
+      }
 
     } catch (error) {
-      console.error('Failed to submit vote:', error.response?.data?.detail || error.message || error);
-      alert('Failed to submit vote: ' + (error.response?.data?.detail || error.message));
+        console.error("Error submitting encrypted vote:", error);
+        // Display a more user-friendly error message based on the caught error
+        alert(`Failed to submit vote: ${error.message || 'An unexpected error occurred.'}`); 
     } finally {
-      loading.value = false;
+        loading.value = false;
     }
   }
   </script>
