@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/holders", tags=["Holders"])
 
 
-@router.get("/{vote_session_id}")
+@router.get("/all/{vote_session_id}")
 async def get_all_holders(vote_session_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """Retrieve all registered holder addresses for a specific vote session."""
     try:

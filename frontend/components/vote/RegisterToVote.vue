@@ -38,7 +38,7 @@
               required
               class="form-input"
             />
-            <small>This password encrypts your election-specific key. Store it securely, it's needed to submit shares!</small>
+            <small>This password encrypts your vote session-specific key. Store it securely, it's needed to submit shares!</small>
           </div>
           <div class="form-group">
             <label for="reg-confirm-password">Confirm Password:</label>

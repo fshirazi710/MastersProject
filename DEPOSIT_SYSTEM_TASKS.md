@@ -93,6 +93,16 @@ This feature involves implementing a secure deposit system for secret holders, m
 
 ## Future Tasks
 
+- [ ] **Store BLS Public Keys On-Chain for Verification:**
+    - [ ] Modify Smart Contract (`TimedReleaseVoting.sol`):
+        - [ ] Add `blsPublicKeyHex` field to `HolderInfo` struct.
+        - [ ] Update `joinAsHolder` function to accept and store `blsPublicKeyHex`.
+        - [ ] Implement `getHolderBlsKeys(voteSessionId)` view function.
+    - [ ] Update Frontend Registration (`RegisterToVote.vue`):
+        - [ ] Pass `blsPublicKeyHex` as an argument in the `joinAsHolder` transaction call.
+    - [ ] Update Frontend Voting (`CastYourVote.vue`):
+        - [ ] Replace `holderApi.getAllHolders` call with a call to `getHolderBlsKeys` via `ethersService`.
+        - [ ] Use the returned BLS keys for threshold cryptography logic.
 - [ ] Review/update related backend functions (`verifyShares`, etc.) based on the new deposit/signing flow.
 - [ ] Investigate/Implement Pedersen commitment logic if required by the updated registration/verification process.
 - [ ] Define and implement transition plan (e.g., support only new VoteSessions).
@@ -101,6 +111,23 @@ This feature involves implementing a secure deposit system for secret holders, m
 - [ ] Update documentation to reflect the new architecture.
 - [ ] Add UI elements to `VoteResults.vue` to display ETH reward pool status and distribution information for holders (Relates to Task 1 & 6).
 - [ ] Implement `claimDeposit` functionality (UI component + contract interaction via `ethersService`).
+- [ ] **Allow Voter-Only Registration:**
+    - [ ] Modify Smart Contract (`TimedReleaseVoting.sol`):
+        - [ ] Add `isRegisteredVoter` mapping.
+        - [ ] Implement `registerAsVoter` function (no deposit).
+        - [ ] Update permission checks (`castVote`, etc.) to allow registered voters.
+        - [ ] Add `getVoterStatus` view function.
+    - [ ] Update Frontend Registration (`pages/session/[id].vue`):
+        - [ ] Add UI choice between "Register as Holder" and "Register as Voter".
+        - [ ] Create `RegisterAsVoter.vue` component for simple registration (calls `registerAsVoter` contract function).
+        - [ ] Modify `checkActualRegistrationStatus` to check both `getHolderStatus` and `getVoterStatus`.
+    - [ ] Refactor Voting Logic (`CastYourVote.vue`):
+        - [ ] Pass `isHolder` status as prop.
+        - [ ] Modify `validateKeyPair` to skip BLS key checks for non-holders.
+        - [ ] Define and implement separate vote encryption/submission strategy for non-holders (may require API changes).
+    - [ ] Update Backend API (if needed):
+        - [ ] Adjust session details endpoint (`/api/vote-sessions/session/{id}`) to potentially show separate voter/holder counts.
+        - [ ] Potentially add a new endpoint for submitting non-holder votes if the encryption/payload differs significantly.
 
 ## Implementation Plan
 

@@ -90,3 +90,8 @@ class VoteResponse(BaseModel):
         description="G2R point components",
         examples=[["123456789", "987654321"]]
     )
+
+class PublicKeyValidateRequest(BaseModel):
+    public_key: str = Field(..., description="The BLS public key hex string to validate.")
+
+# Add other encrypted vote related schemas here if needed

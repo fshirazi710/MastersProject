@@ -15,16 +15,50 @@ from app.schemas import (
     StandardResponse,
     TransactionResponse,
 )
+from app.schemas.encrypted_vote import PublicKeyValidateRequest
+
 from app.services.blockchain import BlockchainService
 
 import logging
 import asyncio
+import re # Import regex for hex checking
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Update Router Prefix and Tag
 router = APIRouter(prefix="/encrypted-votes", tags=["Encrypted Votes"])
+
+
+@router.post("/validate-public-key", response_model=StandardResponse[bool])
+async def validate_public_key(request: PublicKeyValidateRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+    """Validates the provided BLS public key format."""
+    public_key_hex = request.public_key
+    logger.info(f"Validating public key format: {public_key_hex}")
+
+    is_valid_format = False
+    try:
+        # Basic format check: Starts with '0x', followed by hex characters (adjust length check as needed for BLS keys)
+        if isinstance(public_key_hex, str) and public_key_hex.startswith("0x") and len(public_key_hex) > 4 and re.fullmatch(r'0x[0-9a-fA-F]+', public_key_hex):
+            is_valid_format = True # Placeholder: Real validation might involve checking against known keys or cryptographic properties
+        else:
+             logger.warning(f"Invalid format for public key: {public_key_hex}")
+
+    except Exception as e:
+        logger.error(f"Error during public key validation for {public_key_hex}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error during key validation.")
+
+    if not is_valid_format:
+         # Return success=True, but data=False, as the endpoint worked but the key is invalid
+         return StandardResponse(success=True, message="Public key format is not valid.", data=False)
+
+    # If format is valid, return success=True and data=True
+    # Note: This currently only checks format, not cryptographic validity or existence in a specific context
+    return StandardResponse(
+        success=True,
+        message="Public key format validated successfully.",
+        data=True 
+    )
 
 
 @router.post("/info/{vote_session_id}", response_model=StandardResponse[List[Dict[str, Any]]])
