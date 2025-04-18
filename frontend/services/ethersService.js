@@ -103,6 +103,7 @@ class EthersService {
     if (!contractAddress || !contractAbi) {
         throw new Error('Contract address and ABI must be provided.');
     }
+    let txResponse;
     try {
       const contract = new ethers.Contract(contractAddress, contractAbi, this.signer);
       console.log(`Sending transaction to ${contractAddress} -> ${methodName}(${args.join(', ')}) with options:`, options);
@@ -112,32 +113,40 @@ class EthersService {
       // console.log('Estimated gas:', estimatedGas.toString());
       // options.gasLimit = estimatedGas; // Add buffer? Needs tuning.
 
-      const txResponse = await contract[methodName](...args, options);
+      txResponse = await contract[methodName](...args, options); // Assign txResponse here
       console.log('Transaction sent:', txResponse.hash);
 
-      // Wait for transaction confirmation (optional, depends on UX needs)
-      // console.log('Waiting for transaction confirmation...');
-      // const txReceipt = await txResponse.wait();
-      // console.log('Transaction confirmed:', txReceipt);
-      // return txReceipt; // Return receipt if waiting
-
-      return txResponse; // Return the response object immediately
+      // Wait for transaction confirmation
+      console.log('Waiting for transaction confirmation...');
+      const txReceipt = await txResponse.wait(); // Wait for 1 confirmation by default
+      console.log('Transaction confirmed:', txReceipt);
+      
+      if (txReceipt.status === 0) {
+         // Transaction was confirmed but failed (reverted)
+         console.error("Transaction confirmed but failed (reverted) on-chain.", txReceipt);
+         throw new Error(`Transaction ${txResponse.hash} confirmed but failed on-chain.`);
+      }
+      
+      return txReceipt; // Return the receipt object after successful confirmation
 
     } catch (error) {
         console.error(`Error sending transaction (${methodName}):`, error);
         // Attempt to extract revert reason if available
         let reason = 'Transaction failed.';
+        // Keep existing error handling logic, but add check for tx hash if available
+        const txHashInfo = txResponse ? ` (Transaction: ${txResponse.hash})` : '';
         if (error.reason) {
-            reason = `Transaction failed: ${error.reason}`;
+            reason = `Transaction failed: ${error.reason}${txHashInfo}`;
         } else if (error.data?.message) {
-            reason = `Transaction failed: ${error.data.message}`;
+            reason = `Transaction failed: ${error.data.message}${txHashInfo}`;
         } else if (error.message) {
-             // Include parts of the error message if helpful
              const match = error.message.match(/execution reverted: ([^']+)/);
              if (match && match[1]) {
-                 reason = `Transaction reverted: ${match[1]}`;
+                 reason = `Transaction reverted: ${match[1]}${txHashInfo}`;
              } else if (error.code === 4001) {
                  reason = 'Transaction rejected by user.';
+             } else {
+                 reason = `${error.message}${txHashInfo}` // Include generic error message
              }
         }
         throw new Error(reason);

@@ -66,10 +66,11 @@
       </div>
     </div>
 
-    <!-- Registration section OR message - only shown if vote status is 'join' -->
+    <!-- Registration section OR message - updated v-if -->
     <template v-if="vote?.status === 'join'">
+      <div v-if="isCheckingStatus" class="loading-message">Checking registration status...</div>
       <RegisterToVote 
-        v-if="!isRegisteredForVote"
+        v-else-if="!isRegisteredForVote"
         :vote-session-id="route.params.id"
         :endDate="vote.endDate"
         :rewardPool="vote.rewardPool"
@@ -81,7 +82,7 @@
       </div>
     </template>
 
-    <!-- Voting section - shown during join and active phases -->
+    <!-- Voting section - Pass updated isRegisteredForVote -->
     <CastYourVote 
       v-if="['join', 'active'].includes(vote?.status)"
       :vote-id="route.params.id"
@@ -94,9 +95,9 @@
       :existingThreshold="vote.requiredKeys || 0"
     />
 
-    <!-- Submit Secret Share section - only shown if registered as holder and vote has ended -->
+    <!-- Submit Secret Share section - Needs accurate holder check -->
     <SubmitSecretShare
-      v-if="isRegisteredHolderForVote && vote?.status === 'ended'"
+      v-if="isRegisteredForVote && vote?.status === 'ended'"
       :vote-id="route.params.id"
       :is-submission-time="isSubmissionTime"
       :endDate="vote.endDate"
@@ -125,17 +126,20 @@
   import VoteResults from '@/components/vote/VoteResults.vue'
   import RegisterToVote from '@/components/vote/RegisterToVote.vue'
   import SubmitSecretShare from '~/components/vote/SubmitSecretShare.vue'
+  import { ethersService } from '~/services/ethersService'
+  import { config } from '@/config'
 
   // Get route params for vote ID
   const route = useRoute()
   const loading = ref(true)
   const error = ref(null)
   const vote = ref(null)
+  const actualIsRegistered = ref(false)
+  const isCheckingStatus = ref(true)
 
   const timeRemaining = ref('');
   const timeUpdateInterval = ref(null);
   const timerLabel = ref('Time Remaining:');
-  const isLocallyRegistered = ref(false);
 
   // Add state for metadata
   const displayHint = ref(null);
@@ -149,10 +153,7 @@
   });
 
   const isRegisteredForVote = computed(() => {
-    if (isLocallyRegistered.value) return true;
-    if (!vote.value) return false;
-    const publicKeyCookie = `vote_${vote.value.id}_publicKey`;
-    return Cookies.get(publicKeyCookie) !== undefined;
+    return actualIsRegistered.value;
   });
 
   const isRegisteredHolderForVote = computed(() => {
@@ -233,6 +234,7 @@
           vote.value = null;
           displayHint.value = null;
           sliderConfig.value = null;
+          actualIsRegistered.value = false;
       } finally {
           if (showLoading) loading.value = false
           if (vote.value) {
@@ -242,6 +244,7 @@
                  clearInterval(timeUpdateInterval.value);
                  timeUpdateInterval.value = null;
              }
+             actualIsRegistered.value = false;
           }
       }
   }
@@ -331,23 +334,28 @@
     updateTimerState();
   };
 
-  watch(() => route.params.id, (newId, oldId) => {
+  watch(() => route.params.id, async (newId, oldId) => {
       if (newId && newId !== 'undefined' && newId !== ':id') {
           vote.value = null; 
           displayHint.value = null;
           sliderConfig.value = null;
           error.value = null;
+          actualIsRegistered.value = false;
+          isCheckingStatus.value = true;
           if (timeUpdateInterval.value) {
               clearInterval(timeUpdateInterval.value);
               timeUpdateInterval.value = null;
           }
-          fetchVoteData(true); 
+          await fetchVoteData(true);
+          await checkActualRegistrationStatus();
       } else {
           error.value = "Invalid vote ID in route.";
           vote.value = null;
           displayHint.value = null;
           sliderConfig.value = null;
+          actualIsRegistered.value = false;
           loading.value = false;
+          isCheckingStatus.value = false;
           if (timeUpdateInterval.value) {
               clearInterval(timeUpdateInterval.value);
               timeUpdateInterval.value = null;
@@ -355,7 +363,7 @@
       }
   }, { immediate: true });
 
-  onMounted(() => {
+  onMounted(async () => {
   });
 
   // Format date strings for display
@@ -393,9 +401,9 @@
     return now >= fifteenMinutesAfterEnd
   })
 
-  const handleRegistrationSuccess = () => {
-    isLocallyRegistered.value = true;
-    fetchVoteData();
+  const handleRegistrationSuccess = async () => {
+    console.log("Registration transaction potentially sent, re-checking status...");
+    await checkActualRegistrationStatus();
   };
 
   // Function to check and update vote status if needed
@@ -418,6 +426,38 @@
     // Refresh data if the calculated status differs from the current vote status
     if (vote.value.status !== expectedStatus) {
         await fetchVoteData(false);
+    }
+  };
+
+  const checkActualRegistrationStatus = async () => {
+    isCheckingStatus.value = true;
+    error.value = null;
+    const currentAccount = ethersService.getAccount();
+    const voteSessionId = route.params.id;
+
+    if (!currentAccount || !voteSessionId || voteSessionId === 'undefined' || voteSessionId === ':id') {
+        console.log("Cannot check status: Missing account or vote ID.");
+        actualIsRegistered.value = false;
+        isCheckingStatus.value = false;
+        return;
+    }
+
+    console.log(`Checking actual registration status for ${currentAccount} in vote session ${voteSessionId}...`);
+    try {
+        const statusResult = await ethersService.readContract(
+            config.contract.address,
+            config.contract.abi,
+            'getHolderStatus',
+            [parseInt(voteSessionId), currentAccount]
+        );
+        actualIsRegistered.value = statusResult[0]; 
+        console.log("Actual on-chain registration status:", actualIsRegistered.value);
+    } catch (err) {
+        console.error("Error checking actual registration status:", err);
+        error.value = "Could not verify registration status. Please ensure your wallet is connected correctly and try refreshing.";
+        actualIsRegistered.value = false; 
+    } finally {
+        isCheckingStatus.value = false;
     }
   };
 </script>

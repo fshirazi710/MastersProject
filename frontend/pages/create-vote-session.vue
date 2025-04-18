@@ -280,7 +280,14 @@ const isFormValid = computed(() => {
   if (!voteSessionData.value.title || voteSessionData.value.title.length < 3 || voteSessionData.value.title.length > 100) return false;
   if (!voteSessionData.value.description || voteSessionData.value.description.length < 10 || voteSessionData.value.description.length > 1000) return false;
   if (!voteSessionData.value.start_date || !voteSessionData.value.end_date) return false;
-  // TODO: Add better date validation (end > start)
+  // Validate that end date is strictly after start date
+  try {
+    const startDate = new Date(voteSessionData.value.start_date);
+    const endDate = new Date(voteSessionData.value.end_date);
+    if (endDate <= startDate) return false; // End date must be > start date
+  } catch (e) {
+    return false; // Invalid date format
+  }
   
   // Options validation
   if (questionType.value === 'options') {

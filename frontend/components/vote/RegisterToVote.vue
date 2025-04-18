@@ -91,7 +91,7 @@
   import { config } from '@/config'
 
   const props = defineProps({
-    electionId: {
+    voteSessionId: {
       type: String,
       required: true
     },
@@ -163,16 +163,16 @@
   }
 
   async function checkRegistrationStatus() {
-    if (!currentAccount.value || !props.electionId) return;
+    if (!currentAccount.value || !props.voteSessionId) return;
     isCheckingStatus.value = true;
-    console.log(`Checking registration status for ${currentAccount.value} in election ${props.electionId}...`);
+    console.log(`Checking registration status for ${currentAccount.value} in vote session ${props.voteSessionId}...`);
     try {
       // Use the new readContract method from ethersService
       const statusResult = await ethersService.readContract(
           config.contract.address,
           config.contract.abi,
           'getHolderStatus', // Function name in TimedReleaseVoting.sol
-          [parseInt(props.electionId), currentAccount.value] // Arguments: electionId, holderAddress
+          [parseInt(props.voteSessionId), currentAccount.value] // Use voteSessionId
       );
       
       // Assuming getHolderStatus returns an object/tuple [isActive, hasSubmitted, deposit]
@@ -207,10 +207,10 @@
 
     loading.value = true;
     error.value = null;
-    let txResponse = null; // Define txResponse outside try block
+    let txReceipt = null; // Define txReceipt outside try block
 
     try {
-      console.log(`Attempting to register ${currentAccount.value} for election ${props.electionId} with deposit ${props.requiredDeposit} ETH`);
+      console.log(`Attempting to register ${currentAccount.value} for vote session ${props.voteSessionId} with deposit ${props.requiredDeposit} ETH`);
 
       // 1. Convert deposit amount (passed as string/number in ETH) to Wei
       let depositInWei;
@@ -227,7 +227,7 @@
 
       // 2. Prepare arguments for the smart contract function
       const contractArgs = [
-          parseInt(props.electionId) // Ensure electionId is number (uint256)
+          parseInt(props.voteSessionId) // Use voteSessionId
       ];
 
       // 3. Prepare transaction options (including the deposit value)
@@ -235,19 +235,20 @@
           value: depositInWei
       };
 
-      // 4. Send the transaction via ethersService
-      console.log("Sending joinAsHolder transaction...");
-      txResponse = await ethersService.sendTransaction(
+      // 4. Send the transaction via ethersService and wait for receipt
+      console.log("Sending joinAsHolder transaction and waiting for confirmation...");
+      txReceipt = await ethersService.sendTransaction(
           config.contract.address,
           config.contract.abi,
           'joinAsHolder',      // Contract method name
           contractArgs,       // Arguments for the method
           txOptions           // Transaction options (like value)
       );
-      console.log("Transaction sent, hash:", txResponse.hash);
+      // Note: sendTransaction now throws if confirmation fails or tx reverts
+      console.log("Transaction confirmed, receipt:", txReceipt); 
       
       // --- Post-Transaction Steps (Key Generation, Encryption, Storage) ---
-      console.log("Transaction sent. Generating and encrypting election key...");
+      console.log("Transaction confirmed. Generating and encrypting election key...");
       const { sk, pk } = generateBLSKeyPair(); // sk is BigInt, pk is Point object
       const blsPrivateKeyHex = sk.toString(16);
       const blsPublicKeyHex = pk.toHex();
@@ -262,24 +263,24 @@
       const encryptedPrivateKeyHex = await AESEncrypt(blsPrivateKeyHex, derivedKey);
       console.log("Encrypted BLS private key.");
       
-      // Store in localStorage (scoped by election and user)
-      const publicKeyStorageKey = `election_${props.electionId}_user_${currentAccount.value}_blsPublicKey`;
-      const encryptedPrivateKeyStorageKey = `election_${props.electionId}_user_${currentAccount.value}_blsEncryptedPrivateKey`;
-      const saltStorageKey = `election_${props.electionId}_user_${currentAccount.value}_blsSalt`;
+      // Store in localStorage (scoped by vote session and user)
+      const publicKeyStorageKey = `vote_session_${props.voteSessionId}_user_${currentAccount.value}_blsPublicKey`;
+      const encryptedPrivateKeyStorageKey = `vote_session_${props.voteSessionId}_user_${currentAccount.value}_blsEncryptedPrivateKey`;
+      const saltStorageKey = `vote_session_${props.voteSessionId}_user_${currentAccount.value}_blsSalt`;
       
       localStorage.setItem(publicKeyStorageKey, blsPublicKeyHex);
       localStorage.setItem(encryptedPrivateKeyStorageKey, encryptedPrivateKeyHex);
       localStorage.setItem(saltStorageKey, bytesToHex(salt)); // Store salt (as hex) for later key derivation
-      console.log(`Stored keys for election ${props.electionId} user ${currentAccount.value}`);
+      console.log(`Stored keys for vote session ${props.voteSessionId} user ${currentAccount.value}`);
       
       // ---------------------------------------------------------------------
 
-      // If transaction sent successfully, assume registration is done (or wait for receipt)
+      // Transaction was confirmed successfully
       isRegistered.value = true;
       error.value = null; // Clear previous errors
-      emit('registration-successful'); // Notify parent component
-
-      console.log("Registration and deposit successful (transaction sent).");
+      
+      console.log("Registration and deposit successful (transaction confirmed).");
+      emit('registration-successful'); // Notify parent component *after* success
 
     } catch (err) {
       console.error("Failed during registration & deposit process:", err);
@@ -288,9 +289,9 @@
 
       // Clear any potentially stored keys if tx failed AFTER generation started (unlikely but possible)
       // Optional: Add more robust cleanup based on where the error occurred.
-      const publicKeyStorageKeyOnError = `election_${props.electionId}_user_${currentAccount.value}_blsPublicKey`;
-      const encryptedPrivateKeyStorageKeyOnError = `election_${props.electionId}_user_${currentAccount.value}_blsEncryptedPrivateKey`;
-      const saltStorageKeyOnError = `election_${props.electionId}_user_${currentAccount.value}_blsSalt`;
+      const publicKeyStorageKeyOnError = `vote_session_${props.voteSessionId}_user_${currentAccount.value}_blsPublicKey`;
+      const encryptedPrivateKeyStorageKeyOnError = `vote_session_${props.voteSessionId}_user_${currentAccount.value}_blsEncryptedPrivateKey`;
+      const saltStorageKeyOnError = `vote_session_${props.voteSessionId}_user_${currentAccount.value}_blsSalt`;
 
       localStorage.removeItem(publicKeyStorageKeyOnError);
       localStorage.removeItem(encryptedPrivateKeyStorageKeyOnError);
