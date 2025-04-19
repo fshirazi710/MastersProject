@@ -27,18 +27,9 @@ def close_extra_tabs(driver):
         driver.close()
     driver.switch_to.window(main_tab)
 
-def register_metamask_with_hardhat(driver, network, acc):
-    # Need to use XPath to get the elements on the metamask extension
-    # Otherwise it triggers Metamask's Javascript security LavaMoat which protects
-    # against injections of dangerous code.
-    # Can't use a typical searcher like driver.find_element(By.ID, ...)
-    # because it uses something like ".execute_script" or "element.get_property()"
-    # under the hood.
+def create_metamask_wallet(driver):
+    # THIS FUNCTION ASSUMES YOU ARE THE HARDHAT REGISTRATION/IMPORT WALLET PAGE
 
-    # Here since it's a new profile, need to properly instantiate metamask profile
-    
-    
-    ### Create a new wallet .
     # check checkbox agreeing to terms and conditions.
     obtain_element(driver, (By.XPATH, "//input[@id='onboarding__terms-checkbox']"), timeout).click()
     obtain_element(driver, (By.XPATH, "//button[contains(text(), 'Create a new wallet')]"), timeout).click()
@@ -83,13 +74,6 @@ def register_metamask_with_hardhat(driver, network, acc):
         print(f"From the array, that is element '{security_phrase[index]}'")
         input_element.send_keys(security_phrase[index])
 
-    # next page
-    # Wait for overlay to disappear
-    # WebDriverWait(driver, 10*100).until( EC.invisibility_of_element_located((By.CLASS_NAME, "recovery-phrase__footer__confirm")))
-    # click_div = obtain_element(driver, (By.XPATH, "//button[@data-testid='recovery-phrase-confirm']"), timeout)
-    # click_div = click_div.find_element(By.XPATH, '..').click()
-    # obtain_element(driver, (By.cl, "//div[@data-testid='recovery-phrase-confirm']"), timeout).click()
-    
     confirm_button = WebDriverWait(driver, 10 * 1000).until(
     EC.element_to_be_clickable((By.CSS_SELECTOR, "[data-testid='recovery-phrase-confirm']"))
     )
@@ -105,107 +89,72 @@ def register_metamask_with_hardhat(driver, network, acc):
 
     obtain_element(driver, (By.XPATH, "//button[@data-testid='pin-extension-next']"), timeout).click()
     obtain_element(driver, (By.XPATH, "//button[@data-testid='pin-extension-done']"), timeout).click()
-    
-    ### LOGGED INTO METAMASK ACCOUNT FROM HERE. 
-    
-    # Click on Networks available
-    existing_windows = set(driver.window_handles)
 
+    account_dict = {
+        "password" : mm_password,
+        "recovery_phrase" : security_phrase
+    }
+
+    return account_dict
+
+
+def register_metamask_with_hardhat(driver, network, acc):
+    # Need to use XPath to get the elements on the metamask extension
+    # Otherwise it triggers Metamask's Javascript security LavaMoat which protects against injections of dangerous code.
+
+    # Create Metamask account    
+    account_dict = create_metamask_wallet(driver)
+    print("Account dict from creating hardhat wallet:")
+    print(account_dict)
+   
+    ### LOGGED INTO METAMASK ACCOUNT FROM HERE. 
+
+    # Wait for loading overlay to disappear
     WebDriverWait(driver, timeout).until(
     EC.invisibility_of_element_located((By.CLASS_NAME, "loading-overlay")))
 
     # Close popup
-    mm_close_popup = WebDriverWait(driver, timeout).until(    
-    EC.presence_of_element_located((By.XPATH, "//button[@data-testid='popover-close']")))
-    mm_close_popup.click()
+    obtain_element(driver, (By.XPATH, "//button[@data-testid='popover-close']"), timeout).click()
 
-    # Give time to slow down
-    # time.sleep(5)
+    # View all networks
+    obtain_element(driver, (By.XPATH, "//p[contains(text(), 'Ethereum Mainnet')]"), timeout).click()
 
-    # Wait for the new tab to open
-    # 
-    # WebDriverWait(driver, 10).until(lambda d: len(driver.window_handles) > len(existing_windows))
+    # Add a new network
+    obtain_element(driver, (By.XPATH, "//button[contains(text(), 'Add a custom network')]"), timeout).click()
+    obtain_element(driver, (By.XPATH, "//input[@id='networkName']"), timeout).send_keys(network["network_name"])
+    obtain_element(driver, (By.XPATH, "//input[@id='chainId']"), timeout).send_keys(network["chain_id"])
+    obtain_element(driver, (By.XPATH, "//input[@id='nativeCurrency']"), timeout).send_keys(network["currency_symbol"])
 
-    # Return to original tab 0
-    close_extra_tabs(driver)
+    # Decide Network RPC url
+    obtain_element(driver, (By.XPATH, "//button[@data-testid='test-add-rpc-drop-down']"), timeout).click()
+    obtain_element(driver, (By.XPATH, "//button[contains(text(), 'Add RPC URL')]"), timeout).click()
+    obtain_element(driver, (By.XPATH, "//input[@id='rpcUrl']"), timeout).send_keys(network["RPC_url"])
+    obtain_element(driver, (By.XPATH, "//button[contains(text(), 'Add URL')]"), timeout).click()
+    obtain_element(driver, (By.XPATH, "//button[contains(text(), 'Save')]"), timeout).click()
 
+    # Click button to open up list of all networks, including the one we just added.
+    obtain_element(driver, (By.XPATH, "//p[contains(text(), 'Ethereum Mainnet')]"), timeout).click()
 
-    # mm_networks_dropdown = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//p[contains(text(), 'Ethereum Mainnet')]")))
-    # mm_networks_dropdown.click()
+    # Wait for Overlay to disappear.
+    WebDriverWait(driver, timeout).until(
+    EC.invisibility_of_element_located((By.CLASS_NAME, "loading-overlay")))
 
-    # # add a new network
-    # mm_new_network = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Add a custom network')]")))
-    # mm_new_network.click()
+    # Select our newly added network.
+    mm_network_div = WebDriverWait(driver, timeout).until(
+    EC.element_to_be_clickable((By.XPATH, f"//p[contains(text(), '{network["network_name"]}')]/ancestor::div[@role='button']")))   
+    mm_network_div.click()
 
-    
-    # mm_network_name = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//input[@id='networkName']")))
-    # mm_network_name.send_keys(network["network_name"])
+    # Wait for overlay to disappear.
+    WebDriverWait(driver, timeout).until(
+    EC.invisibility_of_element_located((By.CLASS_NAME, "loading-overlay")))
 
-    # mm_network_chainId = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//input[@id='chainId']")))
-    # mm_network_chainId.send_keys(network["chain_id"])
+    # Now that our newly added network is added and selected, let's add an account to it using the passed in acc dictionary.
+    obtain_element(driver, (By.XPATH, "//button[@data-testid='account-menu-icon']"), timeout).click()
+    obtain_element(driver, (By.XPATH, "//button[@data-testid='multichain-account-menu-popover-action-button']"), timeout).click()
+    obtain_element(driver, (By.XPATH, "//button[@data-testid='multichain-account-menu-popover-add-imported-account']"), timeout).click()
+    obtain_element(driver, (By.XPATH, "//input[@id='private-key-box']"), timeout).send_keys(acc["account_private_key"])
+    obtain_element(driver, (By.XPATH, "//button[@data-testid='import-account-confirm-button']"), timeout).click()
 
-    # mm_network_currency_symbol = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//input[@id='nativeCurrency']")))
-    # mm_network_currency_symbol.send_keys(network["currency_symbol"])
-
-    # mm_network_rpc_url_dropdown = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//button[@data-testid='test-add-rpc-drop-down']")))
-    # mm_network_rpc_url_dropdown.click()
-
-    # mm_network_add_rpc_url_button = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Add RPC URL')]")))
-    # mm_network_add_rpc_url_button.click()
-
-    # mm_network_rpc_url = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//input[@id='rpcUrl']")))
-    # mm_network_rpc_url.send_keys(network["RPC_url"])
-
-    # mm_network_add_rpc_url_button_final = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Add URL')]")))
-    # mm_network_add_rpc_url_button_final.click()
-
-    # mm_network_save = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Save')]")))
-    # mm_network_save.click()
-
-    # mm_networks_dropdown = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//p[contains(text(), 'Ethereum Mainnet')]")))
-    # mm_networks_dropdown.click()
-    
-    # # select our test network.
-    # WebDriverWait(driver, timeout).until(
-    # EC.invisibility_of_element_located((By.CLASS_NAME, "loading-overlay")))
-
-    # mm_network_div = WebDriverWait(driver, timeout).until(
-    # EC.element_to_be_clickable((By.XPATH, f"//p[contains(text(), '{network["network_name"]}')]/ancestor::div[@role='button']")))   
-    # mm_network_div.click()
-
-    # WebDriverWait(driver, timeout).until(
-    # EC.invisibility_of_element_located((By.CLASS_NAME, "loading-overlay")))
-
-    # mm_accounts_dropdown = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//button[@data-testid='account-menu-icon']")))
-    # mm_accounts_dropdown.click()
-
-    # mm_accounts_dropdown_add_account = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//button[@data-testid='multichain-account-menu-popover-action-button']")))
-    # mm_accounts_dropdown_add_account.click()
-
-    # mm_accounts_dropdown_add_account_import = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//button[@data-testid='multichain-account-menu-popover-add-imported-account']")))
-    # mm_accounts_dropdown_add_account_import.click()
-
-    # mm_enter_private_key = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//input[@id='private-key-box']")))
-    # mm_enter_private_key.send_keys(acc["account_private_key"])
-
-    # mm_enter_private_key_import = WebDriverWait(driver, timeout).until(    
-    # EC.presence_of_element_located((By.XPATH, "//button[@data-testid='import-account-confirm-button']")))
-    # mm_enter_private_key_import.click()
 
 def get_extension_uuid(driver, extension_name):
     uuid_page = "about:debugging#/runtime/this-firefox"
@@ -388,9 +337,6 @@ def create_driver_with_profile(firefox_profile_path, headless = True):
     print(f"successfully created driver with profile path {firefox_profile_path}")
     return driver
 
-
-
-
 def setup_hardhat_driver(network, acc, firefox_profile_path, headless=False):
     timeout = 20
     driver = create_driver_with_profile(firefox_profile_path, headless=headless)
@@ -409,15 +355,6 @@ def setup_hardhat_driver(network, acc, firefox_profile_path, headless=False):
     driver.switch_to.window(driver.window_handles[0])
 
     register_metamask_with_hardhat(driver, network, acc)
-
-    # Open a new tab
-    driver.switch_to.new_window('tab')
-
-    # List all tab handles
-    handles = driver.window_handles
-
-    # Switch to new tab
-    driver.switch_to.window(handles[1])
 
     return driver
 
@@ -452,8 +389,18 @@ if __name__ == '__main__':
     driver0 = setup_hardhat_driver(hardhat_network, hardhat_acc0, "test_profiles/testprofile_0", headless=False)
     # driver1 = setup_hardhat_driver(hardhat_network, hardhat_acc1, "test_profiles/testprofile_1", headless=False)
     # driver2 = setup_hardhat_driver(hardhat_network, hardhat_acc2, "test_profiles/testprofile_2", headless=False)
-
+    
     # # Register and login to website
+
+    # Open a new tab
+    # driver.switch_to.new_window('tab')
+
+    # # List all tab handles
+    # handles = driver.window_handles
+
+    # # Switch to new tab
+    # driver.switch_to.window(handles[1])
+
     # authentication_success = register_and_login(driver0)
     # if not(authentication_success == "success"):
     #     print("Failed to login")
