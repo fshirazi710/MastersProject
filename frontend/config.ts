@@ -20,7 +20,7 @@ type ABIItem = {
   
   // Represents a parameter within the inputs or outputs array
   type ABIParameter = {
-    internalType: string;
+        internalType: string;
     name: string;
     type: string;
     // For structs/tuples
@@ -32,20 +32,20 @@ type ABIItem = {
   // The overall Contract ABI is an array of ABIItems
   type ContractABI = ABIItem[];
   
-  
-  // API Configuration
-  const API_CONFIG = {
-      development: {
-          baseURL: 'http://127.0.0.1:8000',
-      },
-      production: {
-          baseURL: process.env.NUXT_PUBLIC_API_URL || 'https://api.yourdomain.com', // This will be overridden in production
-      }
-  } as const;
-  
-  // Contract Configuration
-  const CONTRACT_CONFIG = {
-      address: '0x5FbDB2315678afecb367f032d93F642f64180aa3', // Hardhat's default first deployment address
+
+// API Configuration
+const API_CONFIG = {
+    development: {
+        baseURL: 'http://127.0.0.1:8000',
+    },
+    production: {
+        baseURL: process.env.NUXT_PUBLIC_API_URL || 'https://api.yourdomain.com', // This will be overridden in production
+    }
+} as const;
+
+// Contract Configuration
+const CONTRACT_CONFIG = {
+    address: '0x5FbDB2315678afecb367f032d93F642f64180aa3', // Hardhat's default first deployment address
       abi: [ // <-- Start of ABI
         {
           "inputs": [], // <-- Error type might not have inputs defined like this in strict types, but often included empty
@@ -533,7 +533,7 @@ type ABIItem = {
           "type": "function"
         },
         {
-          "inputs": [
+            "inputs": [
             {
               "internalType": "uint256",
               "name": "voteSessionId",
@@ -550,19 +550,19 @@ type ABIItem = {
                   "type": "address[]"
                 },
                 {
-                  "internalType": "bytes",
-                  "name": "ciphertext",
-                  "type": "bytes"
+                    "internalType": "bytes",
+                    "name": "ciphertext",
+                    "type": "bytes"
                 },
                 {
-                  "internalType": "bytes",
+                    "internalType": "bytes",
                   "name": "g1r",
                   "type": "bytes"
                 },
                 {
                   "internalType": "bytes",
                   "name": "g2r",
-                  "type": "bytes"
+                    "type": "bytes"
                 },
                 {
                   "internalType": "bytes[]",
@@ -575,11 +575,11 @@ type ABIItem = {
                   "type": "address"
                 },
                 {
-                  "internalType": "uint256",
-                  "name": "threshold",
-                  "type": "uint256"
+                    "internalType": "uint256",
+                    "name": "threshold",
+                    "type": "uint256"
                 }
-              ],
+            ],
               "internalType": "struct TimedReleaseVoting.EncryptedVote[]",
               "name": "",
               "type": "tuple[]"
@@ -903,9 +903,9 @@ type ABIItem = {
             }
           ],
           "name": "joinAsHolder",
-          "outputs": [],
-          "stateMutability": "payable",
-          "type": "function"
+            "outputs": [],
+            "stateMutability": "payable",
+            "type": "function"
         },
         {
           "inputs": [
@@ -1092,29 +1092,29 @@ type ABIItem = {
             }
           ],
           "stateMutability": "view",
-          "type": "function"
+            "type": "function"
         },
         {
-          "inputs": [],
+            "inputs": [],
           "name": "voteSessionCount",
-          "outputs": [
-            {
-              "internalType": "uint256",
-              "name": "",
-              "type": "uint256"
-            }
-          ],
-          "stateMutability": "view",
-          "type": "function"
+            "outputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "",
+                    "type": "uint256"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
         }
       ] as const satisfies ContractABI // <-- Type assertion remains
-  } as const;
-  
-  // Get current environment
-  const environment = (process.env.NODE_ENV || 'development') as keyof typeof API_CONFIG;
-  
-  // Export the configuration for the current environment
-  export const config = {
-      api: API_CONFIG[environment],
-      contract: CONTRACT_CONFIG
-  };
+} as const;
+
+// Get current environment
+const environment = (process.env.NODE_ENV || 'development') as keyof typeof API_CONFIG;
+
+// Export the configuration for the current environment
+export const config = {
+    api: API_CONFIG[environment],
+    contract: CONTRACT_CONFIG
+}; 

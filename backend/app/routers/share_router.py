@@ -51,17 +51,29 @@ async def submit_share(
 
     # 2. Verify Signature
     try:
-        # Prepare message payload exactly as signed on frontend
-        payload_dict = {
-            # Rename key: electionId -> voteSessionId
-            "voteSessionId": vote_session_id,
-            "shares": [share.model_dump() for share in request.shares], # Use model_dump for consistency
-            "publicKey": request.public_key # Address of the submitter
-        }
-        # Use fast-json-stable-stringify equivalent logic if needed, otherwise standard json dump
-        # Assuming standard JSON sorting for now
-        message_json = json.dumps(payload_dict, sort_keys=True, separators=(',', ':'))
-        message_hash = encode_defunct(text=message_json)
+        # --- CORRECTED: Reconstruct message EXACTLY as signed on frontend ---
+        # Extract data from the request payload (ShareListSubmitRequest)
+        holder_address = request.public_key
+        # Sort shares by vote_id to ensure consistent order before stringifying
+        # Note: request.shares is already validated by Pydantic
+        sorted_shares = sorted(request.shares, key=lambda s: s.vote_id)
+        vote_indices = [s.vote_id for s in sorted_shares]
+        share_strings = [s.share for s in sorted_shares]
+        
+        # Use Python's json.dumps for deterministic serialization of the lists, similar to jsonStableStringify
+        # Use separators=(',', ':') to remove extra whitespace
+        vote_indices_json = json.dumps(vote_indices, separators=(',', ':'))
+        share_strings_json = json.dumps(share_strings, separators=(',', ':'))
+
+        # Construct the message string identical to the frontend format
+        # Ensure vote_session_id is treated as a string here to match frontend template literal
+        message_to_verify = f"SubmitShares:{str(vote_session_id)}:{vote_indices_json}:{share_strings_json}:{holder_address}"
+        
+        # Log the message being verified for debugging
+        logger.debug(f"Verifying signature for message: {message_to_verify}")
+
+        message_hash = encode_defunct(text=message_to_verify)
+        # --------------------------------------------------------------------
         
         # Recover address from signature
         recovered_address = Account.recover_message(message_hash, signature=HexBytes(request.signature))
@@ -193,13 +205,13 @@ async def get_shares(vote_session_id: int, blockchain_service: BlockchainService
         share_indexes_map = defaultdict(list)
         holder_map = defaultdict(list) # Store holder per share
 
-        # Assuming shares tuple structure: (vote_index_within_session, public_key, share_data, holder_index_within_session)
-        # Adjust indices if the Share struct in contract is different
-        for vote_index, public_key, share_data, holder_index in shares_from_chain:
-            vote_shares_map[vote_index].append(share_data)
-            # Store 1-based index corresponding to holder index? Or use holder_index directly?
-            share_indexes_map[vote_index].append(holder_index + 1) # Assuming we want 1-based index
-            holder_map[vote_index].append(public_key)
+        # Assuming shares tuple structure from contract: (voteIndex, holderAddress, shareData, index)
+        # Adjust indices if the DecryptionShare struct tuple order is different
+        for vote_idx_contract, holder_addr_contract, share_bytes_contract, share_idx_contract in shares_from_chain:
+            # Use the correct indices from the unpacked tuple
+            vote_shares_map[vote_idx_contract].append(share_bytes_contract)
+            share_indexes_map[vote_idx_contract].append(share_idx_contract) # Use the actual stored index
+            holder_map[vote_idx_contract].append(holder_addr_contract)
 
         # Prepare response data (e.g., a list of dicts, one per vote_index)
         response_data = []
@@ -209,11 +221,15 @@ async def get_shares(vote_session_id: int, blockchain_service: BlockchainService
             sorted_combined = sorted(zip(share_indexes_map[vote_index], vote_shares_map[vote_index], holder_map[vote_index]))
             
             if sorted_combined:
-                sorted_indices, sorted_shares, sorted_holders = zip(*sorted_combined)
+                sorted_indices, sorted_shares_bytes, sorted_holders = zip(*sorted_combined)
                 # Format shares for the specific vote_index
                 formatted_shares = [
-                    {"holder_address": holder, "share_index": idx, "share_value": share}
-                    for idx, share, holder in zip(sorted_indices, sorted_shares, sorted_holders)
+                    {
+                        "holder_address": holder, 
+                        "share_index": idx, 
+                        "share_value": share.hex() if share else None # Convert bytes to hex
+                    }
+                    for idx, share, holder in zip(sorted_indices, sorted_shares_bytes, sorted_holders)
                 ]
             else:
                  formatted_shares = []

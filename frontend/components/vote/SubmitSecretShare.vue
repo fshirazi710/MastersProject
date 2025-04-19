@@ -169,8 +169,10 @@
 
         try {
             // --- Key Retrieval and Decryption ---
-            const encryptedKeyStorageKey = `election_${props.voteId}_user_${currentAccount.value}_blsEncryptedPrivateKey`;
-            const saltStorageKey = `election_${props.voteId}_user_${currentAccount.value}_blsSalt`;
+            // Normalize address to lowercase for key consistency
+            const lowerCaseAccount = currentAccount.value.toLowerCase(); 
+            const encryptedKeyStorageKey = `vote_session_${props.voteId}_user_${lowerCaseAccount}_blsEncryptedPrivateKey`;
+            const saltStorageKey = `vote_session_${props.voteId}_user_${lowerCaseAccount}_blsSalt`;
             
             const encryptedKeyHex = localStorage.getItem(encryptedKeyStorageKey);
             const saltHex = localStorage.getItem(saltStorageKey);
@@ -222,12 +224,19 @@
             // 2. Prepare data for signing and backend verification
             loadingMessage.value = 'Preparing data...';
             const holderAddress = currentAccount.value;
-            const sortedShares = sharesToSubmit.sort((a, b) => a.vote_id - b.vote_id);
-            const voteIndices = sortedShares.map(item => item.vote_id);
-            const shareStrings = sortedShares.map(item => item.share);
+            // Sort shares by vote_id just in case fetchVoteInformation didn't guarantee order
+            const sortedSharesData = sharesToSubmit.sort((a, b) => a.vote_id - b.vote_id);
+            const voteIndices = sortedSharesData.map(item => item.vote_id); 
+            // --- Prefix share strings with 0x for ethers --- 
+            const shareStringsPrefixed = sortedSharesData.map(item => 
+                item.share.startsWith('0x') ? item.share : `0x${item.share}`
+            );
+            // ----------------------------------------------
 
             // Construct the message payload (must match backend)
-            const messagePayload = `SubmitShares:${props.voteId}:${jsonStableStringify(voteIndices)}:${jsonStableStringify(shareStrings)}:${holderAddress}`;
+            // Use the non-prefixed shares for signing, as the backend expects raw hex strings
+            const shareStringsForSigning = sortedSharesData.map(item => item.share); 
+            const messagePayload = `SubmitShares:${props.voteId}:${jsonStableStringify(voteIndices)}:${jsonStableStringify(shareStringsForSigning)}:${holderAddress}`;
 
             // 3. Sign the message using ethersService
             loadingMessage.value = 'Waiting for signature...';
@@ -235,8 +244,9 @@
 
             // 4. Send data + signature to backend for verification
             loadingMessage.value = 'Verifying with server...';
+            // Send the original (non-prefixed) share strings to backend verification
             const verificationPayload = {
-                shares: sortedShares,
+                shares: sortedSharesData, // Contains original non-prefixed shares
                 public_key: holderAddress,
                 signature: signature
             };
@@ -245,24 +255,43 @@
             // 5. If backend verification is successful, send the actual transaction
             loadingMessage.value = 'Submitting transaction...';
 
-            // Prepare arguments for the smart contract function
-            // NOTE: Ensure shareIndices are correctly defined/retrieved if needed by contract
-            // Assuming share index corresponds to vote index for simplicity here
-            const shareIndices = sortedShares.map((item, index) => index + 1); // Placeholder for share index
+            // --- Calculate correct shareIndex for the current holder --- 
+            console.log("Fetching current holder list to determine share index...");
+            const sessionHolders = await ethersService.readContract(
+                config.contract.address,
+                config.contract.abi,
+                'getHoldersByVoteSession',
+                [parseInt(props.voteId)]
+            );
+            const holderAddressesArray = Array.from(sessionHolders || []); // Convert proxy immediately
+            const lowerCaseMyAddress = holderAddress.toLowerCase();
+            const myIndex = holderAddressesArray.findIndex(addr => addr.toLowerCase() === lowerCaseMyAddress);
 
+            if (myIndex === -1) {
+                throw new Error("Could not find your address in the current vote session holder list. Cannot determine share index.");
+            }
+            const myShareIndex = myIndex + 1; // Contract likely expects 1-based index
+            console.log(`Determined your share index for this session: ${myShareIndex}`);
+            // Create the shareIndices array with the user's index repeated
+            const shareIndices = Array(voteIndices.length).fill(myShareIndex);
+            // ------------------------------------------------------------
+
+            // Prepare arguments for the smart contract function
             const contractArgs = [
-                parseInt(props.voteId), // Ensure electionId is number
-                voteIndices,           // uint256[] memory voteIndices
-                shareIndices,          // uint256[] memory shareIndices
-                shareStrings           // string[] memory shareDataList
+                parseInt(props.voteId),    // uint256 voteSessionId
+                voteIndices,               // uint256[] voteIndices
+                shareIndices,              // uint256[] shareIndices (Corrected)
+                shareStringsPrefixed       // bytes[] shareDataList (Corrected - prefixed hex strings)
             ];
 
             const txOptions = {}; // Add { value: ... } if needed
 
+            console.log(`Sending transaction to ${config.contract.address} -> submitDecryptionShares(${contractArgs.join(', ')}) with options:`, txOptions);
+
             const txResponse = await ethersService.sendTransaction(
                 config.contract.address, // Get address from config
                 config.contract.abi,     // Get ABI from config
-                'submitShares',          // Contract method name
+                'submitDecryptionShares', // Contract method name - CORRECTED
                 contractArgs,            // Arguments
                 txOptions                // Transaction options (e.g., value)
             );
@@ -293,7 +322,7 @@
     // fetchVoteInformation (remains the same)
     const fetchVoteInformation = async () => {
         try {
-            const response = await encryptedVoteApi.getVoteInformation(props.voteId);
+            const response = await encryptedVoteApi.getEncryptedVoteInfo(props.voteId);
             return response.data.data
         } catch (error) {
             console.error("Failed to retrive vote information:", error);

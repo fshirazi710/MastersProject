@@ -267,21 +267,20 @@
       console.log("Derived encryption key."); // Don't log the key itself!
 
       // Encrypt the BLS private key (generated earlier)
-      const encryptedPrivateKeyHex = await AESEncrypt(blsPrivateKeyHex, derivedKey);
-      console.log("Encrypted BLS private key.");
-      
-      // Store in localStorage (scoped by vote session and user)
-      // Use the BLS Public Key generated above
-      const publicKeyStorageKey = `vote_session_${props.voteSessionId}_user_${currentAccount.value}_blsPublicKey`;
-      const encryptedPrivateKeyStorageKey = `vote_session_${props.voteSessionId}_user_${currentAccount.value}_blsEncryptedPrivateKey`;
-      const saltStorageKey = `vote_session_${props.voteSessionId}_user_${currentAccount.value}_blsSalt`;
-      
-      localStorage.setItem(publicKeyStorageKey, blsPublicKeyHex);
-      localStorage.setItem(encryptedPrivateKeyStorageKey, encryptedPrivateKeyHex);
-      localStorage.setItem(saltStorageKey, bytesToHex(salt)); // Store salt (as hex) for later key derivation
-      console.log(`Stored keys for vote session ${props.voteSessionId} user ${currentAccount.value}`);
-      
-      // ---------------------------------------------------------------------
+      // --- FIX: AESEncrypt now returns a single hex string (iv + ciphertext) ---
+      const encryptedDataHex = await AESEncrypt(blsPrivateKeyHex, derivedKey); 
+      // ----------------------------------------------------------------------
+
+      const encryptedKeyStorageKey = `vote_session_${props.voteSessionId}_user_${currentAccount.value.toLowerCase()}_blsEncryptedPrivateKey`;
+      const publicKeyStorageKey = `vote_session_${props.voteSessionId}_user_${currentAccount.value.toLowerCase()}_blsPublicKey`;
+      const saltStorageKey = `vote_session_${props.voteSessionId}_user_${currentAccount.value.toLowerCase()}_blsSalt`;
+
+      localStorage.setItem(encryptedKeyStorageKey, encryptedDataHex); // Store the combined hex string
+      localStorage.setItem(publicKeyStorageKey, blsPublicKeyHex); // Public key is stored correctly
+      localStorage.setItem(saltStorageKey, bytesToHex(salt));             // Salt is stored correctly
+      // ----------------------------------------------------------------
+
+      console.log("BLS key details encrypted and stored locally.");
 
       // Transaction was confirmed successfully
       isRegistered.value = true;

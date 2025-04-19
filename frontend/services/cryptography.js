@@ -66,7 +66,18 @@ function pointToBigint(point) {
 }
 
 function stringToBigInt(str) {
-    return BigInt(str);
+    // Handle potential hex strings (with or without 0x prefix)
+    if (typeof str !== 'string') {
+        throw new Error(`Invalid input to stringToBigInt: expected string, got ${typeof str}`);
+    }
+    const trimmedStr = str.trim(); // Remove leading/trailing whitespace
+    if (trimmedStr.startsWith('0x')) {
+        return BigInt(trimmedStr);
+    } else if (/^[0-9a-fA-F]+$/.test(trimmedStr)) { // Check if it IS a hex string (without 0x)
+        return BigInt('0x' + trimmedStr);
+    } else { // Assume decimal if not hex
+        return BigInt(trimmedStr); // Let BigInt handle potential decimal errors
+    }
 }
 
 export async function AESEncrypt(text, key) {
@@ -79,11 +90,11 @@ export async function AESEncrypt(text, key) {
         const iv = randomBytes(12); // Use our randomBytes helper
         const encodedText = new TextEncoder().encode(text);
         const ciphertextBuffer = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encodedText);
-        // Return IV and Ciphertext separately as hex strings
-        return {
-            iv: bytesToHex(iv),
-            ciphertext: bytesToHex(new Uint8Array(ciphertextBuffer))
-        }; 
+        // --- FIX: Return IV prepended to ciphertext as a single hex string ---
+        const ivHex = bytesToHex(iv);
+        const ciphertextHex = bytesToHex(new Uint8Array(ciphertextBuffer));
+        return ivHex + ciphertextHex; 
+        // --- End Fix ---
     } catch (error) {
         console.error("Encryption failed:", error);
         throw error;
@@ -117,13 +128,12 @@ export async function getKAndSecretShares(pubkeys, threshold, total) {
     const restPubkeys = pubkeys.slice(threshold);
 
     const r = genR();
-    const [k, alphas] = await getKAndAlphas(r, tIndexes, tPubkeys, restIndexes, restPubkeys);
+    const [k_bigint, alphas_hex] = await getKAndAlphas(r, tIndexes, tPubkeys, restIndexes, restPubkeys);
 
     const g1r = getG1R(r)
-
     const g2r = getG2R(r)
 
-    return [k, g1r, g2r, alphas];
+    return [k_bigint, g1r, g2r, alphas_hex];
 }
 
 export function generateShares(g1r_hex, privateKey) {
@@ -173,7 +183,27 @@ export function verifyShares(share, share2, publicKey, g2r) {
     return pairing1 === pairing2;
 }
 
+// Helper function to convert BigInt to a 32-byte Uint8Array (Big-Endian)
+function bigIntTo32Bytes(num) {
+  let hex = num.toString(16);
+  // Ensure even length hex string
+  if (hex.length % 2) { hex = '0' + hex; }
+  // Pad with leading zeros to 64 hex characters (32 bytes)
+  const paddedHex = hex.padStart(64, '0');
+  // Handle cases where the number might be too large (take least significant 32 bytes)
+  // Although FIELD_ORDER should prevent this for valid numbers in the field
+  const finalHex = paddedHex.length > 64 ? paddedHex.slice(paddedHex.length - 64) : paddedHex;
+  // Convert final hex string to Uint8Array
+  return hexToBytes(finalHex);
+}
+
 export async function recomputeKey(indexes, shares, alphas, threshold) {
+    console.log("--- recomputeKey START ---");
+    console.log("Input Indexes:", indexes);
+    console.log("Input Shares (BigInts/Hex?):", shares); // Check input format
+    console.log("Input Alphas (Hex Strings?):", alphas);
+    console.log("Input Threshold:", threshold);
+
     // Ensure inputs are the types we expect/need early on
     const bigIntIndexes = indexes.map(idx => {
         try {
@@ -187,9 +217,20 @@ export async function recomputeKey(indexes, shares, alphas, threshold) {
          try {
             // Handle potential '0x' prefix if shares are hex strings, or already BigInt
             if (typeof s === 'bigint') return s;
-            if (typeof s === 'string' && s.startsWith('0x')) return BigInt(s);
-             // Assume it's a direct numeric representation (string or number)
-            return BigInt(s);
+            // --- Ensure 0x prefix for hex string shares ---
+            if (typeof s === 'string') {
+                const trimmedShare = s.trim();
+                if (trimmedShare.startsWith('0x')) return BigInt(trimmedShare);
+                // Assuming hex if not already BigInt, add 0x if missing
+                if (/^[0-9a-fA-F]+$/.test(trimmedShare)) return BigInt('0x' + trimmedShare);
+                 // Fallback: try as decimal (might fail if it was meant to be hex)
+                console.warn(`Share string '${s}' doesn't look like hex, attempting decimal conversion.`);
+                return BigInt(trimmedShare); 
+            }
+            // --- End Share Conversion Update ---
+            // Original fallback (might not be needed now)
+            // return BigInt(s);
+            throw new Error(`Invalid share type: expected string or bigint, got ${typeof s}`);
         } catch (e) {
             console.error(`Failed to convert share '${s}' to BigInt:`, e);
             throw new Error(`Invalid share format for BigInt conversion: ${s}`);
@@ -202,99 +243,80 @@ export async function recomputeKey(indexes, shares, alphas, threshold) {
          throw new Error("Invalid threshold value, cannot convert to number.");
     }
 
-    // --- FIX: Use the first thresholdNum *submitted* points for interpolation ---
     if (bigIntIndexes.length < thresholdNum) {
         throw new Error(`Insufficient shares provided (${bigIntIndexes.length}) to meet threshold (${thresholdNum}) for reconstruction.`);
     }
 
     const basisIndices = [];
     const valuesForInterpolation = [];
+    console.log("Processing first", thresholdNum, "shares for interpolation...");
 
     // Iterate through the first thresholdNum submitted shares/indexes
     for (let i = 0; i < thresholdNum; i++) {
         const currentBigIntIndex = bigIntIndexes[i];
         const currentBigIntShare = bigIntShares[i];
+        console.log(`  [i=${i}] Holder Index: ${currentBigIntIndex}`);
 
         basisIndices.push(currentBigIntIndex); // Add index to basis list
 
         // Determine the value to use for interpolation based on the index
         if (Number(currentBigIntIndex) <= thresholdNum) {
-            // Index is within the original threshold, use the raw share
+            console.log(`    Index <= threshold. Using raw share: ${currentBigIntShare}`);
             valuesForInterpolation.push(currentBigIntShare);
         } else {
-            // Index is beyond the original threshold, need to use alpha
+            console.log(`    Index > threshold. Using share XOR alpha.`);
             const alphaIndex = Number(currentBigIntIndex) - 1 - thresholdNum;
             if (alphaIndex < 0 || alphaIndex >= alphas.length || typeof alphas[alphaIndex] !== 'string') {
-                console.error(`Invalid alpha access: alphaIndex=${alphaIndex}, alphas.length=${alphas.length}, currentBigIntIndex=${currentBigIntIndex}, thresholdNum=${thresholdNum}`);
+                console.error(`    Invalid alpha access: alphaIndex=${alphaIndex}, alphas.length=${alphas.length}, currentBigIntIndex=${currentBigIntIndex}, thresholdNum=${thresholdNum}`);
                 throw new Error(`Invalid alpha index or alpha value at calculated index ${alphaIndex}`);
             }
-            const alphaBigInt = stringToBigInt(alphas[alphaIndex]);
+            const alphaString = alphas[alphaIndex];
+            const alphaBigInt = stringToBigInt(alphaString); // Uses updated stringToBigInt
+            console.log(`    Share: ${currentBigIntShare}`);
+            console.log(`    Alpha String (Hex): ${alphaString}`);
+            console.log(`    Alpha BigInt: ${alphaBigInt}`);
 
             // Perform XOR term calculation
-            const shareHex = bigIntToHex(currentBigIntShare);
-            const alphaHex = bigIntToHex(alphaBigInt);
-            const alphaBytes = hexToBytes(alphaHex);
-            const shareBytes = hexToBytes(shareHex);
-
-             if (alphaBytes.length === 0 || shareBytes.length === 0) {
-                 console.error("Cannot perform XOR on empty byte arrays. Share:", shareHex, "Alpha:", alphaHex);
-                 throw new Error("Empty byte array encountered during XOR operation in recomputeKey.");
-            }
-
-            const maxLength = Math.max(alphaBytes.length, shareBytes.length);
-            const paddedAlphaBytes = padBytesStart(alphaBytes, maxLength);
-            const paddedShareBytes = padBytesStart(shareBytes, maxLength);
+            const shareBytes = bigIntTo32Bytes(currentBigIntShare);
+            const alphaBytes = bigIntTo32Bytes(alphaBigInt);
+             if (alphaBytes.length !== 32 || shareBytes.length !== 32) {
+                 console.error("    Byte conversion did not result in 32 bytes. Share length:", shareBytes.length, "Alpha length:", alphaBytes.length);
+                 throw new Error("Internal error during byte conversion for XOR.");
+             }
 
             const xorResult = [];
-            for (let j = 0; j < maxLength; j++) {
-                xorResult.push(paddedAlphaBytes[j] ^ paddedShareBytes[j]);
+            for (let j = 0; j < 32; j++) { 
+                xorResult.push(alphaBytes[j] ^ shareBytes[j]);
             }
-
-            const term = BigInt('0x' + Buffer.from(xorResult).toString('hex'));
+            const term = BigInt('0x' + bytesToHex(new Uint8Array(xorResult)));
+            console.log(`    Share Bytes (Hex): ${bytesToHex(shareBytes)}`);
+            console.log(`    Alpha Bytes (Hex): ${bytesToHex(alphaBytes)}`);
+            console.log(`    XOR Result Bytes (Hex): ${bytesToHex(new Uint8Array(xorResult))}`);
+            console.log(`    XOR Term (BigInt): ${term}`);
             valuesForInterpolation.push(term); // Use the XORed term for interpolation
         }
     }
 
+    console.log("Basis Indices for Lagrange:", basisIndices.map(v=>v.toString()));
+    console.log("Values for Interpolation:", valuesForInterpolation.map(v=>v.toString()));
+
     // Calculate basis using the collected indices
     const basis = lagrangeBasis(basisIndices, BigInt(0));
+    console.log("Lagrange Basis L_i(0):", basis.map(v=>v.toString()));
 
-    // Ensure lengths match before interpolation
-    if (basis.length !== valuesForInterpolation.length) {
-        console.error("Basis length:", basis.length, "Values length:", valuesForInterpolation.length);
-        throw new Error("Mismatch between basis length and interpolation values length.");
+    if (basis.length !== valuesForInterpolation.length || basis.length !== thresholdNum) {
+       console.error("Basis/Values/Threshold length mismatch! Basis:", basis.length, "Values:", valuesForInterpolation.length, "Threshold:", thresholdNum);
+       throw new Error("Internal error: Basis/Values/Threshold length mismatch.");
     }
-     if (basis.length !== thresholdNum) {
-        console.error("Basis length (", basis.length, ") does not match threshold (", thresholdNum, ")");
-        // This might indicate an issue with lagrangeBasis or the input indices
-        throw new Error("Basis length does not match threshold.");
-    }
-
-    // --- Remove Debugging Logs ---
-    // console.log("--- Inputs to Lagrange Interpolation ---");
-    // console.log("Threshold:", thresholdNum);
-    // console.log("Basis Indices (BigInt):", basisIndices.map(v => v.toString()));
-    // console.log("Values for Interpolation (BigInt):", valuesForInterpolation.map(v => v.toString()));
-    // console.log("Calculated Basis (Lagrange Coefficients L_i(0)):", basis.map(v => v.toString()));
-    // -------------------------
 
     // Perform interpolation
     const k = lagrangeInterpolate(basis, valuesForInterpolation);
-    // --------------------------------------------------------------------
+    console.log("Recomputed k (BigInt):", k.toString()); 
+    console.log("--- recomputeKey END ---");
 
-    // console.log("Recomputed k (BigInt):", k); // Removed log
     const key = await importBigIntAsCryptoKey(k);
 
     return key;
-}
-
-// Helper function to pad Uint8Array with leading zeros
-function padBytesStart(bytes, length) {
-    if (bytes.length >= length) {
-        return bytes;
-    }
-    const padded = new Uint8Array(length);
-    padded.set(bytes, length - bytes.length);
-    return padded;
 }
 
 function computePkRValue(pubkey, r) {
@@ -327,24 +349,36 @@ function lagrangeBasis(indexes, x) {
 }
 
 function modInverse(a, m) {
+    // Ensure a is within [0, m-1] and m > 0
+    if (m <= 0n) throw new Error("Modulus must be positive"); // Check m is BigInt
     a = (a % m + m) % m;
+    if (a === 0n) throw new Error("Cannot compute inverse of 0");
 
-    const s = [];
-    let b = m;
+    let r_prev = m;
+    let r_curr = a;
+    let x_prev = 0n;
+    let x_curr = 1n;
+    // y coefficients are not needed for the inverse result
 
-    while (b) {
-        [a, b] = [b, a % b];
-        s.push({ a, b });
+    while (r_curr > 0n) {
+        const q = r_prev / r_curr; // Floor division
+
+        // Update remainders
+        [r_prev, r_curr] = [r_curr, r_prev - q * r_curr];
+
+        // Update x coefficients (corresponding to original 'a')
+        [x_prev, x_curr] = [x_curr, x_prev - q * x_curr];
     }
 
-    let x = BigInt(1);
-    let y = BigInt(0);
-
-    for (let i = s.length - 2; i >= 0; --i) {
-        [x, y] = [y, x - y * BigInt(s[i].a / s[i].b)];
+    // After loop, r_prev holds the gcd(a, m)
+    // x_prev holds the Bezout coefficient corresponding to 'a' (which is the inverse)
+    if (r_prev !== 1n) {
+        console.error(`Modular inverse does not exist for ${a} mod ${m} (GCD is ${r_prev}, not 1)`);
+        throw new Error("Modular inverse does not exist (GCD != 1)");
     }
 
-    return (y % m + m) % m;
+    // Ensure result is positive in [0, m-1]
+    return (x_prev % m + m) % m;
 }
 
 function lagrangeInterpolate(basis, shares) {
@@ -358,69 +392,146 @@ function lagrangeInterpolate(basis, shares) {
 }
 
 export async function getKAndAlphas(r, tIndexes, tPubkeys, restIndexes, restPubkeys) {
+    // --- DETAILED LOGGING START ---
+    console.log("--- getKAndAlphas START ---");
+    console.log("Input r:", r.toString());
+    console.log("Input tIndexes:", tIndexes.map(v=>v.toString()));
+    console.log("Input tPubkeys:", tPubkeys); // Log raw pubkeys
+    console.log("Input restIndexes:", restIndexes.map(v=>v.toString()));
+    console.log("Input restPubkeys:", restPubkeys); // Log raw pubkeys
+    // --- DETAILED LOGGING END ---
+
     const tShares = tPubkeys.map((pubkey) => {
         const pkr = computePkRValue(pubkey, r);
         return pointToBigint(pkr);
     });
 
-    console.log(tShares)
+    // --- DETAILED LOGGING START ---
+    console.log("Calculated tShares:", tShares.map(v=>v.toString()));
+    // --- DETAILED LOGGING END ---
+
+    // console.log(tShares) // Original log, commented out for clarity
     const basis = lagrangeBasis(tIndexes, BigInt(0));
     const k = lagrangeInterpolate(basis, tShares);
-    console.log(k)
-    const key = await importBigIntAsCryptoKey(k);
+    // Log the original k computed during generation
+    console.log("Original k (BigInt) during getKAndAlphas:", k.toString());
+
+    // --- DETAILED LOGGING START ---
+    // Note: Key derivation happens later, after this function returns k
+    // const key = await importBigIntAsCryptoKey(k); // Original line moved
+    // --- DETAILED LOGGING END ---
 
     const restShares = restPubkeys.map((pubkey) => {
         const pkr = computePkRValue(pubkey, r);
         return pointToBigint(pkr);
     });
 
+    // --- DETAILED LOGGING START ---
+    console.log("Calculated restShares:", restShares.map(v=>v.toString()));
+    // --- DETAILED LOGGING END ---
+
     let alphas = [];
+    console.log("Calculating alphas..."); // Log start of alpha loop
     for (let counter = 0; counter < restIndexes.length; counter++) {
         const i = restIndexes[counter];
+        // --- DETAILED LOGGING START ---
+        console.log(`  Alpha calculation for index ${i}:`);
+        // --- DETAILED LOGGING END ---
         const i_basis = lagrangeBasis(tIndexes, i);
         const i_point = lagrangeInterpolate(i_basis, tShares);
+        // --- DETAILED LOGGING START ---
+        console.log(`    i_point (P(${i})): ${i_point.toString()}`);
+        console.log(`    restShare[${counter}] (S(${i})): ${restShares[counter].toString()}`);
+        // --- DETAILED LOGGING END ---
 
-        // Convert BigInts to byte arrays for XOR
-        const i_point_bytes = hexToBytes(bigIntToHex(i_point));
-        const i_share_bytes = hexToBytes(bigIntToHex(restShares[counter]));
+        // --- CORRECTED: Convert BigInts to FIXED 32 bytes before XOR ---
+        const i_point_bytes = bigIntTo32Bytes(i_point);
+        const i_share_bytes = bigIntTo32Bytes(restShares[counter]);
+        // -----------------------------------------------------------
 
-        // --- Add padding before XOR, consistent with recomputeKey ---
-        if (i_point_bytes.length === 0 || i_share_bytes.length === 0) {
-            console.error("Cannot perform XOR on empty byte arrays during alpha generation. Index:", i);
-            throw new Error("Empty byte array encountered during alpha generation.");
+        // Ensure byte arrays are 32 bytes (defensive check)
+        if (i_point_bytes.length !== 32 || i_share_bytes.length !== 32) {
+            console.error("Byte conversion did not result in 32 bytes during alpha generation. Index:", i);
+            throw new Error("Internal error during byte conversion for alpha XOR.");
         }
-
-        const maxLength = Math.max(i_point_bytes.length, i_share_bytes.length);
-        const padded_i_point_bytes = padBytesStart(i_point_bytes, maxLength);
-        const padded_i_share_bytes = padBytesStart(i_share_bytes, maxLength);
+        // --- DETAILED LOGGING START ---
+        console.log(`    i_point_bytes (Hex): ${bytesToHex(i_point_bytes)}`);
+        console.log(`    i_share_bytes (Hex): ${bytesToHex(i_share_bytes)}`);
+        // --- DETAILED LOGGING END ---
 
         const xorResultBytes = [];
-        for (let j = 0; j < maxLength; j++) {
-            xorResultBytes.push(padded_i_point_bytes[j] ^ padded_i_share_bytes[j]);
+        for (let j = 0; j < 32; j++) { // Iterate exactly 32 times
+            xorResultBytes.push(i_point_bytes[j] ^ i_share_bytes[j]);
         }
-        // -------------------------------------------------------------
+        // --- DETAILED LOGGING START ---
+        const xorHex = bytesToHex(new Uint8Array(xorResultBytes));
+        console.log(`    XOR Result Bytes (Hex): ${xorHex}`);
+        // --- DETAILED LOGGING END ---
 
-        // Convert padded XOR result back to BigInt
-        const i_alpha = BigInt("0x" + Buffer.from(xorResultBytes).toString("hex")); 
-        alphas.push(i_alpha.toString());
+        // Convert 32-byte XOR result back to BigInt
+        const i_alpha = BigInt("0x" + xorHex);
+        // --- DETAILED LOGGING START ---
+        console.log(`    Calculated Alpha (BigInt): ${i_alpha.toString()}`);
+        // --- DETAILED LOGGING END ---
+
+        // --- CORRECTED: Store HEX string representation for API ---
+        const alphaHex = i_alpha.toString(16); // Use existing hex string
+        alphas.push(alphaHex);
+        // --- DETAILED LOGGING START ---
+        console.log(`    Stored Alpha (Hex String): ${alphaHex}`);
+        // --- DETAILED LOGGING END ---
+        // --------------------------------------------------------
     }
 
-    return [key, alphas];
+    // --- DETAILED LOGGING START ---
+    console.log("Final generated alphas (Hex Strings):", alphas);
+    console.log("--- getKAndAlphas END ---");
+    // --- DETAILED LOGGING END ---
+
+    // --- CORRECTED: Return k as BigInt, not CryptoKey ---
+    // The encryption step needs the CryptoKey, but this function should return the raw components
+    return [k, alphas]; // Return BigInt k and hex string alphas
 }
 
 export async function importBigIntAsCryptoKey(bigintKey) {
     try {
-        let hexKey = bigintKey.toString(16).padStart(64, '0'); 
-        
-        const keyBytes = new Uint8Array(hexKey.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+        // --- FIX: Derive 32-byte key using SHA-256 --- 
 
+        // 1. Convert BigInt to its minimal byte representation (big-endian)
+        let hexKey = bigintKey.toString(16);
+        if (hexKey.length % 2) { hexKey = '0' + hexKey; } // Ensure even length
+        const minimalKeyBytes = hexToBytes(hexKey);
+
+        // 2. Hash the minimal bytes using SHA-256
+        const hashBuffer = await window.crypto.subtle.digest('SHA-256', minimalKeyBytes);
+        const keyBytes = new Uint8Array(hashBuffer); // hashBuffer is the 32-byte digest
+
+        // Log the final key bytes being imported (optional, but good for final check)
+        console.log(`importBigIntAsCryptoKey: Importing SHA-256 hash of k as keyBytes (Hex): ${bytesToHex(keyBytes)} (Original k BigInt: ${bigintKey.toString()})`);
+
+        // 3. Import the 32-byte hash digest as the AES key
         const cryptoKey = await window.crypto.subtle.importKey(
             "raw",
-            keyBytes,
+            keyBytes, // Use the 32-byte hash
+            { name: "AES-GCM", length: 256 },
+            true,
+            ["encrypt", "decrypt"]
+        );
+        // --- END FIX --- 
+
+        /* --- OLD METHOD (Incorrect for keys > 256 bits) ---
+        let hexKey = bigintKey.toString(16).padStart(64, '0'); 
+        const keyBytes_old = new Uint8Array(hexKey.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+        console.log(`importBigIntAsCryptoKey: Importing keyBytes (Hex): ${bytesToHex(keyBytes_old)} from BigInt: ${bigintKey.toString()}`);
+        const cryptoKey_old = await window.crypto.subtle.importKey(
+            "raw",
+            keyBytes_old,
             { name: "AES-GCM", length: 256 }, // AES-256
             true,
             ["encrypt", "decrypt"]
         );
+        return cryptoKey_old;
+        */
 
         return cryptoKey;
     } catch (error) {

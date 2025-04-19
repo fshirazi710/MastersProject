@@ -434,8 +434,8 @@ const checkHolderStatus = async () => {
 
     console.log(`Holder Status for ${currentAccount.value}: Active=${isHolder.value}, Submitted=${didHolderSubmitShare.value}, Deposit=${holderDeposit.value} ETH`);
     
-    // Placeholder for fetching reward distribution status - needs implementation
-    // rewardDistributionStatus.value = await fetchRewardStatus();
+    // --- Fetch reward distribution status --- 
+    rewardDistributionStatus.value = await fetchRewardStatus();
 
   } catch (err) {
     console.error("Error checking holder status:", err);
@@ -445,6 +445,34 @@ const checkHolderStatus = async () => {
     holderDeposit.value = '0';
   } finally {
     isCheckingHolderStatus.value = false;
+  }
+};
+
+// --- NEW FUNCTION to fetch reward status ---
+const fetchRewardStatus = async () => {
+  try {
+    console.log(`Fetching reward distribution status for session ${props.voteId}...`);
+    const isDistributed = await ethersService.readContract(
+      config.contract.address,
+      config.contract.abi,
+      'rewardsHaveBeenDistributed',
+      [parseInt(props.voteId)]
+    );
+    console.log(`On-chain rewardsHaveBeenDistributed status: ${isDistributed}`);
+
+    if (isDistributed) {
+      return 'Distributed';
+    } else {
+      // Check if submission deadline has passed to differentiate between pending and potentially failed/not run
+      if (submissionDeadlinePassed.value) {
+        return 'Pending Distribution Call'; // Deadline passed, but function not called/completed
+      } else {
+        return 'Pending Submission Deadline'; // Deadline hasn't passed yet
+      }
+    }
+  } catch (err) {
+    console.error("Error fetching reward distribution status:", err);
+    return 'Error Checking Status'; // Return specific error string
   }
 };
 
@@ -495,100 +523,158 @@ const claimDepositHandler = async () => {
 };
 
 const decryptSubmittedVotes = async () => {
-  if (props.releasedKeys < props.requiredKeys) {
-      console.warn("Attempted decryption without enough keys.");
-      error.value = "Cannot decrypt results: Not enough secret shares have been released.";
-      submissionFailed.value = true; // Mark as failed if attempted under threshold
-      return;
-  }
   if (isDecrypted.value) {
     console.log("Already decrypted, skipping redundant attempt.");
     return;
   }
 
   console.log("Starting decryption process...");
+  loading.value = true; // Indicate loading during decryption
   tallyResults.value = {};
   totalVotes.value = 0;
   sliderAverage.value = null;
-  error.value = null;
+  error.value = null; // Clear previous errors
+  submissionFailed.value = false; // Reset failed status
 
   try {
-    const sharesResponse = await shareApi.getShares(props.voteId);
-    const votesInfoResponse = await encryptedVoteApi.getEncryptedVoteInfo(props.voteId);
+    // Fetch necessary data from backend API
+    const [sharesResponse, votesInfoResponse] = await Promise.all([
+      shareApi.getShares(props.voteId), 
+      encryptedVoteApi.getEncryptedVoteInfo(props.voteId)
+    ]);
 
-    const indexes = sharesResponse.data[0];
-    const shares = sharesResponse.data[1];
-    const votesInfo = votesInfoResponse.data.data;
+    const sharesData = sharesResponse.data; // This is the list: [{vote_index, submitted_shares:[{...}]}, ...]
+    const votesInfo = votesInfoResponse.data.data; // This is the list: [{id, vote_id, ciphertext, g1r, g2r, alphas, voter, threshold}, ...]
 
-    if (!indexes || !shares || !votesInfo) {
+    if (!sharesData || !votesInfo) {
         throw new Error("Incomplete share or vote information received from API.");
     }
 
-    if (!(shares[0] && shares[0].length >= props.requiredKeys)) {
-       console.warn("Not enough shares released for decryption (checked again inside decryptSubmittedVotes).");
-       error.value = "Cannot decrypt results: Not enough secret shares have been released.";
-       submissionFailed.value = true; // Mark as failed
-       return;
-     }
+    // Check if *any* vote index has enough shares before proceeding (improves initial check)
+    const hasEnoughSharesForAny = sharesData.some(voteShareInfo => 
+        voteShareInfo.submitted_shares && voteShareInfo.submitted_shares.length >= props.requiredKeys
+    );
+
+    if (!hasEnoughSharesForAny) {
+         console.warn("Not enough shares released for decryption (checked after fetching API data).");
+         error.value = "Cannot decrypt results: Not enough secret shares have been released.";
+         submissionFailed.value = true; // Mark as failed
+         loading.value = false;
+         return;
+    }
 
     const currentDecryptedCounts = {};
     let currentTotalVotes = 0;
     let decryptionErrors = 0;
 
-    for (const voteIndexStr in shares) {
-        const voteIndex = parseInt(voteIndexStr, 10);
-        if (isNaN(voteIndex)) continue; // Skip if key is not a valid index
+    // Iterate through the votes that have been submitted (from votesInfo)
+    for (const voteMetadata of votesInfo) {
+        const voteIndex = voteMetadata.vote_id;
 
-        const voteMetadata = votesInfo.find(v => v.vote_id === voteIndex);
-        if (!voteMetadata) {
-            console.warn(`Missing vote metadata for index ${voteIndex}, skipping decryption.`);
-            decryptionErrors++; // Count missing metadata as an error for this vote index
+        // Find the corresponding shares for this vote index from the sharesData
+        const shareInfoForVote = sharesData.find(s => s.vote_index === voteIndex);
+
+        if (!shareInfoForVote || !shareInfoForVote.submitted_shares || shareInfoForVote.submitted_shares.length < voteMetadata.threshold) {
+            console.warn(`Insufficient shares found for vote index ${voteIndex} (Need ${voteMetadata.threshold}, Got ${shareInfoForVote?.submitted_shares?.length || 0}). Skipping.`);
+            decryptionErrors++;
+            continue; // Skip to the next voteMetadata
+        }
+
+        // --- REVISED SHARE SELECTION LOGIC ---
+        const threshold = voteMetadata.threshold;
+        const alphas = voteMetadata.alphas || []; // Ensure alphas is an array
+        const allSubmittedShares = shareInfoForVote.submitted_shares;
+
+        // 1. Determine indices needing alphas
+        const alphaIndicesNeeded = new Set();
+        for (let i = 0; i < alphas.length; i++) {
+            alphaIndicesNeeded.add(threshold + 1 + i);
+        }
+
+        // 2. Filter submitted shares into eligible groups
+        const thresholdShares = allSubmittedShares.filter(s => s.share_index <= threshold);
+        const alphaShares = allSubmittedShares.filter(s => alphaIndicesNeeded.has(s.share_index));
+        
+        // 3. Check if enough *eligible* shares were submitted
+        if (thresholdShares.length + alphaShares.length < threshold) {
+            console.warn(`Insufficient *eligible* shares for vote index ${voteIndex}. Need ${threshold}, Eligible Threshold Shares: ${thresholdShares.length}, Eligible Alpha Shares: ${alphaShares.length}. Skipping.`);
+            decryptionErrors++;
             continue;
         }
 
-        const currentShares = shares[voteIndexStr];
-        const currentIndexes = indexes[voteIndexStr];
-        
-
-        // --- Remove Debugging Logs ---
-        // console.log(`--- Processing Vote Index: ${voteIndex} ---`);
-        // console.log("Raw API Indexes for this vote:", indexes[voteIndexStr]);
-        // console.log("Raw API Shares for this vote:", shares[voteIndexStr]);
-        // console.log("Extracted Current Indexes:", currentIndexes);
-        // console.log("Extracted Current Shares:", currentShares);
-        // console.log("Vote Metadata (Threshold, Alphas etc.):", voteMetadata);
-        // -------------------------
-
-        if (!currentShares || !currentIndexes || currentShares.length < voteMetadata.threshold) {
-             console.warn(`Insufficient shares/indexes provided for vote index ${voteIndex}, skipping.`);
-             decryptionErrors++; // Count insufficient data as an error
-             continue;
+        // 4. Construct the final list of shares to use for reconstruction
+        let sharesToUse = [];
+        sharesToUse = sharesToUse.concat(thresholdShares);
+        // Add needed alpha shares until threshold is met
+        let alphaSharesToAdd = threshold - sharesToUse.length;
+        if (alphaSharesToAdd > 0) {
+            sharesToUse = sharesToUse.concat(alphaShares.slice(0, alphaSharesToAdd));
         }
+        // Ensure we didn't exceed threshold (e.g., if thresholdShares > threshold initially)
+        if (sharesToUse.length > threshold) {
+             sharesToUse = sharesToUse.slice(0, threshold);
+        }
+        // ----------------------------------------
 
-        const shareBigInts = currentShares.map(share => {
+        // --- Ensure exactly threshold shares were selected --- 
+        if (sharesToUse.length !== threshold) {
+            console.error(`Logic error: Failed to select exactly ${threshold} shares for vote index ${voteIndex}. Selected: ${sharesToUse.length}. Skipping.`);
+            decryptionErrors++;
+            continue;
+        }
+        // --------------------------------------------------
+
+        // Extract indexes and shares IN ORDER from the *correctly selected* subset
+        const currentIndexes = sharesToUse.map(s => s.share_index); 
+        const currentSharesHex = sharesToUse.map(s => 
+             s.share_value.startsWith('0x') ? s.share_value : `0x${s.share_value}` // Ensure 0x prefix
+        );
+        const shareBigInts = currentSharesHex.map(share => {
              try {
-                // Handle potential '0x' prefix
-                return BigInt(share.startsWith('0x') ? share : '0x' + share);
+                return BigInt(share);
             } catch(e) {
                 console.error(`Failed to convert share '${share}' to BigInt for index ${voteIndex}:`, e);
-                // Throw error or handle? For now, throw to make it clear
                 throw new Error(`Invalid share format '${share}' for BigInt conversion.`);
             }
         });
 
+        // --- Double check we have enough shares AFTER slicing (Redundant after above check, but safe) ---
+        if (currentIndexes.length < threshold || shareBigInts.length < threshold) {
+            console.warn(`Logic error: Not enough shares selected for vote index ${voteIndex} after final selection. Need ${threshold}, Got ${currentIndexes.length}. Skipping.`);
+            decryptionErrors++;
+            continue;
+        }
+        // ------------------------------------------------------
+
         try {
-             if (!currentIndexes || !shareBigInts || !voteMetadata.alphas || voteMetadata.threshold === undefined) {
+             if (!currentIndexes || !shareBigInts || !alphas || threshold === undefined) { // Use the potentially empty 'alphas' from top
                 console.error("Missing critical data for recomputeKey:",
-                    { currentIndexes, shareBigIntsExists: !!shareBigInts, alphasExist: !!voteMetadata.alphas, threshold: voteMetadata.threshold }
+                    { currentIndexes, shareBigIntsExists: !!shareBigInts, alphasExist: !!alphas, threshold: threshold }
                 );
                 throw new Error(`Cannot recompute key for vote index ${voteIndex} due to missing data.`);
             }
 
-            const key = await recomputeKey(currentIndexes, shareBigInts, voteMetadata.alphas, voteMetadata.threshold);
-            const decryptedResult = await AESDecrypt(voteMetadata.ciphertext, key);
+            // Call recomputeKey with correctly extracted data
+            const aesCryptoKey = await recomputeKey(currentIndexes, shareBigInts, alphas, threshold);
+            
+            // Decrypt the vote ciphertext
+            // Ensure ciphertext has 0x prefix if not already present (API should return it, but double-check)
+            const ciphertextHex = voteMetadata.ciphertext.startsWith('0x') ? voteMetadata.ciphertext : `0x${voteMetadata.ciphertext}`;
+            const decryptedVoteString = await AESDecrypt(ciphertextHex, aesCryptoKey);
+            
+            // Parse the decrypted vote string (assuming it's JSON like { vote: "Option A" })
+            const decryptedVoteData = JSON.parse(decryptedVoteString); 
+            const chosenOption = decryptedVoteData.vote; // Extract the actual vote choice
 
-            currentDecryptedCounts[decryptedResult] = (currentDecryptedCounts[decryptedResult] || 0) + 1;
-            currentTotalVotes++;
+            // Tally the result
+            if (chosenOption) {
+                 currentDecryptedCounts[chosenOption] = (currentDecryptedCounts[chosenOption] || 0) + 1;
+                 currentTotalVotes++;
+            } else {
+                 console.warn(`Decrypted vote for index ${voteIndex} did not contain a 'vote' property.`);
+                 decryptionErrors++; // Count as error if format is wrong
+            }
+
         } catch (decErr) {
             console.error(`Failed to decrypt vote at index ${voteIndex}:`, decErr);
             decryptionErrors++;
@@ -599,34 +685,36 @@ const decryptSubmittedVotes = async () => {
     tallyResults.value = currentDecryptedCounts;
     totalVotes.value = currentTotalVotes;
 
-    if (currentTotalVotes > 0 && decryptionErrors === 0) {
-         // Only consider fully successful if all votes decrypted (or attempted) without error
+    if (currentTotalVotes > 0 || (votesInfo.length === 0 && decryptionErrors === 0)) {
+         // Consider success if at least one vote decrypted OR if there were no votes and no errors
          isDecrypted.value = true;
-         console.log("Decryption successful.");
-         error.value = null; // Clear any previous error messages if now successful
-     } else if (decryptionErrors > 0) {
-         // Handle partial or total failure
-         const totalVoteSets = Object.keys(shares).length;
-         error.value = `Could not decrypt ${decryptionErrors} out of ${totalVoteSets} vote set(s). Results shown may be incomplete.`;
-         console.warn(error.value);
-         isDecrypted.value = false; // Explicitly set to false on error
-         // If any decryption failed, consider the overall submission failed if we reached this point after deadline
-         if (submissionDeadlinePassed.value) {
-            submissionFailed.value = true;
+         console.log("Decryption process finished.");
+         if (decryptionErrors > 0) {
+             error.value = `Could not decrypt ${decryptionErrors} out of ${votesInfo.length} vote(s). Results shown may be incomplete.`;
+             console.warn(error.value);
+         } else {
+             error.value = null; // Clear error if all succeeded
          }
-     } else if (currentTotalVotes === 0 && decryptionErrors === 0) {
-         // No votes cast, but no errors?
-         console.log("Decryption process completed, but no votes were found/decrypted.");
-         isDecrypted.value = true; // Consider it "decrypted" in the sense that the process finished.
-         error.value = null;
+     } else if (decryptionErrors > 0) {
+         // Handle total failure (no votes decrypted, but there were errors)
+         error.value = `Could not decrypt any of the ${votesInfo.length} vote(s).`;
+         console.error(error.value);
+         isDecrypted.value = false; 
+         submissionFailed.value = true; // Mark overall as failed if errors occurred after deadline
+     } else { 
+         // Should not happen if votesInfo.length > 0, but handle defensively
+         console.log("Decryption process completed, but no votes were successfully decrypted.");
+         isDecrypted.value = false; 
+         submissionFailed.value = true;
      }
 
-
   } catch (fetchError) {
-    console.error("Failed to fetch data for vote decryption:", fetchError);
+    console.error("Failed to fetch data or run decryption:", fetchError);
     error.value = "Failed to load data required to show results.";
     isDecrypted.value = false;
     submissionFailed.value = true; // Mark failed on fetch error too
+  } finally {
+      loading.value = false; // Ensure loading indicator stops
   }
 };
 

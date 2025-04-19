@@ -172,7 +172,8 @@
       }
 
       // --- CORRECTED localStorage key ---
-      const publicKeyStorageKey = `vote_session_${props.voteId}_user_${userAddress}_blsPublicKey`; 
+      const lowerCaseAddress = userAddress.toLowerCase();
+      const publicKeyStorageKey = `vote_session_${props.voteId}_user_${lowerCaseAddress}_blsPublicKey`; 
       const publicKeyHexRaw = localStorage.getItem(publicKeyStorageKey);
 
       if (!publicKeyHexRaw) {
@@ -296,17 +297,17 @@
 
       // Encrypt the vote using the imported CryptoKey
       const voteString = JSON.stringify({ vote: optionToEncrypt });
-      const { iv, ciphertext } = await AESEncrypt(voteString, aesCryptoKey); 
+      const combinedCiphertextHex = await AESEncrypt(voteString, aesCryptoKey);
 
       // Prepare the payload FOR THE BACKEND API
       const payload = {
-          voter: ethersService.getAccount(), 
-          holderAddresses: holderEthAddressesArray, 
-          g1r: g1r, 
+          voter: ethersService.getAccount(),
+          holderAddresses: holderEthAddressesArray,
+          g1r: g1r,
           g2r: g2r,
-          ciphertext: ciphertext,      
+          ciphertext: combinedCiphertextHex,
           alphas: alphas_array, // Send the array of alpha strings
-          threshold: threshold        
+          threshold: threshold
       };
 
       // Submit the encrypted vote via API

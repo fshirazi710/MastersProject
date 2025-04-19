@@ -71,15 +71,17 @@ async def get_encrypted_vote_info(vote_session_id: int, blockchain_service: Bloc
         all_votes_data = []
         votes_from_chain = await blockchain_service.call_contract_function("getEncryptedVotes", vote_session_id)
         for index, vote_tuple in enumerate(votes_from_chain):
+            # Convert bytes fields to hex strings for JSON serialization
+            alphas_hex = [a.hex() for a in vote_tuple[4]] if vote_tuple[4] else [] # Handle potential empty list
             all_votes_data.append({
                 "id": vote_session_id,
                 "vote_id": index,
-                "ciphertext": vote_tuple[1],
-                "g1r": vote_tuple[2],
-                "g2r": vote_tuple[3],
-                "alphas": vote_tuple[4],
-                "voter": vote_tuple[5],
-                "threshold": vote_tuple[6]
+                "ciphertext": vote_tuple[1].hex() if vote_tuple[1] else None,
+                "g1r": vote_tuple[2].hex() if vote_tuple[2] else None,
+                "g2r": vote_tuple[3].hex() if vote_tuple[3] else None,
+                "alphas": alphas_hex, # Now a list of hex strings
+                "voter": vote_tuple[5], # Already a string (address)
+                "threshold": vote_tuple[6] # Already an int
             })
         return StandardResponse(
             success=True,
@@ -139,27 +141,29 @@ async def submit_encrypted_vote(vote_session_id: int, request: dict, blockchain_
                 hex_value = value[2:] if value.startswith('0x') else value
                 contract_args[field] = unhexlify(hex_value)
             elif field == "alphas":
-                # Ensure it's a list of strings, convert each DECIMAL string to bytes (via int)
+                # --- CORRECTED: Expect HEX strings, convert via base 16 ---
                 if not isinstance(value, list):
                     raise ValueError("Field 'alphas' must be a list of strings.")
-                alphas_bytes_list = [] # Changed variable name
+                alphas_bytes_list = [] 
                 for alpha_str in value:
                     if not isinstance(alpha_str, str):
                          raise ValueError(f"Invalid item type in 'alphas' list (string expected). Item: {alpha_str}")
-                    # Convert the decimal string to integer, then to bytes
+                    # Convert the HEX string to integer, then to bytes
                     try:
-                        alpha_int = int(alpha_str) 
+                        # Use base=16 for hex conversion
+                        alpha_int = int(alpha_str, 16) 
                         # Convert integer to 32 bytes (big-endian), adjust length if needed
                         byte_length = 32 
                         alpha_bytes = alpha_int.to_bytes(byte_length, byteorder='big', signed=False)
                         alphas_bytes_list.append(alpha_bytes) # Append bytes
                     except ValueError as inner_e:
-                        logger.error(f"Failed to convert alpha string '{alpha_str}' to integer: {inner_e}")
-                        raise ValueError(f"Invalid integer format in 'alphas' list for item: {alpha_str}")
+                        logger.error(f"Failed to convert alpha hex string '{alpha_str}' to integer: {inner_e}")
+                        raise ValueError(f"Invalid hex integer format in 'alphas' list for item: {alpha_str}")
                     except OverflowError as oe:
-                        logger.error(f"Alpha value '{alpha_str}' is too large to fit into {byte_length} bytes: {oe}")
+                        logger.error(f"Alpha value '{alpha_str}' (from hex) is too large to fit into {byte_length} bytes: {oe}")
                         raise ValueError(f"Alpha value is too large: {alpha_str}")
                 contract_args[field] = alphas_bytes_list # Now a list[bytes]
+                # ----------------------------------------------------------
             elif field == "threshold":
                 contract_args[field] = int(value) 
             else:
