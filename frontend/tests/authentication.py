@@ -47,19 +47,27 @@ def make_driver(make_headless=False):
 
 
 
-def obtain_element(driver, locator_tuple, timeout=10):
+def obtain_element(driver, locator_tuple, timeout = 10):
     # Note that you must check for the presence of an element **before** checking for their visibility
     # Otherwise you will get an "unable to locate element"
 
     # Check for the element
     by, value = locator_tuple
-    WebDriverWait(driver, timeout).until(presence_of_element_located(locator_tuple))
-    WebDriverWait(driver, timeout).until(visibility_of_element_located(locator_tuple))
+
+    try:
+        WebDriverWait(driver, timeout).until(presence_of_element_located(locator_tuple))
+        WebDriverWait(driver, timeout).until(visibility_of_element_located(locator_tuple))
+    except TimeoutException:
+        print(f"Timeout: Couldn't find element {locator_tuple}")
+        raise ValueError(f"Timeout: Couldn't find element {locator_tuple}")
+    
     element = driver.find_element(by, value)
     return element
 
     
 def register_and_login(driver):
+    print("Entered register_and_login function")
+
     try:
         registration_url = "http://localhost:3000/register"
         timeout = 40
@@ -73,18 +81,17 @@ def register_and_login(driver):
         password = f"{full_name}_password"
 
         # Enter the full name.
-        driver.find_element(By.ID, "name").send_keys(full_name)
+        obtain_element(driver, (By.ID, "name"), timeout).send_keys(full_name)
 
         # Enter the email.
-        driver.find_element(By.ID, "email").send_keys(email)
+        obtain_element(driver, (By.ID, "email"), timeout).send_keys(email)
 
         # Enter the password.
-        driver.find_element(By.ID, "password").send_keys(password)
-        driver.find_element(By.ID, "confirmPassword").send_keys(password)
+        obtain_element(driver, (By.ID, "password"), timeout).send_keys(password)
+        obtain_element(driver, (By.ID, "confirmPassword"), timeout).send_keys(password)
 
         # Wait until the Register button is visible. Once it's visible, store it then click it.
-        register_button = obtain_element(driver, (By.XPATH, "//button[text()='Register']"), timeout)
-        register_button.click()
+        obtain_element(driver, (By.XPATH, "//button[text()='Register']"), timeout).click()
 
         # Wait until alert is visible then accept it.
         WebDriverWait(driver, 5).until(EC.alert_is_present())
@@ -96,19 +103,19 @@ def register_and_login(driver):
         obtain_element(driver, (By.XPATH, "//h1[text()='Login']"), timeout)
 
         # Check for presence of email entry box, then fill in entry fields.
-        LoginEmailElement = obtain_element(driver, (By.ID, "email"), timeout)
-        LoginEmailElement.send_keys(email)
-        driver.find_element(By.ID, "password").send_keys(password)
+        obtain_element(driver, (By.ID, "email"), timeout).send_keys(email)
+        obtain_element(driver, (By.ID, "password"), timeout).send_keys(password)
 
         # Check for presence of login button then click it
-        login_button = obtain_element(driver, (By.XPATH, "//button[text()='Login']"), timeout )
-        login_button.click()
+        obtain_element(driver, (By.XPATH, "//button[text()='Login']"), timeout ).click()
 
         # Check we've been pushed to the landing page by checking if the header text loaded
         obtain_element(driver, (By.XPATH, "//h1[text()='Timed Release Crypto System']"), timeout)
 
         landing_url = "http://localhost:3000/"
         current_url = driver.current_url  
+
+        print("About to leave register_and_login function")
 
         if current_url == landing_url:
             return "success"
@@ -129,6 +136,10 @@ def register_and_login(driver):
 
     except NoAlertPresentException as e:
         print("NoAlertPresentException:\n%s" %(e))
+        return "fail"
+    
+    except Exception as e:
+        print("Exception:\n%s" %(e))
         return "fail"
 
 
