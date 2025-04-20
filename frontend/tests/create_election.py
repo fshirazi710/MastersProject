@@ -18,6 +18,7 @@ from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
 from selenium.common.exceptions import StaleElementReferenceException,NoSuchElementException, ElementNotInteractableException, NoAlertPresentException
 from selenium.webdriver.support.expected_conditions import invisibility_of_element_located
 from selenium.common.exceptions import TimeoutException
+from urllib.parse import urlparse
 
 def close_extra_tabs(driver):
     
@@ -67,11 +68,9 @@ def create_metamask_wallet(driver):
     for input_element in input_elements:
         parent_div = input_element.find_element(By.XPATH, '..').find_element(By.XPATH, '..')
         number_div = parent_div.find_element(By.CLASS_NAME, "recovery-phrase__chip-item__number")
-
-        print(f"label of current div: {number_div.text[0]}")
         index = int(number_div.text[0]) - 1
-        print(f"index of current recovery chip is '{index}'")
-        print(f"From the array, that is element '{security_phrase[index]}'")
+        # print(f"index of current recovery chip is '{index}'")
+        # print(f"From the array, that is element '{security_phrase[index]}'")
         input_element.send_keys(security_phrase[index])
 
     confirm_button = WebDriverWait(driver, 10 * 1000).until(
@@ -185,7 +184,7 @@ def create_election(driver, title, description, start_time, end_time):
     driver.get(homepage_url)
 
     # Get current number of windows
-    existing_windows = set(driver0.window_handles)
+    existing_windows = set(driver.window_handles)
 
     # Navigate to create election page from homepage
     create_vote_btn = driver.find_element(By.LINK_TEXT, "Create Vote Session")  # or By.ID, etc.
@@ -243,41 +242,6 @@ def register_to_vote(d, registration_url):
     timeout = 20
     d.get(registration_url)
 
-    # Since all drivers are using the same metamask account, you'll get a popup asking to connect if it's not the first driver.
-    # Get current number of windows
-    existing_windows = set(driver0.window_handles)
-
-    # Check if the connection popup shows up.
-
-    try:
-        WebDriverWait(d, timeout).until(lambda d: len(d.window_handles) > len(existing_windows))
-
-        # Get handle of new window
-        new_windows = set(d.window_handles) - existing_windows
-        metamask_popup_handle = new_windows.pop()
-
-        # Switch to metamask popup window
-        d.switch_to.window(metamask_popup_handle)
-
-        # Click the connect button
-        obtain_element(d, (By.XPATH, "//button[text()='Connect']"), timeout * 100).click()
-
-        # List all tab handles
-        handles = d.window_handles
-
-        # Switch back to current window
-        d.switch_to.window(handles[1])
-
-        d.get(registration_url)
-
-        # Make sure the voting page has showed up by checking for the timeline text
-        obtain_element(d, (By.XPATH, "//h3[text()='Timeline']"), timeout * 100)
-
-    except TimeoutException:
-        # If you're in here it's because you're the main window
-        print("In the main window, no need to reconnect.")
-
-
     # Create a random vote session key password.
     current_time = datetime.now()
     vote_session_key_password = f"My_vote_session_key_password_{current_time.strftime('%m/%d/%Y_%H%M')}"
@@ -288,7 +252,7 @@ def register_to_vote(d, registration_url):
     obtain_element(d, (By.XPATH, "//button[contains(text(), 'Join as Holder & Deposit')  ]  "), timeout*100).click()
 
     # Get current number of windows
-    existing_windows = set(driver0.window_handles)
+    existing_windows = set(d.window_handles)
 
     # Wait till the MetaMask popup appears
     WebDriverWait(d, timeout).until(lambda d: len(d.window_handles) > len(existing_windows))
@@ -359,7 +323,115 @@ def setup_hardhat_driver(network, acc, firefox_profile_path, headless=False):
     return driver
 
 
+def connect_to_metamask_on_website(d, href):
+
+    # Get current number of windows
+    existing_windows = set(d.window_handles)
+
+    # Go to the website homepage
+    d.get(href)
+
+    # Wait till the popup appears
+    WebDriverWait(d, 60).until(lambda d: len(d.window_handles) > len(existing_windows))
+    
+    # Get handle of new window
+    new_windows = set(d.window_handles) - existing_windows
+    metamask_popup_handle = new_windows.pop()
+
+    # Switch to metamask popup window
+    d.switch_to.window(metamask_popup_handle)
+
+    # Click the connect button
+    WebDriverWait(d, 60).until(
+    EC.presence_of_element_located((By.XPATH, "//button[text()='Connect']")))
+    d.find_element(By.XPATH, "//button[text()='Connect']").click()
+
+    # List all tab handles
+    handles = d.window_handles
+
+    # Switch back to main tab
+    d.switch_to.window(existing_windows.pop())
+
+
+def click_election_href_from_all_votes(driver, description):
+    driver.get("http://localhost:3000/all-vote-sessions")
+    print(f"Looking for election description: '{description}'")
+
+    timeout = 60
+
+    # Get the element containing the election description, then the parent div vote card
+    # all-votes can take a while to load, give a generous timeout. Wait till a single section shows up.
+    WebDriverWait(driver, timeout*66).until(EC.presence_of_element_located((By.TAG_NAME, "section")))
+
+    # Get all sections, join vote sessions, active vote sessions and ended vote sessions.
+    sections = driver.find_elements(By.TAG_NAME, "section")
+
+    # Get the join vote section
+    for section in sections:
+        section_header = section.find_element(By.TAG_NAME, "h2")
+        if "Join Vote Sessions" in section_header.text:
+            joining_section = section
+    
+    # Get the section div
+    section_div = joining_section.find_element(By.TAG_NAME, "div")
+
+    # Get all voting session divs in the section.
+    voting_session_divs = section_div.find_elements(By.CLASS_NAME, "vote-card")
+
+    for div in voting_session_divs:
+        session_description = div.find_element(By.TAG_NAME, "p")
+        print(f"Session description text from html is:\n'{session_description.text}'")
+
+        if description in session_description.text:
+            session_href_a = div.find_element(By.TAG_NAME, "a")
+            election_page_href = session_href_a.get_attribute('href')
+
+            parsed_href = urlparse(election_page_href).path
+            xpath = f"//a[contains(@href, '{parsed_href}')]"
+
+            # Wait till the link is present and visible
+            obtain_element(driver, (By.XPATH, xpath ), timeout)
+            
+            # Wait till the link is clickable
+            WebDriverWait(driver, timeout).until
+            (EC.element_to_be_clickable((By.XPATH, xpath)))
+
+            # Obtain the link element
+            link = obtain_element(driver, (By.XPATH, xpath ), timeout)
+            
+            print(f"Found the election href: '{link.get_attribute('href')}'")
+            print(f"Found the election relative href: '{parsed_href}'")
+
+            # Click the first time. The error page always shows up on viewing on the page.
+            link.click()
+
+
+            # try:
+            #     # Check the page loaded by checking for the error message on the first time you view the page.
+            #     obtain_element(driver, (By.XPATH, "//h2[contains(text(), 'Error Loading Vote')]"), timeout)
+            #     print("On error page")
+            # except Exception:
+            #     print("not on error page")
+
+            # while True:
+            #     print("Refreshing the page ...")
+            #     # Reload the page again. The second tie you view the page it should work.
+            #     driver.refresh()
+            #     try:
+            #         # Check the page loaded by checking for the timeline div header. 
+            #         obtain_element(driver, (By.XPATH, "//h3[contains(text(), 'Timeline')]"), timeout)
+            #         print("On correct page")
+            #         break
+            #     except Exception:
+            #         print("Not on correct page")
+
+            return election_page_href
+    
+        else:
+            print("Not in the right session box, try the next one")
+
 if __name__ == '__main__':
+
     
     timeout = 20
 
@@ -390,73 +462,28 @@ if __name__ == '__main__':
     # driver1 = setup_hardhat_driver(hardhat_network, hardhat_acc1, "test_profiles/testprofile_1", headless=False)
     # driver2 = setup_hardhat_driver(hardhat_network, hardhat_acc2, "test_profiles/testprofile_2", headless=False)
     
-    # # Register and login to website
+    # Register, login to website and create election using main driver
+    register_and_login(driver0)
 
-    # Open a new tab
-    # driver.switch_to.new_window('tab')
+    current_time = datetime.now()
+    start_time = (current_time + timedelta(minutes = 10))
+    end_time = (current_time + timedelta(minutes = 20))
+    title = f"My_Test_Election_{start_time.strftime('%m_%d_%Y_%H%M')}"
+    description = f"My_Test_Election_Description_{start_time.strftime('%m_%d_%Y_%H%M')}"
+    create_election(driver0, title, description, start_time.strftime('%m_%d_%Y_%H%M'), end_time.strftime('%m_%d_%Y_%H%M'))
 
-    # # List all tab handles
-    # handles = driver.window_handles
+    # Find our election's link from all-vote-sessions and click the button to go to the election
+    curr_election_href = click_election_href_from_all_votes(driver0, description)
 
-    # # Switch to new tab
-    # driver.switch_to.window(handles[1])
+    # connect_to_metamask_on_website(driver1, curr_election_href)
+    # connect_to_metamask_on_website(driver2, curr_election_href)
 
-    # authentication_success = register_and_login(driver0)
-    # if not(authentication_success == "success"):
-    #     print("Failed to login")
-    #     quit()
+    # click_election_href_from_all_votes(driver1, description)
+    # click_election_href_from_all_votes(driver2, description)
 
-    # current_time = datetime.now()
-    # start_time = (current_time + timedelta(minutes = 7))
-    # end_time = (current_time + timedelta(minutes = 12))
-    # title = f"My_Test_Election_{start_time.strftime('%m_%d_%Y_%H%M')}"
-    # description = f"My_Test_Election_Description_{start_time.strftime('%m_%d_%Y_%H%M')}"
-
-    # create_election(driver0, title, description, start_time.strftime('%m_%d_%Y_%H%M'), end_time.strftime('%m_%d_%Y_%H%M'))
-
-    # # now that the election is created, we should try registering a few secret holders
-    # # then double checking the functionality works as it should. 
-    # driver0.get("http://localhost:3000/all-vote-sessions")
-    
-    # time.sleep(5)
-    # print(f"Looking for description: '{description}'")
-
-    # # Get the element containing the election description, then the parent div vote card
-    # # all-votes can take a while to load, give a generous timeout. Wait till a single section shows up.
-    # WebDriverWait(driver0, timeout*66).until(EC.presence_of_element_located((By.TAG_NAME, "section")))
-
-    # # Get all sections, join vote sessions, active vote sessions and ended vote sessions.
-    # sections = driver0.find_elements(By.TAG_NAME, "section")
-
-    # # Get the join vote section
-    # for section in sections:
-    #     section_header = section.find_element(By.TAG_NAME, "h2")
-    #     print(section_header.text)
-
-    #     if "Join Vote Sessions" in section_header.text:
-    #         joining_section = section
-    
-    # # Get the div inside the section
-    # section_div = joining_section.find_element(By.TAG_NAME, "div")
-
-    # # Get all voting session divs in the section.
-    # voting_session_divs = section_div.find_elements(By.CLASS_NAME, "vote-card")
-
-    # for div in voting_session_divs:
-    #     session_description = div.find_element(By.TAG_NAME, "p")
-    #     print(f"Session description text from html is:\n'{session_description.text}'")
-
-    #     if description in session_description.text:
-    #         session_href_a = div.find_element(By.TAG_NAME, "a")
-    #         election_page_href = session_href_a.get_attribute('href')
-    #         print(election_page_href)
-    #     else:
-    #         print("Not in the right session box, try the next one")
-
-    # # Have all users register to vote as secret holders.
-    # vote_session_key_password_0 = register_to_vote(driver0, election_page_href)
-    # vote_session_key_password_1 = register_to_vote(driver1, election_page_href)
-    # vote_session_key_password_2 = register_to_vote(driver2, election_page_href)
+    vote_session_key_password_0 = register_to_vote(driver0, curr_election_href)
+    # vote_session_key_password_1 = register_to_vote(driver1, curr_election_href)
+    # vote_session_key_password_2 = register_to_vote(driver2, curr_election_href)
     
 #     # Wait until the election starts
 #     while datetime.now() < start_time:

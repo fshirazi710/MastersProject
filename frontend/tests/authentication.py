@@ -66,13 +66,21 @@ def obtain_element(driver, locator_tuple, timeout = 10):
 
     
 def register_and_login(driver):
-    print("Entered register_and_login function")
+    # Open a new tab
+    driver.switch_to.new_window('tab')
 
+    # List all tab handles
+    handles = driver.window_handles
+
+    # Switch to new tab
+    driver.switch_to.window(handles[1])
+
+    print("Entered register_and_login function")
+    timeout = 40
     try:
-        registration_url = "http://localhost:3000/register"
-        timeout = 40
+        
         # Go to the registration page
-        driver.get(registration_url)
+        driver.get("http://localhost:3000/register")
 
         # Using the time to make sure the input data is unique every time.
         suffix = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
@@ -118,9 +126,11 @@ def register_and_login(driver):
         print("About to leave register_and_login function")
 
         if current_url == landing_url:
-            return "success"
+            print("AUTHENTICATION SUCCESS")
+            return "AUTHENTICATION SUCCESS"
         else:
-            return "fail"
+            print("AUTHENTICATION FAIL")
+            return "AUTHENTICATION FAIL"
 
     except NoSuchElementException as e:
         print("NoSuchElementException:\n%s" %(e))
