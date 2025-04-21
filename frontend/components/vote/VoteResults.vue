@@ -383,23 +383,56 @@ const checkStatusAndDecryptVotes = async () => {
     votingEnded.value = now > endDateTime;
     submissionDeadlinePassed.value = now > deadlineTime;
 
+    // --- Revised Logic for Decryption Trigger ---
+    const enoughKeys = props.releasedKeys >= props.requiredKeys;
+
+    if (votingEnded.value && enoughKeys && !isDecrypted.value && !submissionFailed.value) {
+        // Voting ended and threshold met: Attempt decryption NOW, even if deadline hasn't passed.
+        console.log("Voting ended and threshold met. Attempting decryption...");
+        await decryptSubmittedVotes();
+        // If decryption succeeds (isDecrypted becomes true), the interval will be cleared below.
+        // If it fails cryptographically here, error handling within decryptSubmittedVotes applies.
+    }
+    // --- End Revised Logic ---
+    
+    // --- Logic for Final Submission Failure (Only check AFTER deadline) ---
     if (submissionDeadlinePassed.value) {
-      if (props.releasedKeys < props.requiredKeys && !isDecrypted.value) { // Check !isDecrypted to avoid marking failed if somehow decrypted earlier
+      if (!enoughKeys && !isDecrypted.value) { // Check if deadline passed WITHOUT enough keys
         submissionFailed.value = true;
         console.warn("Submission deadline passed with insufficient keys.");
-        if (statusCheckInterval) clearInterval(statusCheckInterval); // Stop checking if failed
+        // Interval will be cleared below because submissionFailed is true.
+      } 
+      // If deadline passed and we already decrypted or already failed, interval will also be cleared.
+    }
+    // --- End Failure Logic ---
+
+    // --- Clear Interval Logic ---
+    // Stop checking interval if decryption succeeded OR if submission deadline passed and failed.
+    if (isDecrypted.value || submissionFailed.value) {
+        if (statusCheckInterval) {
+            console.log("Clearing status check interval (decrypted or failed).");
+            clearInterval(statusCheckInterval);
+            statusCheckInterval = null; // Good practice to nullify
+        }
+    }
+    // --- End Clear Interval Logic ---
+
+    /* --- OLD Logic Block (for reference) ---
+    if (submissionDeadlinePassed.value) {
+      if (props.releasedKeys < props.requiredKeys && !isDecrypted.value) { 
+        submissionFailed.value = true;
+        console.warn("Submission deadline passed with insufficient keys.");
+        if (statusCheckInterval) clearInterval(statusCheckInterval); 
       } else if (props.releasedKeys >= props.requiredKeys && !isDecrypted.value && !submissionFailed.value) {
-         // Deadline passed, enough keys, and not yet decrypted or failed
          console.log("Submission deadline passed with enough keys. Attempting decryption...");
-         await decryptSubmittedVotes(); // Attempt decryption
-         // Stop checking interval regardless of decryption outcome (it either worked or failed definitively)
+         await decryptSubmittedVotes(); 
          if (statusCheckInterval) clearInterval(statusCheckInterval);
       } else {
-         // Conditions met earlier or already decrypted/failed, clear interval
           if (statusCheckInterval) clearInterval(statusCheckInterval);
       }
-    }
-    // If deadline hasn't passed yet, the interval will continue checking
+    } 
+    */
+
   } else {
     // No end date, treat as not ended.
     votingEnded.value = false;
@@ -658,9 +691,7 @@ const decryptSubmittedVotes = async () => {
             const aesCryptoKey = await recomputeKey(currentIndexes, shareBigInts, alphas, threshold);
             
             // Decrypt the vote ciphertext
-            // Ensure ciphertext has 0x prefix if not already present (API should return it, but double-check)
-            const ciphertextHex = voteMetadata.ciphertext.startsWith('0x') ? voteMetadata.ciphertext : `0x${voteMetadata.ciphertext}`;
-            const decryptedVoteString = await AESDecrypt(ciphertextHex, aesCryptoKey);
+            const decryptedVoteString = await AESDecrypt(voteMetadata.ciphertext, aesCryptoKey);
             
             // Parse the decrypted vote string (assuming it's JSON like { vote: "Option A" })
             const decryptedVoteData = JSON.parse(decryptedVoteString); 

@@ -89,7 +89,21 @@ export async function AESEncrypt(text, key) {
     try {
         const iv = randomBytes(12); // Use our randomBytes helper
         const encodedText = new TextEncoder().encode(text);
-        const ciphertextBuffer = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encodedText);
+
+        // --- ADD DETAILED LOG BEFORE ENCRYPT ---
+        console.log("AESEncrypt Inputs:");
+        console.log("  IV (Hex):", bytesToHex(iv));
+        console.log("  Key Algo:", key.algorithm);
+        console.log("  Key Type:", key.type);
+        console.log("  Key Usages:", key.usages);
+        console.log("  Encoded Text (Hex):", bytesToHex(encodedText));
+        // --------------------------------------
+
+        const ciphertextBuffer = await window.crypto.subtle.encrypt(
+            { name: "AES-GCM", iv, additionalData: new Uint8Array() }, 
+            key, 
+            encodedText
+        );
         // --- FIX: Return IV prepended to ciphertext as a single hex string ---
         const ivHex = bytesToHex(iv);
         const ciphertextHex = bytesToHex(new Uint8Array(ciphertextBuffer));
@@ -110,8 +124,21 @@ export async function AESDecrypt(encryptedHex, key) {
     const iv = hexToBytes(encryptedHex.slice(0, 24));
     const ciphertext = hexToBytes(encryptedHex.slice(24));
 
+    // --- ADD DETAILED LOG BEFORE DECRYPT ---
+    console.log("AESDecrypt Inputs:");
+    console.log("  IV (Hex):", bytesToHex(iv));
+    console.log("  Ciphertext (Hex):", bytesToHex(ciphertext)); 
+    console.log("  Key Algo:", key.algorithm);
+    console.log("  Key Type:", key.type);
+    console.log("  Key Usages:", key.usages);
+    // --------------------------------------
+
     try {
-        const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+        const decryptedBuffer = await window.crypto.subtle.decrypt(
+            { name: "AES-GCM", iv, additionalData: new Uint8Array() }, 
+            key, 
+            ciphertext
+        );
         return new TextDecoder().decode(decryptedBuffer);
     } catch (error) {
         console.error("Decryption failed:", error);

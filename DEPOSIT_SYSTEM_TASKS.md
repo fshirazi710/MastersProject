@@ -77,9 +77,16 @@ This feature involves implementing a secure deposit system for secret holders, m
     - [x] Retrieve BLS public key from localStorage instead of deriving from cookie/private key.
     - [x] Remove `js-cookie` dependency and related logic.
     - [x] Update `validateKeyPair` function.
-
-## In Progress Tasks
-
+- [x] **Store BLS Public Keys On-Chain for Verification:**
+    - [x] Modify Smart Contract (`TimedReleaseVoting.sol`):
+        - [x] Add `blsPublicKeyHex` field to `HolderInfo` struct.
+        - [x] Update `joinAsHolder` function to accept and store `blsPublicKeyHex`.
+        - [x] Implement `getHolderBlsKeys(voteSessionId)` view function.
+    - [x] Update Frontend Registration (`RegisterToVote.vue`):
+        - [x] Pass `blsPublicKeyHex` as an argument in the `joinAsHolder` transaction call.
+    - [x] Update Frontend Voting (`CastYourVote.vue`):
+        - [x] Replace `holderApi.getAllHolders` call with a call to `getHolderBlsKeys` via `ethersService`.
+        - [x] Use the returned BLS keys for threshold cryptography logic.
 - [x] Refactor Naming Scheme (Election->VoteSession, Vote->EncryptedVote, etc.) 
   - [x] Frontend UI Text (Create Vote Session, All Vote Sessions, Key Password Labels).
   - [x] Frontend Code (`api.js`: Rename electionApi->voteSessionApi, voteApi->encryptedVoteApi; update functions, endpoints, params, exports).
@@ -91,18 +98,11 @@ This feature involves implementing a secure deposit system for secret holders, m
   - [x] Backend Code (Routers, Services, Helpers - Requires manual changes).
   - [x] Database Models/Schemas (Requires manual changes).
 
+## In Progress Tasks
+
+
 ## Future Tasks
 
-- [ ] **Store BLS Public Keys On-Chain for Verification:**
-    - [ ] Modify Smart Contract (`TimedReleaseVoting.sol`):
-        - [ ] Add `blsPublicKeyHex` field to `HolderInfo` struct.
-        - [ ] Update `joinAsHolder` function to accept and store `blsPublicKeyHex`.
-        - [ ] Implement `getHolderBlsKeys(voteSessionId)` view function.
-    - [ ] Update Frontend Registration (`RegisterToVote.vue`):
-        - [ ] Pass `blsPublicKeyHex` as an argument in the `joinAsHolder` transaction call.
-    - [ ] Update Frontend Voting (`CastYourVote.vue`):
-        - [ ] Replace `holderApi.getAllHolders` call with a call to `getHolderBlsKeys` via `ethersService`.
-        - [ ] Use the returned BLS keys for threshold cryptography logic.
 - [ ] Review/update related backend functions (`verifyShares`, etc.) based on the new deposit/signing flow.
 - [ ] Investigate/Implement Pedersen commitment logic if required by the updated registration/verification process.
 - [ ] Define and implement transition plan (e.g., support only new VoteSessions).
