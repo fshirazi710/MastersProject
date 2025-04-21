@@ -16,9 +16,7 @@ from app.core.dependencies import get_blockchain_service
 from app.core.error_handling import handle_blockchain_error
 from app.schemas import (
     ShareListSubmitRequest,
-    StandardResponse,
-    ShareVerificationRequest,
-    ShareVerificationResponse
+    StandardResponse
 )
 from app.services.blockchain import BlockchainService
 
@@ -160,35 +158,6 @@ async def decryption_status(vote_session_id: int, blockchain_service: Blockchain
     # This endpoint currently doesn't return anything explicitly.
     # Consider returning a status based on retrieved data, e.g., using ShareStatusResponse?
     # return { "status": "Processed", "vote_shares_count": len(vote_shares) } # Example return
-
-
-@router.post("/verify", response_model=StandardResponse[ShareVerificationResponse])
-async def verify_share(
-    request: ShareVerificationRequest,
-    blockchain_service: BlockchainService = Depends(get_blockchain_service)
-):
-    """Verify a share submission."""
-    try:
-        # Convert share tuple to list
-        share_list = list(request.share)
-        is_valid = await blockchain_service.verify_share_submission(
-            vote_id=request.vote_id,
-            holder_address=request.holder_address,
-            share=share_list
-        )
-        
-        return StandardResponse(
-            success=True,
-            message="Share verification successful" if is_valid else "Share verification failed",
-            data=ShareVerificationResponse(
-                valid=is_valid,
-                holder_address=request.holder_address,
-                vote_id=request.vote_id
-            )
-        )
-    except Exception as e:
-        logger.error(f"Error verifying share: {str(e)}")
-        raise handle_blockchain_error("verify share", e)
 
 
 @router.get("/get-shares/{vote_session_id}")

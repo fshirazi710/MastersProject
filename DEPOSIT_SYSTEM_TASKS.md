@@ -103,10 +103,10 @@ This feature involves implementing a secure deposit system for secret holders, m
 
 ## Future Tasks
 
-- [ ] Review/update related backend functions (`verifyShares`, etc.) based on the new deposit/signing flow.
+- [x] Review/update related backend functions (`verifyShares`, etc.) based on the new deposit/signing flow.
 - [ ] Investigate/Implement Pedersen commitment logic if required by the updated registration/verification process.
-- [ ] Define and implement transition plan (e.g., support only new VoteSessions).
-- [ ] Remove obsolete code/DB collections (`public_keys`, old winner logic, `holder_helper.py`) after validation.
+- [x] Define and implement transition plan (e.g., support only new VoteSessions).
+- [x] Remove obsolete code/DB collections (`public_keys`, old winner logic, `holder_helper.py`) after validation.
 - [ ] Add comprehensive tests for the new on-chain deposit, reward, and signing logic.
 - [ ] Update documentation to reflect the new architecture.
 - [ ] Add UI elements to `VoteResults.vue` to display ETH reward pool status and distribution information for holders (Relates to Task 1 & 6).
