@@ -64,3 +64,5 @@ frontend/package-lock.json
 # ignore testing firefox profiles
 frontend/tests/test_profiles
 /crypto-core/build
+/crypto-core/artifacts
+/crypto-core/cache

@@ -20,7 +20,9 @@
     "web3-validator": "^2.0.6"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "chai": "^4.3.7",
+    "hardhat": "^2.23.0",
     "mocha": "^10.2.0"
   }
 }

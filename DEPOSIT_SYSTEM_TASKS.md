@@ -129,6 +129,33 @@ This feature involves implementing a secure deposit system for secret holders, m
         - [ ] Adjust session details endpoint (`/api/vote-sessions/session/{id}`) to potentially show separate voter/holder counts.
         - [ ] Potentially add a new endpoint for submitting non-holder votes if the encryption/payload differs significantly.
 
+## Smart Contract Refactoring (Size Limit Mitigation)
+
+Due to contract size limitations encountered during the implementation of Voter-Only Registration, the monolithic `TimedReleaseVoting.sol` needs to be refactored into smaller, more focused contracts.
+
+**Proposed Structure:**
+
+1.  **`ParticipantRegistry.sol`**: Handles participant (holder/voter) registration, data storage (status, deposit, BLS key), deposit management (ETH pool), reward distribution, and deposit claims, all scoped by `voteSessionId`.
+2.  **`VoteSession.sol`**: Manages the core voting process for a specific session, including session parameters, lifecycle, vote casting, share submission (interacting with `ParticipantRegistry`), and triggering registry actions.
+3.  **`VoteSessionFactory.sol` (Optional but Recommended)**: A factory to deploy and link new pairs of `VoteSession` and `ParticipantRegistry` contracts, simplifying deployment and management.
+
+**Refactoring Tasks:**
+
+- [x] **Design Refinement:** Finalize functions, state, events, and interaction patterns for `ParticipantRegistry.sol` and `VoteSession.sol`, focusing on access control and gas efficiency (Achieved through implementation and iteration).
+- [x] **Implement `ParticipantRegistry.sol`:** Create the new contract based on the finalized design.
+- [x] **Implement `VoteSession.sol`:** Create the new contract, removing logic moved to `ParticipantRegistry` and adding necessary interactions.
+- [x] **Implement `VoteSessionFactory.sol`:** Create the factory contract (if proceeding with this approach).
+- [ ] **Update Deployment Scripts:** Modify scripts to deploy and link the new contracts.
+- [ ] **Backend Adaptation:**
+    - [ ] Update contract ABIs in `BlockchainService`.
+    - [ ] Modify `BlockchainService` and routers to interact with the correct contract addresses and functions based on the new structure.
+- [ ] **Frontend Adaptation:**
+    - [ ] Update contract ABIs in `ethersService`.
+    - [ ] Modify components (`RegisterToVote`, `SubmitSecretShare`, `CastYourVote`, etc.) and `ethersService` to interact with the correct contract addresses and functions.
+- [x] **Testing:** Implement comprehensive unit and integration tests for the new contracts and interactions (Integration tests cover core flows; more edge cases could be added).
+- [x] **Refine Reward Logic:** Improve `ParticipantRegistry.calculateRewards` (Implemented new mechanism: external funding + forfeited deposits) and handle division dust (Implicitly handled by leaving remainder).
+- [ ] **Documentation:** Update all relevant documentation (READMEs, code comments) to reflect the new contract architecture (Partially done, `README.md` updated, `CONTRACT_API.md` pending).
+
 ## Implementation Plan
 
 ### Phasing Out/Removal Strategy (Blockchain-Centric)
