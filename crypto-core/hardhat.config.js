@@ -24,6 +24,10 @@ module.exports = {
       // Configuration for the default Hardhat Network (in-memory blockchain)
       // You can add specific settings here if needed, like chainId or forking
     },
+    localhost: {
+      url: "http://127.0.0.1:8545/", // Default URL for `npx hardhat node`
+      // No accounts needed here; Hardhat node provides them
+    },
     // You can add configurations for other networks like Sepolia, Goerli, mainnet, etc.
     // sepolia: {
     //   url: "YOUR_ALCHEMY_OR_INFURA_SEPOLIA_URL",

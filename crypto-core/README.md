@@ -75,10 +75,27 @@ Deployment should be done using the `VoteSessionFactory`.
 2.  Configure network details in `hardhat.config.js` if deploying to a network other than the local Hardhat Network.
 3.  Create a `.env` file (if needed by your script/config for private keys/URLs).
 4.  Run the deployment script:
-    ```bash
-    npx hardhat run scripts/deploy.js --network <your_network_name>
-    ```
-    Replace `<your_network_name>` with `hardhat`, `localhost`, `sepolia`, etc., as defined in your config.
+
+    *   **To deploy to the default in-memory Hardhat Network (for quick tests):**
+        ```bash
+        # Assumes 'hardhat' is the default network in hardhat.config.js
+        npx hardhat run scripts/deploy.js
+        # Or explicitly:
+        # npx hardhat run scripts/deploy.js --network hardhat
+        ```
+        **Note:** Running without `--network localhost` uses a temporary, in-memory Hardhat instance that is separate from any persistent node started with `npx hardhat node` and is destroyed after the script finishes.
+
+    *   **To deploy to a persistent local node (started with `npx hardhat node`):**
+        Make sure the node is running in another terminal first.
+        ```bash
+        # Assumes a network named 'localhost' is configured in hardhat.config.js
+        npx hardhat run scripts/deploy.js --network localhost
+        ```
+    *   **To deploy to a live or test network (e.g., Sepolia):**
+        ```bash
+        # Assumes a network named 'sepolia' is configured in hardhat.config.js
+        npx hardhat run scripts/deploy.js --network sepolia
+        ```
 
 ## Testing
 

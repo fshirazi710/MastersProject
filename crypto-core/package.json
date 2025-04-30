@@ -4,20 +4,12 @@
   "description": "Core cryptographic components for the Timed Release Crypto System",
   "main": "index.js",
   "scripts": {
-    "compile": "node compile.js",
-    "deploy": "node deploy.js",
-    "test": "mocha",
-    "debugging": "node scripts/interact.js",
-    "test-contract": "node test-contract.js"
+    "test": "npx hardhat test",
+    "debugging": "node scripts/interact.js"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.3.0",
-    "dotenv": "^16.4.7",
-    "ethers": "^6.13.5",
-    "solc": "^0.8.19",
-    "web3": "^1.9.0",
-    "web3-utils": "^4.3.3",
-    "web3-validator": "^2.0.6"
+    "ethers": "^6.13.5"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
