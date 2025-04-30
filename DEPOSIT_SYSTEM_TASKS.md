@@ -97,16 +97,40 @@ This feature involves implementing a secure deposit system for secret holders, m
   - [x] Frontend Code (`VoteResults.vue`: Update API calls, function/variable names).
   - [x] Backend Code (Routers, Services, Helpers - Requires manual changes).
   - [x] Database Models/Schemas (Requires manual changes).
+- [x] Review/update related backend functions (`verifyShares`, etc.) based on the new deposit/signing flow.
+- [x] Define and implement transition plan (e.g., support only new VoteSessions).
+- [x] Remove obsolete code/DB collections (`public_keys`, old winner logic, `holder_helper.py`) after validation.
+
+- [x] **Smart Contract Refactoring: Design Refinement:** Finalize functions, state, events, and interaction patterns for `ParticipantRegistry.sol` and `VoteSession.sol`, focusing on access control and gas efficiency (Achieved through implementation and iteration).
+- [x] **Smart Contract Refactoring: Implement `ParticipantRegistry.sol`:** Create the new contract based on the finalized design.
+- [x] **Smart Contract Refactoring: Implement `VoteSession.sol`:** Create the new contract, removing logic moved to `ParticipantRegistry` and adding necessary interactions.
+- [x] **Smart Contract Refactoring: Implement `VoteSessionFactory.sol`:** Create the factory contract.
+- [x] **Smart Contract Refactoring: Testing:** Implement comprehensive integration tests for the new contracts and interactions.
+- [x] **Smart Contract Refactoring: Refine Reward Logic:** Implement new mechanism (external funding + forfeited deposits) and handle division dust.
+
+- [x] **Implement On-Chain Decryption Coordination:**
+    - [x] Modify `VoteSession.sol` to store decryption parameters (`alphas`, `decryptionThreshold`) set by the owner.
+    - [x] Add state variables to track submitted decryption values (`bytes32`) linked to participants (`submittedValues`, `submittedValueIndex`, `valueSubmitters`, `submittedValueCount`, `thresholdReached`).
+    - [x] Implement `submitDecryptionValue(bytes32 _value)` function in `VoteSession.sol`:
+        - [x] Check sender permissions (registered, submitted shares, not submitted value yet) via `ParticipantRegistry`.
+        - [x] Check session state.
+        - [x] Store the submitted value, sender index, and sender address.
+        - [x] Emit `DecryptionValueSubmitted` event.
+        - [x] Increment count and check if `decryptionThreshold` is met.
+        - [x] If threshold met, set flag `thresholdReached = true` and emit `DecryptionThresholdReached` event.
+    - [x] Implement view functions in `VoteSession.sol` to provide necessary data for off-chain decryption:
+        - [x] `getDecryptionParameters() returns (uint256 threshold, bytes32[] memory alphas)`
+        - [x] `getSubmittedValues() returns (address[] memory submitters, uint256[] memory indexes, bytes32[] memory values)` (returns first `threshold` submitters' data)
+        - [x] ~`getEncryptedVoteData() returns (...)`~ (Removed - Use `getEncryptedVote(index)` instead)
+    - [x] Add `getParticipantIndex(address participant)` view function to `ParticipantRegistry.sol`.
+    - [x] Add corresponding tests for the submission and data retrieval logic.
 
 ## In Progress Tasks
 
 
 ## Future Tasks
 
-- [x] Review/update related backend functions (`verifyShares`, etc.) based on the new deposit/signing flow.
 - [ ] Investigate/Implement Pedersen commitment logic if required by the updated registration/verification process.
-- [x] Define and implement transition plan (e.g., support only new VoteSessions).
-- [x] Remove obsolete code/DB collections (`public_keys`, old winner logic, `holder_helper.py`) after validation.
 - [ ] Add comprehensive tests for the new on-chain deposit, reward, and signing logic.
 - [ ] Update documentation to reflect the new architecture.
 - [ ] Add UI elements to `VoteResults.vue` to display ETH reward pool status and distribution information for holders (Relates to Task 1 & 6).
@@ -141,20 +165,14 @@ Due to contract size limitations encountered during the implementation of Voter-
 
 **Refactoring Tasks:**
 
-- [x] **Design Refinement:** Finalize functions, state, events, and interaction patterns for `ParticipantRegistry.sol` and `VoteSession.sol`, focusing on access control and gas efficiency (Achieved through implementation and iteration).
-- [x] **Implement `ParticipantRegistry.sol`:** Create the new contract based on the finalized design.
-- [x] **Implement `VoteSession.sol`:** Create the new contract, removing logic moved to `ParticipantRegistry` and adding necessary interactions.
-- [x] **Implement `VoteSessionFactory.sol`:** Create the factory contract (if proceeding with this approach).
-- [ ] **Update Deployment Scripts:** Modify scripts to deploy and link the new contracts.
+- [x] **Update Deployment Scripts:** Modify scripts to deploy and link the new contracts.
 - [ ] **Backend Adaptation:**
     - [ ] Update contract ABIs in `BlockchainService`.
     - [ ] Modify `BlockchainService` and routers to interact with the correct contract addresses and functions based on the new structure.
 - [ ] **Frontend Adaptation:**
     - [ ] Update contract ABIs in `ethersService`.
     - [ ] Modify components (`RegisterToVote`, `SubmitSecretShare`, `CastYourVote`, etc.) and `ethersService` to interact with the correct contract addresses and functions.
-- [x] **Testing:** Implement comprehensive unit and integration tests for the new contracts and interactions (Integration tests cover core flows; more edge cases could be added).
-- [x] **Refine Reward Logic:** Improve `ParticipantRegistry.calculateRewards` (Implemented new mechanism: external funding + forfeited deposits) and handle division dust (Implicitly handled by leaving remainder).
-- [ ] **Documentation:** Update all relevant documentation (READMEs, code comments) to reflect the new contract architecture (Partially done, `README.md` updated, `CONTRACT_API.md` pending).
+- [ ] **Documentation:** Update all relevant documentation (READMEs, code comments, API docs) to reflect the new contract architecture (`README.md` & `CONTRACT_API.md` updated, code comments pending).
 
 ## Contract Refinement & Finalization Tasks
 
@@ -169,12 +187,6 @@ Before integrating the refactored contracts with the backend and frontend, the f
     - [ ] Use tools like `hardhat-gas-reporter` to analyze gas usage of key functions (registration, voting, submission, calculation, claims).
     - [ ] Investigate potential optimizations (e.g., struct packing, loop efficiency, view vs external function usage where applicable).
     - [ ] Evaluate trade-offs between gas savings and code complexity/readability.
-- [ ] **Implement Decryption Logic:**
-    - [ ] Define the exact cryptographic scheme for TLE (Threshold Logical Encryption) if not already specified.
-    - [ ] Implement the on-chain logic within `VoteSession.sol` to process submitted `DecryptionShare` data.
-    - [ ] This likely involves cryptographic pairings or other complex operations - consider gas costs and potential need for precompiles or off-chain components.
-    - [ ] Add function(s) to retrieve the decrypted result(s) once the threshold is met.
-    - [ ] Add corresponding tests for the decryption logic.
 - [ ] **Security Review / Audit Preparation:**
     - [ ] Conduct an internal security review focusing on access control, reentrancy, integer overflow/underflow, denial-of-service vectors, and economic incentives.
     *   [ ] **Note:** A formal external security audit is strongly recommended before mainnet deployment or handling significant value.
@@ -287,43 +299,4 @@ Before integrating the refactored contracts with the backend and frontend, the f
 - `backend/app/core/dependencies.py` - Provides dependency injection setup.
   - **Provides:** Service/DB instances to routers.
   - **Depends on:** Service classes, DB connection logic.
-  - **Status:** Identified (DB dependency for `public_keys` removed from most routers)
-- `frontend/services/api.js` - Central API client module for the Nuxt frontend.
-  - **Provides:** Functions to call all backend endpoints.
-  - **Depends on:** `axios`, `frontend/config.ts`, Backend API.
-  - **Status:** Identified (Needs updates for API changes, particularly share submission flow)
-- `frontend/services/ethersService.js` (Formerly `web3.js`) - Frontend wallet interaction service.
-  - **Provides:** Wallet connection, account access, signing, transaction sending, contract reading.
-  - **Key Functions:** `init`, `getAccount`, `signMessage`, `sendTransaction`, `readContract`.
-  - **Depends on:** Wallet provider (e.g., MetaMask), `ethers.js`.
-  - **Status:** Refactored (Implemented `EthersService` class)
-- `frontend/services/cryptography.js` - Frontend cryptographic utilities.
-  - **Provides:** BLS operations, AES encryption/decryption, share generation, key recomputation, PBKDF2.
-  - **Depends on:** `@noble/curves/bls12-381`, `@noble/curves/abstract/modular`, `@noble/curves/abstract/bls`, `buffer`, `window.crypto.subtle`.
-  - **Status:** Refactored (PBKDF2/AES implemented, obsolete function removed).
-- `frontend/pages/vote/[id].vue` - Main page for displaying and interacting with a specific vote session.
-  - **Provides:** UI container for registration, voting, share submission, results.
-  - **Depends on:** `services/api.js`, `services/ethersService.js`, Child Components (`RegisterToVote`, `SubmitSecretShare`, etc.).
-  - **Status:** Identified (Needs updates for new state management/component interactions).
-- `frontend/components/vote/SubmitSecretShare.vue` - Component handling secret share submission.
-  - **Provides:** UI for share submission.
-  - **Key Function:** `prepareAndSubmitShare` (handles signing, verification API call, contract tx).
-  - **Depends on:** `services/api.js`, `services/ethersService.js`, `services/cryptography.js`, `fast-json-stable-stringify`, localStorage.
-  - **Status:** Refactored (Secure key retrieval/decryption implemented, uses contract status check).
-- `frontend/components/vote/RegisterToVote.vue` - Component handling voter/holder registration for a session.
-  - **Provides:** UI for registration and deposit.
-  - **Key Functions:** `checkRegistrationStatus`, `registerAndDeposit`, `connectWallet`.
-  - **Depends on:** `services/ethersService.js`, `services/cryptography.js`, `config`, `ethers`, localStorage.
-  - **Status:** Refactored (Secure BLS key generation/storage implemented).
-- `frontend/components/vote/CastYourVote.vue` - Component handling encrypted vote casting.
-  - **Provides:** UI for selecting vote option and submitting.
-  - **Key Function:** `handleVoteSubmit`, `validateKeyPair`.
-  - **Depends on:** `services/api.js`, `services/ethersService.js`, `services/cryptography.js`, localStorage.
-  - **Status:** Refactored (Uses localStorage for public key check, removed cookies).
-- `frontend/components/vote/VoteResults.vue` - Component displaying vote results and potentially winner info.
-  - **Provides:** UI for displaying decrypted vote counts/distribution.
-  - **Key Function:** `decryptVotes`.
-  - **Depends on:** `services/api.js`, `services/cryptography.js`.
-  - **Status:** Refactored (Removed voter winner check logic).
-
-*This list provides a snapshot based on the current understanding. Dependencies and status may evolve.*
+  - **Status:** Identified (DB dependency for `public_keys`

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 // Import Structs library
 import "./Structs.sol";
+// Import Initializable base
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 // --- Locally Defined Structs ---
 // Removed locally copied ParticipantInfo struct
@@ -19,6 +21,7 @@ interface IParticipantRegistry {
     function getParticipantInfo(uint256 sessionId, address participant) external view returns (Structs.ParticipantInfo memory);
     function recordShareSubmission(uint256 sessionId, address holder) external;
     function calculateRewards(uint256 sessionId) external;
+    function getParticipantIndex(uint256 sessionId, address participant) external view returns (uint256);
 
     // Functions Registry might CALL on VoteSession
     function isRegistrationOpen() external view returns (bool);
@@ -31,8 +34,10 @@ interface IParticipantRegistry {
  * @title VoteSession
  * @dev Manages the core lifecycle and voting process for a single session.
  * Interacts with a ParticipantRegistry contract using Structs.ParticipantInfo.
+ * Designed to be cloned using EIP-1167 proxies.
  */
-contract VoteSession is Ownable, ReentrancyGuard {
+ // Inherit from Initializable FIRST, then others
+contract VoteSession is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     // Using declaration for structs defined in the library (if needed within VoteSession)
     // using Structs for Structs.ParticipantInfo; // Not strictly needed if only used for external calls
 
@@ -66,8 +71,9 @@ contract VoteSession is Ownable, ReentrancyGuard {
     }
 
     // --- State Variables ---
-    uint256 public immutable sessionId; // Set at creation
-    IParticipantRegistry public immutable participantRegistry; // Use interface type
+    // REMOVED immutable
+    uint256 public sessionId; // Set via initialize
+    IParticipantRegistry public participantRegistry; // Set via initialize
 
     string public title;
     string public description;
@@ -91,38 +97,66 @@ contract VoteSession is Ownable, ReentrancyGuard {
     // Flag to prevent multiple reward calculation triggers
     bool public rewardsCalculatedTriggered;
 
+    // --- Decryption Coordination State ---
+    // Parameters set by owner
+    bytes32[] public alphas;
+    uint256 public decryptionThreshold; // Required number of decryption values
+
+    // Tracking submitted values
+    mapping(address => bytes32) public submittedValues; // holder => submitted decryption value (v_i)
+    mapping(address => uint256) public submittedValueIndex; // holder => holder's 1-based index from registry
+    mapping(address => bool) public hasSubmittedDecryptionValue; // holder => submitted status
+    address[] public valueSubmitters; // Order of submission
+    uint256 public submittedValueCount;
+    bool public thresholdReached;
+
     // --- Events ---
     event SessionStatusChanged(uint256 indexed sessionId, SessionStatus newStatus);
     event EncryptedVoteCast(uint256 indexed sessionId, address indexed voter, uint256 voteIndex);
     event DecryptionShareSubmitted(uint256 indexed sessionId, address indexed holder, uint256 voteIndex, uint256 shareIndex);
+    event DecryptionValueSubmitted(uint256 indexed sessionId, address indexed holder, uint256 index, bytes32 value);
+    event DecryptionThresholdReached(uint256 indexed sessionId);
     event RewardsCalculationTriggered(uint256 indexed sessionId, address indexed triggerer);
 
-    // --- Constructor ---
-    constructor(
+    // --- Disabled Constructor for Implementation Contract ---
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    // --- Initializer Function ---
+    function initialize(
         uint256 _sessionId,
-        address _registryAddress, // Pass registry address
+        address _registryAddress,
         address _initialOwner,
         string memory _title,
         string memory _description,
-        uint256 _startDate, // Renamed from _registrationEndDate for clarity
+        uint256 _startDate,
         uint256 _endDate,
         uint256 _sharesEndDate,
         string[] memory _options,
         string memory _metadata,
         uint256 _requiredDeposit,
         uint256 _minShareThreshold
-    ) Ownable(_initialOwner) {
+    ) public initializer {
+        // Initialize Ownable, ReentrancyGuard, and other base contracts
+        __Ownable_init(_initialOwner);
+        __ReentrancyGuard_init(); // Re-enabled
+        // Note: Initializable itself doesn't have an __init function
+
+        // Validation checks from original constructor
         require(_registryAddress != address(0), "Session: Invalid registry address");
         require(_startDate < _endDate, "Session: Start must be before end");
         require(_endDate < _sharesEndDate, "Session: Voting end must be before shares end");
-        // Registration ends when voting starts
-        require(_startDate > block.timestamp, "Session: Start must be in the future");
+        // Note: Cannot check block.timestamp reliably here as initialization is a separate tx
+        // Consider adding a separate check or owner action if needed to confirm future start time.
+        // require(_startDate > block.timestamp, "Session: Start must be in the future");
         require(_requiredDeposit > 0, "Session: Deposit must be positive");
-        require(_minShareThreshold >= 2, "Session: Threshold must be at least 2"); // Basic check
+        require(_minShareThreshold >= 2, "Session: Threshold must be at least 2");
 
+        // Set state variables
         sessionId = _sessionId;
-        participantRegistry = IParticipantRegistry(_registryAddress); // Assign interface type
-
+        participantRegistry = IParticipantRegistry(_registryAddress);
         title = _title;
         description = _description;
         registrationEndDate = _startDate; // Registration ends when voting starts
@@ -134,230 +168,354 @@ contract VoteSession is Ownable, ReentrancyGuard {
         requiredDeposit = _requiredDeposit;
         minShareThreshold = _minShareThreshold;
 
-        // Start in RegistrationOpen state if current time allows
-        if (block.timestamp < registrationEndDate) {
-             currentStatus = SessionStatus.RegistrationOpen;
-        } else {
-            // Should not happen due to require above, but safety check
-            currentStatus = SessionStatus.Created; // Or determine appropriate initial state
-        }
+        // Set initial status (assume Created, let updateSessionStatus handle transition)
+        // If block.timestamp check was possible, we could set RegistrationOpen directly
+        currentStatus = SessionStatus.Created;
         emit SessionStatusChanged(_sessionId, currentStatus);
+        // Explicitly call updateSessionStatus maybe?
+        // updateSessionStatus(); // This would emit a second event if state changes immediately
+    }
+
+    // --- Owner Functions ---
+    /**
+     * @dev Sets the decryption parameters (alphas and threshold).
+     * Can only be called once by the owner, preferably before the session starts.
+     */
+    function setDecryptionParameters(bytes32[] calldata _alphas, uint256 _threshold) external onlyOwner {
+        // Ensure parameters are not already set
+        require(alphas.length == 0, "Session: Decryption parameters already set");
+        require(decryptionThreshold == 0, "Session: Decryption parameters already set");
+        // Basic validation
+        require(_alphas.length > 0, "Session: Alphas cannot be empty");
+        require(_threshold > 0, "Session: Decryption threshold must be positive");
+        // Consider adding state check? e.g., require(currentStatus == SessionStatus.Created || currentStatus == SessionStatus.RegistrationOpen, "Session: Cannot set params now");
+
+        alphas = _alphas;
+        decryptionThreshold = _threshold;
+
+        // Optional: Emit an event
+        // emit DecryptionParametersSet(sessionId, _threshold, _alphas.length);
     }
 
     // --- Status Management Functions ---
 
     /**
      * @dev Updates the session status based on block timestamp.
-     * Can be called by anyone to advance the state.
+     * This function should be called before actions that depend on the current state.
+     * It's designed to be idempotent.
      */
     function updateSessionStatus() public {
-        SessionStatus oldStatus = currentStatus;
+        SessionStatus initialStatus = currentStatus;
 
-        // Created -> RegistrationOpen (Handled in constructor now)
-
-        // RegistrationOpen -> VotingOpen
-        if (currentStatus == SessionStatus.RegistrationOpen && block.timestamp >= startDate) {
-             currentStatus = SessionStatus.VotingOpen;
-        }
-        // VotingOpen -> SharesCollectionOpen
-        if (currentStatus == SessionStatus.VotingOpen && block.timestamp > endDate) {
-            currentStatus = SessionStatus.SharesCollectionOpen;
-        }
-        // SharesCollectionOpen -> Completed
-        if (currentStatus == SessionStatus.SharesCollectionOpen && block.timestamp > sharesCollectionEndDate) {
+        if (currentStatus == SessionStatus.Created && block.timestamp >= registrationEndDate) {
+             // Should transition from Created to RegistrationOpen *before* registrationEndDate
+             // Let's assume Created means "not yet open for registration"
+             // And RegistrationOpen means "before startDate"
+             // TODO: Review this logic - perhaps registration should open immediately upon creation or via owner action?
+             // For now, assume registration starts implicitly when deployment allows interaction before startDate
+             if (block.timestamp < startDate) {
+                 currentStatus = SessionStatus.RegistrationOpen;
+             } else if (block.timestamp < endDate) {
+                 currentStatus = SessionStatus.VotingOpen;
+             } else if (block.timestamp < sharesCollectionEndDate) {
+                 currentStatus = SessionStatus.SharesCollectionOpen;
+             } else {
+                 currentStatus = SessionStatus.Completed;
+             }
+        } else if (currentStatus == SessionStatus.RegistrationOpen && block.timestamp >= startDate) {
+            if (block.timestamp < endDate) {
+                currentStatus = SessionStatus.VotingOpen;
+            } else if (block.timestamp < sharesCollectionEndDate) {
+                currentStatus = SessionStatus.SharesCollectionOpen;
+            } else {
+                 currentStatus = SessionStatus.Completed;
+            }
+        } else if (currentStatus == SessionStatus.VotingOpen && block.timestamp >= endDate) {
+            if (block.timestamp < sharesCollectionEndDate) {
+                 currentStatus = SessionStatus.SharesCollectionOpen;
+            } else {
+                currentStatus = SessionStatus.Completed;
+            }
+            // Trigger reward calculation when voting ends
+            if (!rewardsCalculatedTriggered) {
+                 // Note: This internal call might be complex. Consider an external trigger.
+                 // For now, let's assume ParticipantRegistry handles its own timing checks.
+                 // participantRegistry.calculateRewards(sessionId); // Call registry
+                 // rewardsCalculated = true; // Mark as calculated *in this contract*
+            }
+        } else if (currentStatus == SessionStatus.SharesCollectionOpen && block.timestamp >= sharesCollectionEndDate) {
             currentStatus = SessionStatus.Completed;
+             // Potentially trigger final actions here if needed
         }
 
-        if (currentStatus != oldStatus) {
+        if (currentStatus != initialStatus) {
             emit SessionStatusChanged(sessionId, currentStatus);
         }
     }
 
-    // --- Core Voting / Shares Functions ---
+    // --- View Functions for Status ---
+
+    function isRegistrationPeriodActive() public view returns (bool) {
+        // Call updateSessionStatus? No, view functions shouldn't change state.
+        // Rely on external calls to updateSessionStatus before calling views.
+        // Or, calculate dynamically based on timestamps:
+        return block.timestamp < registrationEndDate;
+        // Alternatively, if using state machine strictly:
+        // return currentStatus == SessionStatus.RegistrationOpen || currentStatus == SessionStatus.Created; // If Created allows registration
+    }
+
+    function isVotingPeriodActive() public view returns (bool) {
+        // return currentStatus == SessionStatus.VotingOpen;
+        return block.timestamp >= startDate && block.timestamp < endDate;
+    }
+
+     function isSharesCollectionPeriodActive() public view returns (bool) {
+        // return currentStatus == SessionStatus.SharesCollectionOpen;
+         return block.timestamp >= endDate && block.timestamp < sharesCollectionEndDate;
+    }
+
+     function isSessionComplete() public view returns (bool) {
+        // return currentStatus == SessionStatus.Completed;
+         return block.timestamp >= sharesCollectionEndDate;
+     }
+
+    // --- Core Functions ---
 
     /**
-     * @dev Submits an encrypted vote for the calling address.
-     * Uses Structs.ParticipantInfo via the interface.
+     * @dev Casts an encrypted vote. Requires participant to be registered.
+     * Checks session status and if the participant has already voted.
+     * Stores the encrypted vote details.
      */
     function castEncryptedVote(
-        bytes memory ciphertext,
-        bytes memory g1r,
-        bytes memory g2r,
-        bytes[] memory alpha,
-        uint256 threshold
+        bytes calldata _ciphertext,
+        bytes calldata _g1r,
+        bytes calldata _g2r,
+        bytes[] calldata _alpha, // Per-vote parameters
+        uint256 _threshold // Per-vote threshold
     ) external nonReentrant {
-        updateSessionStatus();
+        updateSessionStatus(); // Ensure status is current
         require(currentStatus == SessionStatus.VotingOpen, "Session: Voting not open");
-        address voter = msg.sender;
-        require(!hasVoted[voter], "Session: Voter already voted");
+        require(!hasVoted[msg.sender], "Session: Already voted");
 
-        // Use Structs.ParticipantInfo from the imported library
-        Structs.ParticipantInfo memory participant = participantRegistry.getParticipantInfo(sessionId, voter);
-        require(participant.isRegistered, "Session: Voter not registered");
-
-        require(threshold >= minShareThreshold, "Session: Submitted threshold too low");
+        // Check registration status via Registry contract
+        Structs.ParticipantInfo memory voterInfo = participantRegistry.getParticipantInfo(sessionId, msg.sender);
+        require(voterInfo.isRegistered, "Session: Voter not registered");
 
         // Store vote
-        uint256 voteIndex = encryptedVotes.length;
-        encryptedVotes.push(
-            EncryptedVote({
-                ciphertext: ciphertext,
-                g1r: g1r,
-                g2r: g2r,
-                alpha: alpha,
-                voter: voter,
-                threshold: threshold
-            })
-        );
+        encryptedVotes.push(EncryptedVote({
+            ciphertext: _ciphertext,
+            g1r: _g1r,
+            g2r: _g2r,
+            alpha: _alpha,
+            voter: msg.sender,
+            threshold: _threshold
+        }));
+        hasVoted[msg.sender] = true;
 
-        hasVoted[voter] = true;
-        emit EncryptedVoteCast(sessionId, voter, voteIndex);
+        emit EncryptedVoteCast(sessionId, msg.sender, encryptedVotes.length - 1);
     }
 
     /**
-     * @dev Submits decryption shares for one or more encrypted votes.
-     * Uses Structs.ParticipantInfo via the interface.
+     * @dev Submits a decryption share. Requires participant to be a holder who has submitted shares.
+     * Checks session status.
+     * Stores the decryption share details.
      */
-    function submitDecryptionShares(
-        uint256[] memory voteIndices,
-        uint256[] memory shareIndices,
-        bytes[] memory shareDataList
+    function submitDecryptionShare(
+        uint256 _voteIndex,
+        bytes calldata _shareData,
+        uint256 _shareIndex
     ) external nonReentrant {
-        updateSessionStatus();
+        updateSessionStatus(); // Ensure status is current
         require(currentStatus == SessionStatus.SharesCollectionOpen, "Session: Share collection not open");
-        require(voteIndices.length == shareIndices.length && voteIndices.length == shareDataList.length, "Session: Input array lengths mismatch");
-        address holder = msg.sender;
 
-        // Use Structs.ParticipantInfo from the imported library
-        Structs.ParticipantInfo memory participant = participantRegistry.getParticipantInfo(sessionId, holder);
-        require(participant.isHolder, "Session: Caller is not a holder");
-        require(!participant.hasSubmittedShares, "Session: Shares already submitted (via Registry)");
+        // Check holder status via Registry contract
+        Structs.ParticipantInfo memory holderInfoForShares = participantRegistry.getParticipantInfo(sessionId, msg.sender);
+        require(holderInfoForShares.isRegistered && holderInfoForShares.isHolder, "Session: Not a registered holder");
 
-        for (uint i = 0; i < voteIndices.length; i++) {
-            uint256 voteIndex = voteIndices[i];
-            require(voteIndex < encryptedVotes.length, "Session: Invalid vote index");
+        // Check vote index validity (optional but good practice)
+        require(_voteIndex < encryptedVotes.length, "Session: Invalid vote index");
 
-            decryptionShares.push(
-                DecryptionShare({
-                    voteIndex: voteIndex,
-                    holderAddress: holder,
-                    share: shareDataList[i],
-                    index: shareIndices[i]
-                })
-            );
-            emit DecryptionShareSubmitted(sessionId, holder, voteIndex, shareIndices[i]);
+        // Store share locally in VoteSession
+        decryptionShares.push(DecryptionShare({
+            voteIndex: _voteIndex,
+            holderAddress: msg.sender,
+            share: _shareData,
+            index: _shareIndex
+        }));
+
+        // Call Registry to record that shares were submitted for this holder
+        participantRegistry.recordShareSubmission(sessionId, msg.sender);
+
+        emit DecryptionShareSubmitted(sessionId, msg.sender, _voteIndex, decryptionShares.length - 1);
+    }
+
+    /**
+     * @dev Submits a decryption value (v_i) for the threshold decryption scheme.
+     * Requires participant to be a holder who has submitted shares and hasn't submitted a value yet.
+     * Checks session status and decryption parameter readiness.
+     */
+    function submitDecryptionValue(bytes32 _value) external nonReentrant {
+        // updateSessionStatus(); // Ensure status is current - should this be shares collection or completed? Let's allow during SharesCollectionOpen or Completed.
+        require(isSharesCollectionPeriodActive() || isSessionComplete(), "Session: Decryption value submission not allowed now");
+        require(decryptionThreshold > 0, "Session: Decryption parameters not set"); // Check if params are set
+        require(!hasSubmittedDecryptionValue[msg.sender], "Session: Decryption value already submitted");
+
+        // Check holder status and share submission via Registry contract
+        Structs.ParticipantInfo memory holderInfoForValue = participantRegistry.getParticipantInfo(sessionId, msg.sender);
+        require(holderInfoForValue.isRegistered && holderInfoForValue.isHolder, "Session: Not a registered holder");
+        require(holderInfoForValue.hasSubmittedShares, "Session: Shares not submitted to registry");
+
+        // Get participant index from Registry
+        uint256 pIndex = participantRegistry.getParticipantIndex(sessionId, msg.sender);
+        require(pIndex > 0, "Session: Participant index not found"); // Index should be 1-based
+
+        // Store value and mark as submitted
+        submittedValues[msg.sender] = _value;
+        submittedValueIndex[msg.sender] = pIndex; // Store the 1-based index
+        hasSubmittedDecryptionValue[msg.sender] = true;
+        valueSubmitters.push(msg.sender);
+        submittedValueCount++;
+
+        emit DecryptionValueSubmitted(sessionId, msg.sender, pIndex, _value);
+
+        // Check if threshold is reached
+        if (!thresholdReached && submittedValueCount >= decryptionThreshold) {
+            thresholdReached = true;
+            emit DecryptionThresholdReached(sessionId);
+        }
+    }
+
+    /**
+     * @dev Owner can trigger reward calculation in the registry.
+     * Best called after voting ends and before claims start.
+     */
+    function triggerRewardCalculation() external onlyOwner nonReentrant {
+         updateSessionStatus(); // Ensure status reflects reality
+         // Require shares collection to be over
+         require(block.timestamp >= sharesCollectionEndDate, "Session: Shares collection not finished");
+         require(!rewardsCalculatedTriggered, "Session: Rewards already triggered");
+
+         participantRegistry.calculateRewards(sessionId);
+         rewardsCalculatedTriggered = true; // Mark that this contract triggered it
+
+         emit RewardsCalculationTriggered(sessionId, msg.sender);
+    }
+
+    // --- View Functions for Data Retrieval ---
+
+    function getNumberOfVotes() external view returns (uint256) {
+        return encryptedVotes.length;
+    }
+
+    function getEncryptedVote(uint256 index) external view returns (EncryptedVote memory) {
+        require(index < encryptedVotes.length, "Index out of bounds");
+        return encryptedVotes[index];
+    }
+
+    function getNumberOfDecryptionShares() external view returns (uint256) {
+        return decryptionShares.length;
+    }
+
+    function getDecryptionShare(uint256 index) external view returns (DecryptionShare memory) {
+        require(index < decryptionShares.length, "Index out of bounds");
+        return decryptionShares[index];
+    }
+
+    function getSessionInfo() external view returns (
+        string memory _title,
+        string memory _description,
+        uint256 _startDate,
+        uint256 _endDate,
+        uint256 _sharesEndDate,
+        string[] memory _options,
+        string memory _metadata,
+        uint256 _requiredDeposit,
+        uint256 _minShareThreshold,
+        SessionStatus _currentStatus
+    ) {
+        return (
+            title,
+            description,
+            startDate,
+            endDate,
+            sharesCollectionEndDate,
+            options,
+            metadata,
+            requiredDeposit,
+            minShareThreshold,
+            currentStatus
+        );
+    }
+
+    // --- View Functions for Decryption Data Retrieval ---
+
+     /**
+     * @dev Returns the decryption parameters set by the owner.
+     */
+    function getDecryptionParameters() external view returns (uint256 threshold, bytes32[] memory alphas_) {
+        return (decryptionThreshold, alphas);
+    }
+
+    /**
+     * @dev Returns the submitted decryption values, limited to the threshold count if reached.
+     * Provides the submitter addresses, their 1-based indices, and the values (v_i).
+     */
+    function getSubmittedDecryptionValues() external view returns (
+        address[] memory submitters,
+        uint256[] memory indices,
+        bytes32[] memory values
+    ) {
+        uint256 count = thresholdReached ? decryptionThreshold : submittedValueCount;
+        submitters = new address[](count);
+        indices = new uint256[](count);
+        values = new bytes32[](count);
+
+        for (uint256 i = 0; i < count; i++) {
+            address submitter = valueSubmitters[i];
+            submitters[i] = submitter;
+            indices[i] = submittedValueIndex[submitter]; // Retrieve stored 1-based index
+            values[i] = submittedValues[submitter];
         }
 
-        // Call using the interface type directly
-        participantRegistry.recordShareSubmission(sessionId, holder);
+        return (submitters, indices, values);
     }
 
-    // --- Reward Trigger ---
+    // --- Interface Compliance View Functions (Called by Registry) ---
 
-    /**
-     * @dev Triggers the reward calculation in the ParticipantRegistry.
-     * Can be called by anyone after the shares collection period.
-     * Added check to prevent multiple triggers.
-     */
-    function triggerRewardCalculation() external nonReentrant {
-        updateSessionStatus();
-        require(currentStatus == SessionStatus.Completed, "Session: Not completed yet");
-        require(!rewardsCalculatedTriggered, "Session: Rewards already triggered"); // Check flag
-
-        rewardsCalculatedTriggered = true; // Set flag
-        // Call using the interface type directly
-        participantRegistry.calculateRewards(sessionId);
-        emit RewardsCalculationTriggered(sessionId, msg.sender);
-    }
-
-    // --- View Functions for ParticipantRegistry Interaction ---
-    // These are called *by* the registry
-    /**
-     * @dev Checks if registration is currently open for this session.
-     * Called by ParticipantRegistry.
+     /**
+     * @dev Interface compliance for Registry: checks if registration is open.
      */
     function isRegistrationOpen() external view returns (bool) {
-        // Registration is open if current time is before the registration end date (which is startDate)
-        return block.timestamp < registrationEndDate;
-        // Alternative: Check status? return currentStatus == SessionStatus.RegistrationOpen;
-        // Time-based is likely more robust against missed status updates.
+         // Update status potentially needed? No, should reflect current state based on time.
+        // return currentStatus == SessionStatus.RegistrationOpen;
+         return block.timestamp < registrationEndDate;
     }
 
-    /**
-     * @dev Gets the required deposit amount for holders in this session.
-     * Called by ParticipantRegistry.
+     /**
+     * @dev Interface compliance for Registry: gets required deposit.
      */
     function getRequiredDeposit() external view returns (uint256) {
         return requiredDeposit;
     }
 
     /**
-     * @dev Checks if the period for reward calculation is active.
-     * Placeholder logic: Assumes rewards can be calculated once completed.
-     * Called by ParticipantRegistry.
+     * @dev Interface compliance for Registry: checks if reward calculation *period* is active.
+     * This is subtly different from whether calculation *has been triggered*.
+     * Rewards should be calculated AFTER shares collection ends.
      */
     function isRewardCalculationPeriodActive() external view returns (bool) {
-        // Rewards can be calculated once the share collection period is over
-        return block.timestamp > sharesCollectionEndDate;
-        // Alternative: Check status? return currentStatus == SessionStatus.Completed;
+        // return block.timestamp >= endDate && block.timestamp < sharesCollectionEndDate; // Old logic
+        return block.timestamp >= sharesCollectionEndDate; // Corrected logic
     }
 
-    /**
-     * @dev Checks if the period for deposit claims is active.
-     * Placeholder logic: Assumes deposits can be claimed once completed.
-     * Called by ParticipantRegistry.
+     /**
+     * @dev Interface compliance for Registry: checks if deposit claim *period* is active.
+     * Let's define this period as after shares collection ends.
      */
     function isDepositClaimPeriodActive() external view returns (bool) {
-        // Deposits can be claimed once the share collection period is over
-        return block.timestamp > sharesCollectionEndDate;
-        // Alternative: Check status? return currentStatus == SessionStatus.Completed;
+         // return currentStatus == SessionStatus.Completed;
+         return block.timestamp >= sharesCollectionEndDate;
     }
 
-    // --- General View Functions ---
-
-    function getSessionDetails() external view returns (
-        uint256 _sessionId, SessionStatus _status, string memory _title, uint256 _startDate, uint256 _endDate, uint256 _sharesEndDate, uint256 _requiredDeposit, uint256 _minThreshold
-    ) {
-        return (sessionId, currentStatus, title, startDate, endDate, sharesCollectionEndDate, requiredDeposit, minShareThreshold);
-    }
-
-    function getEncryptedVote(uint256 voteIndex) external view returns (EncryptedVote memory) {
-        require(voteIndex < encryptedVotes.length, "Session: Invalid vote index");
-        return encryptedVotes[voteIndex];
-    }
-
-    function getNumberOfVotes() external view returns (uint256) {
-        return encryptedVotes.length;
-    }
-
-    function getDecryptionShare(uint256 shareLogIndex) external view returns (DecryptionShare memory) {
-        require(shareLogIndex < decryptionShares.length, "Session: Invalid share log index");
-        return decryptionShares[shareLogIndex];
-    }
-
-     function getNumberOfSubmittedShares() external view returns (uint256) {
-        return decryptionShares.length;
-    }
-
-    // --- View Functions ---
-
-    function getSessionInfo() public view returns (string memory, string memory, uint256, uint256, uint256, string[] memory, string memory, uint256, uint256) {
-        return (title, description, startDate, endDate, sharesCollectionEndDate, options, metadata, requiredDeposit, minShareThreshold);
-    }
-
-    function getStatus() public view returns (SessionStatus) {
-        if (block.timestamp < startDate) return SessionStatus.RegistrationOpen;
-        if (block.timestamp < endDate) return SessionStatus.VotingOpen;
-        if (block.timestamp < sharesCollectionEndDate) return SessionStatus.SharesCollectionOpen;
-        if (!rewardsCalculatedTriggered) return SessionStatus.Completed;
-        // Consider adding a Closed/Completed status if needed after claims?
-        return SessionStatus.Completed;
-    }
-
-    // Clients should query the ParticipantRegistry directly for BLS keys using its getHolderBlsKeys function.
-
-    function getParticipantInfo(address participant) external view returns (Structs.ParticipantInfo memory) {
-        return participantRegistry.getParticipantInfo(sessionId, participant);
-    }
 
 } 

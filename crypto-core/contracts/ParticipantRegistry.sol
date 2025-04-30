@@ -1,27 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+// Import Structs library
+import "./Structs.sol";
+// Import Interfaces
+import "./interfaces/IVoteSession.sol"; // Corrected interface import
+// Import OpenZeppelin contracts
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "./Structs.sol"; // Import shared structs
-
-/**
- * @title IVoteSession Interface
- * @dev Interface for interacting with the VoteSession contract.
- */
-interface IVoteSession {
-    function isRegistrationOpen() external view returns (bool);
-    function getRequiredDeposit() external view returns (uint256);
-    function isRewardCalculationPeriodActive() external view returns (bool);
-    function isDepositClaimPeriodActive() external view returns (bool);
-}
+// Import Initializable base
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /**
  * @title ParticipantRegistry
  * @dev Manages participants using Structs.ParticipantInfo.
+ * Designed to be cloned using EIP-1167 proxies.
  */
-contract ParticipantRegistry is Ownable, ReentrancyGuard {
+contract ParticipantRegistry is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     using EnumerableSet for EnumerableSet.AddressSet;
     // Using declaration for structs defined in the library
     using Structs for Structs.ParticipantInfo;
@@ -55,8 +51,26 @@ contract ParticipantRegistry is Ownable, ReentrancyGuard {
         _;
     }
 
-    // --- Constructor ---
-    constructor(address initialOwner) Ownable(initialOwner) {}
+    // --- REMOVED Constructor --- //
+    // constructor(address initialOwner) Ownable(initialOwner) {}
+
+    // --- Disabled Constructor for Implementation Contract ---
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() /* Ownable(address(0)) - Removed */ {
+        _disableInitializers();
+    }
+
+    // --- Initializer Function ---
+    /**
+     * @dev Initializes the contract, setting the initial owner.
+     * Can only be called once.
+     */
+    function initialize(address initialOwner) public initializer {
+        // Initialize Ownable, ReentrancyGuard
+        __Ownable_init(initialOwner);
+        __ReentrancyGuard_init();
+        // Removed: _transferOwnership(initialOwner);
+    }
 
     // --- Owner Functions ---
     function setVoteSessionContract(uint256 sessionId, address sessionContract) external onlyOwner {
@@ -231,6 +245,22 @@ contract ParticipantRegistry is Ownable, ReentrancyGuard {
 
     function getNumberOfActiveHolders(uint256 sessionId) external view returns (uint256) {
         return activeHolders[sessionId].length();
+    }
+
+    /**
+     * @dev Returns the 1-based index of a participant within the activeHolders set for a session.
+     * Returns 0 if the participant is not found in the active set.
+     * Note: Iteration can be gas-intensive for large sets.
+     */
+    function getParticipantIndex(uint256 sessionId, address participant) external view returns (uint256) {
+        EnumerableSet.AddressSet storage holders = activeHolders[sessionId];
+        uint256 holderCount = holders.length();
+        for (uint256 i = 0; i < holderCount; i++) {
+            if (holders.at(i) == participant) {
+                return i + 1; // Return 1-based index
+            }
+        }
+        return 0; // Not found
     }
 
     function getHolderBlsKeys(uint256 sessionId) external view returns (address[] memory, string[] memory) {
