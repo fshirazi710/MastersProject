@@ -156,6 +156,29 @@ Due to contract size limitations encountered during the implementation of Voter-
 - [x] **Refine Reward Logic:** Improve `ParticipantRegistry.calculateRewards` (Implemented new mechanism: external funding + forfeited deposits) and handle division dust (Implicitly handled by leaving remainder).
 - [ ] **Documentation:** Update all relevant documentation (READMEs, code comments) to reflect the new contract architecture (Partially done, `README.md` updated, `CONTRACT_API.md` pending).
 
+## Contract Refinement & Finalization Tasks
+
+Before integrating the refactored contracts with the backend and frontend, the following tasks should be addressed:
+
+- [ ] **Expand Test Coverage:**
+    - [ ] Add tests for edge cases (e.g., zero eligible holders, zero reward pool, session parameters like threshold=numHolders).
+    - [ ] Add tests for multiple sequential sessions created by the factory.
+    - [ ] Add tests specifically for reentrancy guards on claim functions.
+    - [ ] Consider fuzz testing for state transitions and inputs.
+- [ ] **Gas Optimization Analysis:**
+    - [ ] Use tools like `hardhat-gas-reporter` to analyze gas usage of key functions (registration, voting, submission, calculation, claims).
+    - [ ] Investigate potential optimizations (e.g., struct packing, loop efficiency, view vs external function usage where applicable).
+    - [ ] Evaluate trade-offs between gas savings and code complexity/readability.
+- [ ] **Implement Decryption Logic:**
+    - [ ] Define the exact cryptographic scheme for TLE (Threshold Logical Encryption) if not already specified.
+    - [ ] Implement the on-chain logic within `VoteSession.sol` to process submitted `DecryptionShare` data.
+    - [ ] This likely involves cryptographic pairings or other complex operations - consider gas costs and potential need for precompiles or off-chain components.
+    - [ ] Add function(s) to retrieve the decrypted result(s) once the threshold is met.
+    - [ ] Add corresponding tests for the decryption logic.
+- [ ] **Security Review / Audit Preparation:**
+    - [ ] Conduct an internal security review focusing on access control, reentrancy, integer overflow/underflow, denial-of-service vectors, and economic incentives.
+    *   [ ] **Note:** A formal external security audit is strongly recommended before mainnet deployment or handling significant value.
+
 ## Implementation Plan
 
 ### Phasing Out/Removal Strategy (Blockchain-Centric)
