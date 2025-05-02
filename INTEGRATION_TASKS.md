@@ -33,24 +33,24 @@ These tasks focus on refining and hardening the existing contracts before full i
     -   [X] Ensure data returned by endpoints aligns with the information available from the new contracts (e.g., participant status structure might change).
     -   [ ] Review and update any signature verification logic (`share_router.py`?) if required payload structures have changed.
     -   [X] Remove endpoints or logic related to phased-out features (e.g., old winner calculation, direct share submission by backend).
--   [ ] **Configuration:**
-    -   [ ] Add configuration for the deployed `VoteSessionFactory` address (e.g., in `.env` and `app/core/config.py`).
-    -   [ ] Ensure the backend environment provides necessary RPC URLs.
-    -   [ ] Remove configuration related to the old `TimedReleaseVoting` contract address.
+-   [X] **Configuration:**
+    -   [X] Add configuration for the deployed `VoteSessionFactory` address (e.g., in `.env` and `app/core/config.py`).
+    -   [X] Ensure the backend environment provides necessary RPC URLs.
+    -   [X] Remove configuration related to the old `TimedReleaseVoting` contract address.
 
 ## Frontend Integration (`frontend/`)
 
 -   [ ] **Update `ethersService` (`services/ethersService.js`):**
-    -   [ ] Integrate ABIs for `ParticipantRegistry`, `VoteSession`, and `VoteSessionFactory`. (Need to copy new ABIs).
-    -   [ ] Add functions for interacting with the factory (e.g., `createVoteSession`).
-    -   [ ] Modify functions to interact with the correct `ParticipantRegistry` and `VoteSession` instances based on the active session ID. This will likely involve calling the factory or a backend endpoint to get the specific contract addresses for the session.
-    -   [ ] Adapt functions for:
-        -   Registration (`registerParticipant` calling `ParticipantRegistry.registerParticipant`)
-        -   Casting votes (`castVote` calling `VoteSession.castVote`)
-        -   Submitting shares (`submitShares` calling `VoteSession.submitShares`)
-        -   Submitting decryption values (`submitDecryptionValue` calling `VoteSession.submitDecryptionValue`)
-        -   Claiming deposits/rewards (`claimDepositOrReward` calling `ParticipantRegistry.claimDepositOrReward`)
-    -   [ ] Update functions for reading contract state (participant status from `ParticipantRegistry`, session info from `VoteSession`, encrypted votes from `VoteSession`, submitted values from `VoteSession`, etc.).
+    -   [X] Integrate ABIs for `ParticipantRegistry`, `VoteSession`, and `VoteSessionFactory`.
+    -   [X] Add functions for interacting with the factory (e.g., `createVoteSession`).
+    -   [X] Modify functions/helpers to interact with the correct `ParticipantRegistry` and `VoteSession` instances based on the active session ID (e.g. `getSessionAddresses`).
+    -   [ ] Adapt transaction functions for:
+        -   [X] Registration (`registerParticipant` calling `ParticipantRegistry.registerParticipant`)
+        -   [ ] Casting votes (`castVote` calling `VoteSession.castVote`)
+        -   [ ] Submitting shares (`submitShares` calling `VoteSession.submitShares`)
+        -   [ ] Submitting decryption values (`submitDecryptionValue` calling `VoteSession.submitDecryptionValue`)
+        -   [ ] Claiming deposits/rewards (`claimDepositOrReward` calling `ParticipantRegistry.claimDepositOrReward`)
+    -   [ ] Update/Add functions for reading contract state (e.g., `getParticipantDetails`, `getSessionInfo`, `getEncryptedVote`, `getDecryptionShare`, `hasClaimed`, etc.).
     -   [ ] Remove all logic, ABI references, and contract address usage related to the old `TimedReleaseVoting` contract.
 -   [ ] **Update Components:**
     -   [ ] **`CreateVoteSession.vue`:** Adapt to use the factory contract via the updated `ethersService`.
@@ -59,8 +59,8 @@ These tasks focus on refining and hardening the existing contracts before full i
         -   [ ] **`CastYourVote.vue`:** Update vote casting logic to use `ethersService.castVote`. Ensure correct BLS public keys are fetched (likely from `ParticipantRegistry` via `ethersService`) and used for threshold logic.
         -   [ ] **`SubmitSecretShare.vue`:** Update share submission logic to use `ethersService.submitShares`, ensuring interaction with the correct `VoteSession` instance.
         -   [ ] **Decryption Submission Component (New/Existing):** Implement UI and logic for calling `ethersService.submitDecryptionValue`.
-        -   [ ] **Claim Component (New/Existing):** Implement UI and logic for calling `ethersService.claimDepositOrReward`. Handle display of claimable amounts (deposit vs reward).
-        -   [ ] **Status Displays:** Update all displays for participant status, deposit amount, reward pool, session state, decryption progress, etc., fetching data from the new contracts via the updated `ethersService`.
+        -   [ ] **Claim Component (New/Existing):** Implement UI and logic calling `ethersService.claimDepositOrReward`. Handle display of claimable amounts (deposit vs reward) and claimed status.
+        -   [ ] **Status Displays:** Update all displays (e.g., in `SessionDetails.vue`, `VoteResults.vue`, participant status components) for participant status, deposit amount, reward pool, session state, decryption progress, claim status etc., fetching data from the new contracts via the updated `ethersService`.
 -   [ ] **BLS Key Handling (`services/cryptography.js`, `localStorage` usage):** Review and ensure the localStorage mechanism for encrypting/decrypting/storing BLS keys still aligns with the registration (`ParticipantRegistry`) and submission (`VoteSession`) flows using the new contracts.
 -   [ ] **UI/UX Refinements:** Adjust text, button labels, flows, and information displays across the application to accurately reflect the new contract interactions (e.g., clear distinction between deposit return and reward claim).
 

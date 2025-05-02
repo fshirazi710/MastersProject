@@ -75,6 +75,19 @@
             class="form-input"
           >
         </div>
+        
+        <!-- Shares End date input -->
+        <div class="form-group">
+          <label for="sharesEndDate">Shares Submission Deadline</label>
+          <input 
+            type="datetime-local" 
+            id="sharesEndDate" 
+            v-model="voteSessionData.shares_end_date" 
+            required 
+            class="form-input"
+          >
+          <p class="helper-text">Participants must submit shares before this time.</p>
+        </div>
       </div>
 
       <!-- Secret holder configuration section -->
@@ -112,6 +125,21 @@
               class="form-input"
             >
             <p class="helper-text">Security deposit required from each holder</p>
+          </div>
+          
+          <!-- Min Share Threshold input -->
+          <div class="form-group">
+            <label for="minShareThreshold">Minimum Share Threshold</label>
+            <input 
+              type="number"
+              id="minShareThreshold"
+              v-model.number="voteSessionData.min_share_threshold"
+              required
+              min="1"
+              step="1"
+              class="form-input"
+            >
+            <p class="helper-text">Min shares needed for decryption (usually >= 1).</p>
           </div>
         </div>
       </div>
@@ -218,7 +246,8 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { voteSessionApi } from '@/services/api'
-import { ethersService } from '~/services/ethersService'
+import { ethersBaseService, factoryService } from '~/services/ethersService'
+import { ethers } from 'ethers'
 
 const router = useRouter();
 const loading = ref(false);
@@ -246,21 +275,46 @@ const voteSessionData = ref({
   description: '',
   start_date: '',
   end_date: '',
-  options: ['', ''], // Will be overwritten if slider type
+  shares_end_date: '',
+  options: ['', ''],
   reward_pool: 0.003,
   required_deposit: 0.001,
+  min_share_threshold: 1,
 })
 
-// Initialize Web3 and connect wallet
-const connectWallet = async () => {
-  try {
-    await ethersService.init();
+// Helper function to convert local datetime string to UNIX timestamp (seconds)
+const toTimestamp = (dateTimeString) => {
+  if (!dateTimeString) return null;
+  // Ensure the browser interprets the string correctly, may need adjustments based on format
+  return Math.floor(new Date(dateTimeString).getTime() / 1000);
+};
+
+// Function to check wallet connection status
+async function checkWalletConnection() {
+  // Use isConnected for a quick check if already initialized
+  if (ethersBaseService.isConnected()) {
+    walletAddress.value = ethersBaseService.getAccount();
+    walletBalance.value = await ethersBaseService.getBalance(); // Use stored balance
     walletConnected.value = true;
-    walletAddress.value = await ethersService.getAccount();
-    walletBalance.value = await ethersService.getBalance();
+  } else {
+    // Optional: Could try a passive check without triggering connection prompt
+    // e.g., checking if window.ethereum.selectedAddress exists
+    walletConnected.value = false;
+    walletAddress.value = '';
+    walletBalance.value = 0;
+  }
+}
+
+// Function to connect wallet
+async function connectWallet() {
+  error.value = null; // Clear previous errors
+  try {
+    await ethersBaseService.init(); // Use the base service init
+    await checkWalletConnection(); // Update UI state after connection
   } catch (err) {
-    console.error('Failed to connect wallet:', err);
-    error.value = 'Failed to connect wallet. Please make sure MetaMask is installed and unlocked.';
+    error.value = err.message || 'Failed to connect wallet.';
+    console.error('Wallet connection error:', err);
+    walletConnected.value = false;
   }
 }
 
@@ -279,12 +333,13 @@ const isFormValid = computed(() => {
   // Basic checks (title, description, dates)
   if (!voteSessionData.value.title || voteSessionData.value.title.length < 3 || voteSessionData.value.title.length > 100) return false;
   if (!voteSessionData.value.description || voteSessionData.value.description.length < 10 || voteSessionData.value.description.length > 1000) return false;
-  if (!voteSessionData.value.start_date || !voteSessionData.value.end_date) return false;
-  // Validate that end date is strictly after start date
+  if (!voteSessionData.value.start_date || !voteSessionData.value.end_date || !voteSessionData.value.shares_end_date) return false;
+  // Validate date chronology
   try {
     const startDate = new Date(voteSessionData.value.start_date);
     const endDate = new Date(voteSessionData.value.end_date);
-    if (endDate <= startDate) return false; // End date must be > start date
+    const sharesEndDate = new Date(voteSessionData.value.shares_end_date);
+    if (endDate <= startDate || sharesEndDate <= endDate) return false; // Check full sequence
   } catch (e) {
     return false; // Invalid date format
   }
@@ -308,188 +363,141 @@ const isFormValid = computed(() => {
     }
   }
   
-  // Check ETH values
+  // Check ETH values & threshold
   if (voteSessionData.value.reward_pool < 0.001 || voteSessionData.value.required_deposit < 0.001) return false;
+  if (voteSessionData.value.min_share_threshold < 1) return false; // Threshold must be at least 1
 
   return true; // If all checks pass
 });
 
-const handleSubmit = async () => {
-  if (loading.value || !isFormValid.value) { 
-      if (!isFormValid.value) {
-          error.value = "Please fill out all fields correctly. Ensure Min < Max, Step > 0, and slider settings don't generate excessive options (>200)." 
-      }
-      return;
-  };
-  
+// Handle form submission
+async function handleSubmit() {
   loading.value = true;
   error.value = null;
-  
-  try {
-    // Check if wallet is connected
-    if (!walletConnected.value) {
-      throw new Error('Please connect your wallet first');
-    }
 
-    // Check if user has enough balance
-    if (Number(walletBalance.value) < Number(voteSessionData.value.reward_pool)) {
-      throw new Error('Insufficient balance for reward pool');
-    }
+  if (!walletConnected.value) {
+      error.value = 'Please connect your wallet first.';
+      loading.value = false;
+      return;
+  }
 
-    // --- Start Date Validation ---
-    const now = Date.now();
-    const startDateStr = voteSessionData.value.start_date;
-    
-    if (!startDateStr) {
-        error.value = 'Please select a start date.';
-        loading.value = false;
-        return;
-    }
+  // --- Parameter Preparation ---
+  let sessionOptions = [];
+  let sessionMetadata = ''; // Default empty metadata
 
-    const selectedTimestamp = new Date(startDateStr).getTime();
-    const bufferMilliseconds = 60 * 1000; // 60 seconds buffer
-
-    if (selectedTimestamp <= (now + bufferMilliseconds)) {
-      error.value = 'Start date and time must be in the future (at least 1 minute from now).';
+  if (questionType.value === 'options') {
+    // Filter out empty options
+    sessionOptions = voteSessionData.value.options.filter(opt => opt.trim() !== '');
+    if (sessionOptions.length < 2) {
+      error.value = 'Please provide at least two valid options.';
       loading.value = false;
       return;
     }
-    // --- End Start Date Validation ---
-
-    // --- Generate options if slider type --- 
-    let finalOptions = [];
-    let payloadSliderConfig = null;
-    let displayHint = null;
-
-    if (questionType.value === 'slider') {
-      displayHint = 'slider';
-      payloadSliderConfig = {
-        min: Number(sliderConfig.value.min),
-        max: Number(sliderConfig.value.max),
-        step: Number(sliderConfig.value.step),
-      };
-      
-      // --- Generate options: Min, Max, and multiples of Step between Min and Max --- 
-      const optionsSet = new Set(); // Use Set for unique values
-
-      // Always include min and max (if valid range)
-      if (payloadSliderConfig.max >= payloadSliderConfig.min) {
-          optionsSet.add(payloadSliderConfig.min);
-          optionsSet.add(payloadSliderConfig.max);
-      }
-
-      // Add multiples of step that fall BETWEEN min and max
-      if (payloadSliderConfig.step > 0) { 
-          for (let currentMultiple = payloadSliderConfig.step; 
-               currentMultiple < payloadSliderConfig.max; // Strictly less than max
-               currentMultiple += payloadSliderConfig.step)
-          { 
-              if (currentMultiple > payloadSliderConfig.min) { // Strictly greater than min
-                  optionsSet.add(currentMultiple);
-              }
-          }
-          // Handle negative multiples if range allows
-          if (payloadSliderConfig.min < 0) {
-              for (let currentMultiple = -payloadSliderConfig.step; 
-                   currentMultiple > payloadSliderConfig.min; // Strictly greater than min
-                   currentMultiple -= payloadSliderConfig.step)
-              { 
-                  if (currentMultiple < payloadSliderConfig.max) { // Strictly less than max
-                     optionsSet.add(currentMultiple);
-                  }
-              }
-          }
-      }
-
-      // Convert set to sorted array of strings
-      finalOptions = Array.from(optionsSet)
-                          .sort((a, b) => a - b)
-                          .map(String);
-      // --- End generation logic --- 
-
-      // Validation checks (adjust if necessary for this logic)
-      if (finalOptions.length < 2 && payloadSliderConfig.min < payloadSliderConfig.max) {
-         throw new Error("Slider configuration must generate at least 2 unique options if Min != Max.");
-      } else if (finalOptions.length === 0 && payloadSliderConfig.min <= payloadSliderConfig.max) {
-           finalOptions = [String(payloadSliderConfig.min)]; 
-           if (finalOptions[0] === undefined || finalOptions[0] === null || finalOptions[0] === 'NaN') { 
-                 throw new Error("Slider configuration generated no valid options.");
-           }
-      } else if (finalOptions.length === 0) {
-           throw new Error("Slider configuration generated no options (invalid range?).");
-      }
-      
-    } else {
-      finalOptions = voteSessionData.value.options.filter(opt => opt && opt.trim());
+  } else if (questionType.value === 'slider') {
+    sessionOptions = []; // No options for slider type
+    // Basic validation for slider config
+    if (sliderConfig.value.min >= sliderConfig.value.max || sliderConfig.value.step <= 0) {
+        error.value = 'Invalid slider configuration (Min must be less than Max, Step must be positive).';
+        loading.value = false;
+        return;
     }
-    // --- End option generation ---
+    // Encode slider config into metadata (JSON string)
+    sessionMetadata = JSON.stringify({
+        type: 'slider',
+        min: sliderConfig.value.min,
+        max: sliderConfig.value.max,
+        step: sliderConfig.value.step
+    });
+  }
 
-    // Convert to BST before sending
-    const toBSTISOString = (date) => {
-        if (!date) return null;
-        try {
-            // Assuming input is YYYY-MM-DDTHH:MM
-            const localDate = new Date(date);
-            // Format for display/confirmation in London time
-            const bstStr = localDate.toLocaleString("en-GB", { timeZone: "Europe/London" }); 
-            // Reconstruct ISO-like string for backend (might need adjustment based on backend expectation)
-            const [day, month, year, hour, minute] = bstStr.match(/\d+/g);
-            return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
-        } catch(e) {
-            console.error("Error formatting date:", e);
-            return null; // Handle invalid date input
-        }
-    };
+  // Convert dates to timestamps
+  const startDateTimestamp = toTimestamp(voteSessionData.value.start_date);
+  const endDateTimestamp = toTimestamp(voteSessionData.value.end_date);
+  const sharesEndDateTimestamp = toTimestamp(voteSessionData.value.shares_end_date);
 
-    // Format core data for the contract part of the backend request
-    const coreVoteSessionData = {
-      title: voteSessionData.value.title,
-      description: voteSessionData.value.description,
-      start_date: toBSTISOString(voteSessionData.value.start_date),
-      end_date: toBSTISOString(voteSessionData.value.end_date),
-      reward_pool: Number(voteSessionData.value.reward_pool),
-      required_deposit: Number(voteSessionData.value.required_deposit),
-      options: finalOptions, // Use the generated or original options
-    };
+  if (!startDateTimestamp || !endDateTimestamp || !sharesEndDateTimestamp) {
+    error.value = 'Please select valid start, end, and share submission dates.';
+    loading.value = false;
+    return;
+  }
+  if (startDateTimestamp >= endDateTimestamp || endDateTimestamp >= sharesEndDateTimestamp) {
+    error.value = 'Dates must be in chronological order: Start < End < Shares End.';
+    loading.value = false;
+    return;
+  }
+  
+  // Get Min Share Threshold from input
+  const minShareThreshold = Number(voteSessionData.value.min_share_threshold);
+  if (isNaN(minShareThreshold) || minShareThreshold < 1) {
+      error.value = 'Minimum Share Threshold must be a number greater than or equal to 1.';
+      loading.value = false;
+      return;
+  }
 
-    // Construct the full payload including metadata
-    const fullPayload = {
-        vote_session_data: coreVoteSessionData,
-        displayHint: displayHint, // Will be 'slider' or null
-        sliderConfig: payloadSliderConfig // Will contain config or null
-    };
-    
-    // Validate formatted dates
-    if (!coreVoteSessionData.start_date || !coreVoteSessionData.end_date) {
-        throw new Error('Invalid start or end date format provided.');
+  // Prepare parameters for the factory contract
+  const factoryParams = {
+    title: voteSessionData.value.title,
+    description: voteSessionData.value.description,
+    startDate: startDateTimestamp,
+    endDate: endDateTimestamp,
+    sharesEndDate: sharesEndDateTimestamp,
+    options: sessionOptions,
+    metadata: sessionMetadata,
+    requiredDeposit: voteSessionData.value.required_deposit.toString(),
+    minShareThreshold: minShareThreshold
+  };
+
+  try {
+    console.log('Calling factoryService.createVoteSession with params:', factoryParams);
+
+    // --- Blockchain Transaction --- 
+    // No ETH value needed here, deposit is handled by registerParticipant
+    // Reward pool funding is separate
+    const deployedSessionInfo = await factoryService.createVoteSession(factoryParams);
+
+    console.log('Session created on blockchain:', deployedSessionInfo);
+
+    if (!deployedSessionInfo || !deployedSessionInfo.sessionId === undefined || !deployedSessionInfo.voteSessionContract || !deployedSessionInfo.participantRegistryContract) {
+        throw new Error('Failed to get valid session details from blockchain event.');
     }
 
-    console.log("Submitting Full Payload:", fullPayload); // Debug log
+    // --- Backend API Call --- 
+    // Prepare data for backend, including the new addresses and session ID
+    const backendPayload = {
+        session_id: deployedSessionInfo.sessionId,
+        title: voteSessionData.value.title,
+        description: voteSessionData.value.description,
+        start_date: voteSessionData.value.start_date,
+        end_date: voteSessionData.value.end_date,
+        shares_end_date: voteSessionData.value.shares_end_date,
+        options: sessionOptions,
+        metadata: sessionMetadata,
+        reward_pool: voteSessionData.value.reward_pool,
+        required_deposit: voteSessionData.value.required_deposit,
+        min_share_threshold: minShareThreshold,
+        vote_session_address: deployedSessionInfo.voteSessionContract,
+        registry_address: deployedSessionInfo.participantRegistryContract
+    };
 
-    // Call the backend API using voteSessionApi.createVoteSession
-    const response = await voteSessionApi.createVoteSession(fullPayload);
-    alert(response.data.message || 'Vote Session created successfully!');
-    router.push('/all-vote-sessions');
+    console.log('Sending session metadata to backend:', backendPayload);
+    const response = await voteSessionApi.createVoteSession(backendPayload);
+
+    console.log('Backend response:', response);
+
+    // Redirect on successful creation (both blockchain and backend)
+    // Use the session ID returned from the blockchain event
+    router.push(`/session/${deployedSessionInfo.sessionId}`); 
+
   } catch (err) {
-    console.error("Vote Session creation failed:", err);
-    // More specific error handling
-    if (err.response?.data?.detail) {
-      error.value = `Error: ${err.response.data.detail}`;
-    } else if (err instanceof Error) {
-      error.value = err.message;
-    } else {
-      error.value = 'An unexpected error occurred during vote session creation.';
-    }
+    console.error('Error creating vote session:', err);
+    error.value = err.message || 'An unexpected error occurred during session creation.';
   } finally {
     loading.value = false;
   }
 }
 
-// Connect wallet on mount
-onMounted(() => {
-  // Re-enable automatic connection
-  connectWallet();
-});
+// Run connection check on component mount
+onMounted(checkWalletConnection);
 
 </script>
 

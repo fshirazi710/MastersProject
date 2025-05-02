@@ -36,7 +36,7 @@ class BlockchainService:
     Service for handling all blockchain interactions.
     Interacts with VoteSessionFactory, VoteSession, and ParticipantRegistry contracts.
     """
-
+    
     def __init__(self):
         # Initialize Web3 connection
         self.w3 = Web3(Web3.HTTPProvider(settings.WEB3_PROVIDER_URL))
@@ -46,7 +46,7 @@ class BlockchainService:
             raise ConnectionError(f"Unable to connect to Web3 provider: {settings.WEB3_PROVIDER_URL}")
         else:
             logger.info(f"Connected to Web3 provider at {settings.WEB3_PROVIDER_URL}")
-
+        
         # Load ABIs
         self.factory_abi = load_abi("VoteSessionFactory")
         self.session_abi = load_abi("VoteSession")
@@ -98,12 +98,12 @@ class BlockchainService:
     async def call_contract_function(self, contract, function_name, *args):
         """
         Helper method to call a contract function with proper async handling.
-
+        
         Args:
             contract: The web3 contract instance.
             function_name: Name of the contract function to call.
             *args: Arguments to pass to the function.
-
+            
         Returns:
             Result of the contract function call.
         """
