@@ -21,6 +21,7 @@ from app.schemas import (
 from app.services.blockchain import BlockchainService
 
 import logging
+import asyncio
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -86,17 +87,17 @@ async def submit_share(
         logger.info(f"Signature verified successfully for session {vote_session_id}, holder {request.public_key}")
 
         # 3. Check Contract State (Optional but recommended)
-        # Verify the sender is actually an active holder for this session
-        is_active = await blockchain_service.is_holder_active(vote_session_id, checksum_request_address)
-        if not is_active:
-             logger.warning(f"Attempted share submission by non-active holder {request.public_key} for session {vote_session_id}")
-             raise HTTPException(status_code=403, detail="Submitter is not an active holder for this vote session.")
+        # Verify the sender is actually registered for this session
+        is_registered = await blockchain_service.is_participant_registered(vote_session_id, checksum_request_address)
+        if not is_registered:
+             logger.warning(f"Attempted share verification by non-registered participant {request.public_key} for session {vote_session_id}")
+             raise HTTPException(status_code=403, detail="Submitter is not registered for this vote session.")
 
-        # Optionally check if shares have already been submitted on-chain by this holder
-        has_submitted = await blockchain_service.has_holder_submitted_share(vote_session_id, checksum_request_address)
+        # Check if shares have already been submitted on-chain by this holder (checks ParticipantRegistry)
+        has_submitted = await blockchain_service.has_participant_submitted_shares(vote_session_id, checksum_request_address)
         if has_submitted:
             logger.info(f"Holder {request.public_key} already submitted shares for session {vote_session_id} (on-chain). Allowing verification potentially for resubmission UI.")
-            # Decide if this should be an error or just a note
+            # If resubmission isn't allowed or needed, treat this as an error:
             raise HTTPException(status_code=409, detail="Shares already submitted by this holder on-chain.")
 
         # Verification successful
@@ -115,93 +116,82 @@ async def submit_share(
         raise HTTPException(status_code=500, detail="Internal server error during share verification.")
 
 
-@router.get("/decryption-status/{vote_session_id}")
-async def decryption_status(vote_session_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    # TODO: Review the logic of this endpoint. What is its purpose?
-    # Does it need both shares and votes? Does it return anything?
-    # Use correct contract function name
-    # Rename parameter: election_id -> vote_session_id
-    shares = await blockchain_service.call_contract_function("getDecryptionShares", vote_session_id)
-    
-    # Correct contract function name is already used here
-    # Rename parameter: election_id -> vote_session_id
-    # Rename contract call: getVotes -> getEncryptedVotes
-    # Rename parameter: election_id -> vote_session_id
-    votes = await blockchain_service.call_contract_function("getEncryptedVotes", vote_session_id)
-
-    # Update log message
-    logger.info(f"Retrieved shares for session {vote_session_id}: {shares}")
-    # Update log message
-    logger.info(f"Retrieved votes for session {vote_session_id}: {votes}")
-    
-    vote_shares = defaultdict(list)
-    share_indexes = defaultdict(list)
-    
-    # Assuming shares tuple structure: (vote_index_within_session, public_key, share_data, holder_index_within_session) 
-    # Adjust indices if the Share struct in contract is different
-    for vote_id, public_key, share, index in shares:
-        vote_shares[vote_id].append(share) 
-        share_indexes[vote_id].append(index + 1) # Keep original logic of 1-based index?
-
-    # Sort the shares and indexes for each vote_id based on indexes
-    for vote_id in vote_shares:
-        sorted_shares_indexes = sorted(zip(share_indexes[vote_id], vote_shares[vote_id]))
-        # Handle potential empty list after sorting
-        if sorted_shares_indexes:
-            sorted_indexes, sorted_shares = zip(*sorted_shares_indexes)
-            share_indexes[vote_id] = list(sorted_indexes)
-            vote_shares[vote_id] = list(sorted_shares)
-        else:
-            share_indexes[vote_id] = []
-            vote_shares[vote_id] = []
-    
-    # This endpoint currently doesn't return anything explicitly.
-    # Consider returning a status based on retrieved data, e.g., using ShareStatusResponse?
-    # return { "status": "Processed", "vote_shares_count": len(vote_shares) } # Example return
-
+# Endpoint removed as functionality is redundant or unclear
+# @router.get("/decryption-status/{vote_session_id}")
+# async def decryption_status(vote_session_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+#     ...
 
 @router.get("/get-shares/{vote_session_id}")
 async def get_shares(vote_session_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    # Docstring update
-    """Retrieve all submitted shares for a specific vote session, grouped by vote index."""
+    """Retrieve all submitted decryption shares for a specific vote session, grouped by vote index."""
     try:
-        # Use correct contract function name
-        # Rename parameter: election_id -> vote_session_id
-        shares_from_chain = await blockchain_service.call_contract_function("getDecryptionShares", vote_session_id)
+        # 1. Get VoteSession address
+        session_addr, _ = await blockchain_service.get_session_addresses(vote_session_id)
+        if not session_addr:
+            logger.warning(f"Could not retrieve session address for session ID {vote_session_id}. Assuming session does not exist.")
+            raise HTTPException(status_code=404, detail=f"Vote session {vote_session_id} not found or contract addresses missing.")
+
+        # 2. Get VoteSession contract instance
+        session_contract = blockchain_service.get_session_contract(session_addr)
         
-        # Create a dictionary to store the sorted shares and their corresponding indexes for each vote_id
+        # 3. Get the number of submitted shares
+        try:
+            num_shares = await blockchain_service.call_contract_function(session_contract, "getNumberOfDecryptionShares")
+            logger.info(f"Found {num_shares} submitted decryption shares for session {vote_session_id}.")
+        except Exception as count_err:
+             logger.error(f"Error calling getNumberOfDecryptionShares for session {vote_session_id}: {count_err}")
+             # If count fails, we cannot proceed
+             raise HTTPException(status_code=500, detail="Failed to retrieve share count from blockchain.")
+
+        # 4. Fetch each share individually
+        shares_from_chain = []
+        if num_shares > 0:
+            fetch_tasks = [
+                blockchain_service.call_contract_function(session_contract, "getDecryptionShare", i) 
+                for i in range(num_shares)
+            ]
+            # Use asyncio.gather to fetch shares concurrently
+            results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+            
+            # Process results, filtering out potential errors
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error(f"Error fetching decryption share at index {i} for session {vote_session_id}: {result}")
+                    # Decide how to handle: skip this share, or raise an error for the whole request?
+                    # Let's skip the problematic share for now.
+                    continue 
+                shares_from_chain.append(result)
+
+        # 5. Process and Format Shares
         vote_shares_map = defaultdict(list)
         share_indexes_map = defaultdict(list)
         holder_map = defaultdict(list) # Store holder per share
 
-        # Assuming shares tuple structure from contract: (voteIndex, holderAddress, shareData, index)
-        # Adjust indices if the DecryptionShare struct tuple order is different
-        for vote_idx_contract, holder_addr_contract, share_bytes_contract, share_idx_contract in shares_from_chain:
-            # Use the correct indices from the unpacked tuple
+        # Structure returned by getDecryptionShare(index):
+        # (uint256 voteIndex, address holderAddress, bytes share, uint256 index)
+        for share_tuple in shares_from_chain:
+            # Unpack tuple (order confirmed by ABI)
+            vote_idx_contract, holder_addr_contract, share_bytes_contract, share_idx_contract = share_tuple 
             vote_shares_map[vote_idx_contract].append(share_bytes_contract)
-            share_indexes_map[vote_idx_contract].append(share_idx_contract) # Use the actual stored index
+            share_indexes_map[vote_idx_contract].append(share_idx_contract)
             holder_map[vote_idx_contract].append(holder_addr_contract)
 
-        # Prepare response data (e.g., a list of dicts, one per vote_index)
+        # Prepare response data
         response_data = []
-        # Use the keys from vote_shares_map which represent the vote indices present
-        for vote_index in vote_shares_map.keys(): 
-             # Sort shares based on holder index for consistent ordering
+        for vote_index in sorted(vote_shares_map.keys()):
             sorted_combined = sorted(zip(share_indexes_map[vote_index], vote_shares_map[vote_index], holder_map[vote_index]))
             
+            formatted_shares = []
             if sorted_combined:
                 sorted_indices, sorted_shares_bytes, sorted_holders = zip(*sorted_combined)
-                # Format shares for the specific vote_index
                 formatted_shares = [
                     {
-                        "holder_address": holder, 
-                        "share_index": idx, 
-                        "share_value": share.hex() if share else None # Convert bytes to hex
+                        "holder_address": holder,
+                        "share_index": idx,
+                        "share_value": share.hex() if share else None
                     }
                     for idx, share, holder in zip(sorted_indices, sorted_shares_bytes, sorted_holders)
                 ]
-            else:
-                 formatted_shares = []
 
             response_data.append({
                 "vote_index": vote_index,
@@ -209,17 +199,16 @@ async def get_shares(vote_session_id: int, blockchain_service: BlockchainService
                 "count": len(formatted_shares)
             })
 
-        # Sort response data by vote_index for consistency
-        response_data.sort(key=lambda x: x['vote_index']) 
+        # 6. Wrap response in StandardResponse
+        return StandardResponse(
+            success=True, 
+            message=f"Successfully retrieved {len(shares_from_chain)} shares for session {vote_session_id}", 
+            data=response_data
+        )
 
-        # Consider returning StandardResponse structure?
-        # return StandardResponse(success=True, message="Shares retrieved", data=response_data)
-        return response_data # Currently returning raw list
-
-    except HTTPException:
-        raise
+    except HTTPException as http_exc:
+        raise http_exc
     except Exception as e:
-        # Update log message
-        logger.error(f"Error getting shares for session {vote_session_id}: {str(e)}")
-        # Update detail message
-        raise handle_blockchain_error(f"get shares for session {vote_session_id}", e)
+        error_detail = handle_blockchain_error(e)
+        logger.error(f"Error getting shares for session {vote_session_id}: {error_detail}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get shares for session {vote_session_id}: {error_detail}")

@@ -68,200 +68,128 @@ async def validate_public_key(request: PublicKeyValidateRequest, blockchain_serv
 async def get_encrypted_vote_info(vote_session_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
     """Retrieve all submitted encrypted vote data for a specific vote session."""
     try:
+        # 1. Get VoteSession address and contract instance
+        session_addr, _ = await blockchain_service.get_session_addresses(vote_session_id)
+        if not session_addr:
+            logger.warning(f"Could not retrieve session address for session ID {vote_session_id}. Assuming session does not exist.")
+            raise HTTPException(status_code=404, detail=f"Vote session {vote_session_id} not found or contract addresses missing.")
+        session_contract = blockchain_service.get_session_contract(session_addr)
+
+        # 2. Get the number of submitted votes
+        try:
+            num_votes = await blockchain_service.call_contract_function(session_contract, "getNumberOfVotes")
+            logger.info(f"Found {num_votes} submitted votes for session {vote_session_id}.")
+        except Exception as count_err:
+             logger.error(f"Error calling getNumberOfVotes for session {vote_session_id}: {count_err}")
+             raise HTTPException(status_code=500, detail="Failed to retrieve vote count from blockchain.")
+
+        # 3. Fetch each vote individually using asyncio.gather
         all_votes_data = []
-        votes_from_chain = await blockchain_service.call_contract_function("getEncryptedVotes", vote_session_id)
-        for index, vote_tuple in enumerate(votes_from_chain):
-            # Convert bytes fields to hex strings for JSON serialization
-            alphas_hex = [a.hex() for a in vote_tuple[4]] if vote_tuple[4] else [] # Handle potential empty list
-            all_votes_data.append({
-                "id": vote_session_id,
-                "vote_id": index,
-                "ciphertext": vote_tuple[1].hex() if vote_tuple[1] else None,
-                "g1r": vote_tuple[2].hex() if vote_tuple[2] else None,
-                "g2r": vote_tuple[3].hex() if vote_tuple[3] else None,
-                "alphas": alphas_hex, # Now a list of hex strings
-                "voter": vote_tuple[5], # Already a string (address)
-                "threshold": vote_tuple[6] # Already an int
-            })
+        if num_votes > 0:
+            fetch_tasks = [
+                blockchain_service.call_contract_function(session_contract, "getEncryptedVote", i) 
+                for i in range(num_votes)
+            ]
+            results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+            
+            for index, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error(f"Error fetching encrypted vote at index {index} for session {vote_session_id}: {result}")
+                    continue # Skip this vote if fetching failed
+                
+                vote_tuple = result
+                # Structure returned by getEncryptedVote(index):
+                # (bytes ciphertext, bytes g1r, bytes g2r, bytes[] alpha, address voter, uint256 threshold)
+                # Unpack carefully, ensuring correct indices
+                try:
+                    ciphertext, g1r, g2r, alpha_bytes_list, voter, threshold = vote_tuple
+                    # Convert bytes fields to hex strings for JSON serialization
+                    alphas_hex = [a.hex() for a in alpha_bytes_list] if alpha_bytes_list else []
+                    all_votes_data.append({
+                        "id": vote_session_id, # Keep session id for context?
+                        "vote_index": index, # Use the loop index
+                        "ciphertext": ciphertext.hex() if ciphertext else None,
+                        "g1r": g1r.hex() if g1r else None,
+                        "g2r": g2r.hex() if g2r else None,
+                        "alphas": alphas_hex,
+                        "voter": voter, # Already checksummed address from contract
+                        "threshold": threshold
+                    })
+                except (ValueError, IndexError, TypeError) as unpack_err:
+                     logger.error(f"Error unpacking/processing vote tuple at index {index} for session {vote_session_id}: {unpack_err}. Tuple: {vote_tuple}")
+                     # Skip malformed tuple
+                     continue
+
         return StandardResponse(
             success=True,
-            message=f"Successfully retrieved encrypted vote information for session {vote_session_id}",
+            message=f"Successfully retrieved {len(all_votes_data)} encrypted vote(s) for session {vote_session_id}",
             data=all_votes_data
         )
+    except HTTPException as http_exc:
+        raise http_exc
     except Exception as e:
-        logger.error(f"Error getting encrypted vote information for session {vote_session_id}: {str(e)}")
-        raise handle_blockchain_error("get encrypted vote information", e)
+        error_detail = handle_blockchain_error(e)
+        logger.error(f"Error getting encrypted vote information for session {vote_session_id}: {error_detail}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get encrypted vote information: {error_detail}")
 
 
-@router.post("/submit/{vote_session_id}", response_model=StandardResponse[TransactionResponse])
-async def submit_encrypted_vote(vote_session_id: int, request: dict, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    """Submits an encrypted vote to the specified vote session."""
-
+@router.post("/eligibility/{vote_session_id}", response_model=StandardResponse)
+async def check_vote_eligibility(
+    vote_session_id: int, 
+    request: dict, # Reuse existing dict or define specific EligibilityCheckRequest schema?
+    blockchain_service: BlockchainService = Depends(get_blockchain_service)
+):
+    """
+    Checks if a voter is eligible to submit an encrypted vote to the specified vote session.
+    Does NOT submit the vote transaction; that must be done by the voter on the frontend.
+    Requires 'voter_address' in the request body.
+    """
+    
     # --- Validate Voter Address --- 
-    voter_address = request.get("voter")
-    if not voter_address or not isinstance(voter_address, str):
-        raise HTTPException(status_code=422, detail="Missing or invalid 'voter' field (string expected).")
+    voter_address_str = request.get("voter_address") # Expect voter address in payload
+    if not voter_address_str or not isinstance(voter_address_str, str):
+        raise HTTPException(status_code=422, detail="Missing or invalid 'voter_address' field (string expected).")
     try:
-        voter_address = blockchain_service.w3.to_checksum_address(voter_address)
+        voter_address = blockchain_service.w3.to_checksum_address(voter_address_str)
+        logger.info(f"Checking vote eligibility for voter {voter_address} in session {vote_session_id}.")
     except ValueError:
         raise HTTPException(status_code=422, detail="Invalid voter address format.")
 
-    # --- Check if Already Voted --- 
-    votes_from_chain = await blockchain_service.call_contract_function("getEncryptedVotes", vote_session_id)
-    if (any(entry[5] == voter_address for entry in votes_from_chain)):
-        raise HTTPException(status_code=400, detail="Voter has already cast a vote in this session")
-
-    # --- Validate Holder Addresses --- 
-    holder_addresses_input = request.get("holderAddresses")
-    if not holder_addresses_input or not isinstance(holder_addresses_input, list):
-        raise HTTPException(status_code=422, detail="Missing or invalid 'holderAddresses' field (list expected).")
-    holder_addresses_checksummed = []
-    for addr_str in holder_addresses_input:
-        if not isinstance(addr_str, str):
-             raise HTTPException(status_code=422, detail=f"Invalid item type in 'holderAddresses' list (string expected). Item: {addr_str}")
-        try:
-            checksummed_addr = blockchain_service.w3.to_checksum_address(addr_str)
-            holder_addresses_checksummed.append(checksummed_addr)
-        except ValueError:
-             raise HTTPException(status_code=422, detail=f"Invalid holder address format in list: {addr_str}")
-
-    # --- Validate and Convert Required Fields for Contract Call --- 
-    required_fields = ["ciphertext", "g1r", "g2r", "alphas", "threshold"]
-    contract_args = {}
-    for field in required_fields:
-        if field not in request:
-            raise HTTPException(status_code=422, detail=f"Missing required field: {field}")
-        
-        value = request[field]
-        try:
-            if field in ["ciphertext", "g1r", "g2r"]:
-                # Convert hex string to bytes
-                if not isinstance(value, str):
-                    raise ValueError(f"Field '{field}' must be a hex string.")
-                hex_value = value[2:] if value.startswith('0x') else value
-                contract_args[field] = unhexlify(hex_value)
-            elif field == "alphas":
-                # --- CORRECTED: Expect HEX strings, convert via base 16 ---
-                if not isinstance(value, list):
-                    raise ValueError("Field 'alphas' must be a list of strings.")
-                alphas_bytes_list = [] 
-                for alpha_str in value:
-                    if not isinstance(alpha_str, str):
-                         raise ValueError(f"Invalid item type in 'alphas' list (string expected). Item: {alpha_str}")
-                    # Convert the HEX string to integer, then to bytes
-                    try:
-                        # Use base=16 for hex conversion
-                        alpha_int = int(alpha_str, 16) 
-                        # Convert integer to 32 bytes (big-endian), adjust length if needed
-                        byte_length = 32 
-                        alpha_bytes = alpha_int.to_bytes(byte_length, byteorder='big', signed=False)
-                        alphas_bytes_list.append(alpha_bytes) # Append bytes
-                    except ValueError as inner_e:
-                        logger.error(f"Failed to convert alpha hex string '{alpha_str}' to integer: {inner_e}")
-                        raise ValueError(f"Invalid hex integer format in 'alphas' list for item: {alpha_str}")
-                    except OverflowError as oe:
-                        logger.error(f"Alpha value '{alpha_str}' (from hex) is too large to fit into {byte_length} bytes: {oe}")
-                        raise ValueError(f"Alpha value is too large: {alpha_str}")
-                contract_args[field] = alphas_bytes_list # Now a list[bytes]
-                # ----------------------------------------------------------
-            elif field == "threshold":
-                contract_args[field] = int(value) 
-            else:
-                contract_args[field] = value # Should not happen
-        except (ValueError, TypeError) as e:
-            logger.error(f"Validation/Conversion Error for field '{field}': {e}")
-            raise HTTPException(status_code=422, detail=f"Invalid format or value for field: {field}. {e}")
-        except Exception as e: 
-             logger.error(f"Error processing field '{field}': {e}")
-             raise HTTPException(status_code=422, detail=f"Error processing field: {field}. {e}")
-
-    # --- Prepare Arguments for Contract Call --- 
     try:
-        vote_session_id_int = int(vote_session_id)
-    except (ValueError, TypeError):
-         raise HTTPException(status_code=400, detail="Invalid vote_session_id format.")
-
-    # Order must match contract function signature!
-    # submitEncryptedVote(uint256 voteSessionId, address voter, address[] memory _holderAddresses, bytes memory ciphertext, bytes memory g1r, bytes memory g2r, bytes[] memory alpha, uint256 threshold)
-    args_for_contract = [
-        vote_session_id_int,               # uint256
-        voter_address,                   # address (The actual voter from the request)
-        holder_addresses_checksummed,    # address[]
-        contract_args["ciphertext"],     # bytes
-        contract_args["g1r"],            # bytes
-        contract_args["g2r"],            # bytes
-        contract_args["alphas"],         # NOW list[bytes]
-        contract_args["threshold"]       # uint256
-    ]
-
-    # --- Estimate Gas and Send Transaction --- 
-    try:
-        nonce = await asyncio.to_thread(blockchain_service.w3.eth.get_transaction_count, WALLET_ADDRESS)
-
-        logger.debug(f"Calling submitEncryptedVote with args: {args_for_contract}")
-        # Gas estimation might raise ContractLogicError if require fails (e.g., already voted)
-        estimated_gas = await asyncio.to_thread(
-            blockchain_service.contract.functions.submitEncryptedVote(*args_for_contract).estimate_gas,
-            {'from': WALLET_ADDRESS}
-        )
-        logger.info(f"Estimated gas for submitEncryptedVote: {estimated_gas}")
-
-        create_vote_tx = blockchain_service.contract.functions.submitEncryptedVote(*args_for_contract).build_transaction({
-            'from': WALLET_ADDRESS,
-            'gas': estimated_gas + 50000, # Add buffer
-            'gasPrice': await asyncio.to_thread(getattr, blockchain_service.w3.eth, 'gas_price'),
-            'nonce': nonce,
-        })
-
-        signed_tx = blockchain_service.w3.eth.account.sign_transaction(create_vote_tx, PRIVATE_KEY)
-        tx_hash = await asyncio.to_thread(blockchain_service.w3.eth.send_raw_transaction, signed_tx.raw_transaction)
-        receipt = await asyncio.to_thread(blockchain_service.w3.eth.wait_for_transaction_receipt, tx_hash, timeout=180) # Increased timeout
+        # 1. Check Session Status
+        session_details = await blockchain_service.get_session_details(vote_session_id)
+        if not session_details:
+             logger.warning(f"Eligibility check failed for {voter_address}: Session {vote_session_id} not found.")
+             raise HTTPException(status_code=404, detail=f"Vote session {vote_session_id} not found.")
         
-    except ContractLogicError as e: # <-- Catch specific ContractLogicError first
-        error_message = str(e)
-        if "Voter already voted" in error_message:
-            # Log as warning (less severe) without full traceback for this expected case
-            logger.warning(f"Blocked attempt to double vote by {voter_address} in session {vote_session_id}: {error_message}") 
-            raise HTTPException(status_code=400, detail="Voter has already cast a vote in this session.")
-        elif "Vote Session not started" in error_message:
-            # Log as warning for this potentially expected case too
-            logger.warning(f"Blocked vote submission for inactive session {vote_session_id}: {error_message}")
-            raise HTTPException(status_code=400, detail="Vote Session not started.")
-        else:
-            # Unexpected contract logic error, log full traceback
-            logger.exception(f"Unexpected ContractLogicError during submitEncryptedVote for session {vote_session_id}: {e}")
-            raise handle_blockchain_error("submit encrypted vote transaction (contract logic error)", e)
+        session_status = session_details.get('status')
+        if session_status != "VotingOpen":
+            logger.warning(f"Eligibility check failed for {voter_address}: Session {vote_session_id} status is {session_status}, not 'VotingOpen'.")
+            raise HTTPException(status_code=400, detail=f"Vote session is not in the voting phase (status: {session_status}).")
 
-    except Exception as e: # <-- Catch other exceptions (network, timeout, etc.)
-        logger.exception(f"Non-Contract blockchain transaction error during submitEncryptedVote for session {vote_session_id}: {e}")
-        raise handle_blockchain_error("submit encrypted vote transaction (general error)", e)
+        # 2. Check if Voter is Registered
+        is_registered = await blockchain_service.is_participant_registered(vote_session_id, voter_address)
+        if not is_registered:
+            logger.warning(f"Eligibility check failed for {voter_address}: Not registered for session {vote_session_id}.")
+            raise HTTPException(status_code=403, detail="Voter is not registered for this vote session.")
 
-    # --- Process Receipt --- 
-    if receipt.status == 1:
-        logger.info(f"Successfully submitted encrypted vote for session {vote_session_id}. Tx: {receipt.transactionHash.hex()}")
+        # 3. Check if Voter has Already Voted
+        has_voted = await blockchain_service.has_participant_voted(vote_session_id, voter_address)
+        if has_voted:
+            logger.warning(f"Eligibility check failed for {voter_address}: Already voted in session {vote_session_id}.")
+            raise HTTPException(status_code=409, detail="Voter has already cast a vote in this session.")
+
+        # All checks passed
+        logger.info(f"Voter {voter_address} is eligible to vote in session {vote_session_id}. Frontend should proceed with transaction.")
         return StandardResponse(
             success=True,
-            message="Encrypted vote submitted successfully.",
-            data=TransactionResponse(
-                success=True,
-                message="Encrypted vote submitted successfully.",
-                transaction_hash=receipt.transactionHash.hex()
-            )
+            message="Voter is eligible to cast a vote."
+            # No data needed beyond success status
         )
-    else:
-        revert_reason = "Encrypted vote submission transaction failed."
-        try:
-            tx = await asyncio.to_thread(blockchain_service.w3.eth.get_transaction, tx_hash)
-            revert_data = await asyncio.to_thread(
-                blockchain_service.w3.eth.call,
-                {'to': tx['to'], 'from': tx['from'], 'value': tx['value'], 'data': tx['input']},
-                tx['blockNumber'] - 1
-            )
-            if revert_data.startswith(b'\x08\xc3y\xa0'):
-                 decoded_reason = await asyncio.to_thread(blockchain_service.w3.codec.decode, ['string'], revert_data[4:])
-                 revert_reason += " Reason: " + decoded_reason[0]
-        except Exception as e:
-             logger.warning(f"Could not retrieve revert reason for encrypted vote tx {tx_hash.hex()}: {e}")
 
-        logger.error(f"Encrypted vote submission transaction failed for session {vote_session_id}. Tx: {tx_hash.hex()}. Reason: {revert_reason}")
-        raise HTTPException(status_code=500, detail=revert_reason)
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        error_detail = handle_blockchain_error(e)
+        logger.exception(f"Unexpected error during vote eligibility check for voter {voter_address} in session {vote_session_id}: {error_detail}")
+        raise HTTPException(status_code=500, detail=f"Internal server error during vote eligibility check: {error_detail}")

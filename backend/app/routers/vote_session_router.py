@@ -32,248 +32,253 @@ router = APIRouter(prefix="/vote-sessions", tags=["Vote Sessions"])
 
 @router.post("/create", response_model=StandardResponse[TransactionResponse])
 async def create_vote_session(data: ExtendedVoteSessionCreateRequest, blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
-    # Extract core data for contract interaction
+    """Creates a new vote session using the VoteSessionFactory."""
     core_session_data = data.vote_session_data
-    
-    # Convert start and end dates from ISO format to Unix timestamps
-    start_timestamp = int(datetime.fromisoformat(core_session_data.start_date.replace('Z', '+00:00')).timestamp())
-    end_timestamp = int(datetime.fromisoformat(core_session_data.end_date.replace('Z', '+00:00')).timestamp())
-    
-    # Convert reward pool and required deposit from Ether to Wei
-    required_deposit_wei = blockchain_service.w3.to_wei(core_session_data.required_deposit, 'ether')
-    reward_pool_wei = blockchain_service.w3.to_wei(core_session_data.reward_pool, 'ether')
 
-    # Call helper function with only core data
-    # Pass metadata components and reward pool value to helper
-    receipt = await create_vote_session_transaction(
-        core_session_data,
-        start_timestamp, 
-        end_timestamp, 
-        required_deposit_wei, 
-        reward_pool_wei,       # Pass reward_pool_wei for msg.value
-        blockchain_service
-    )
-    
-    if receipt.status != 1:
-         raise HTTPException(status_code=500, detail="Failed to create vote session on blockchain")
-
-    # --- Store Metadata in DB --- 
-    vote_session_id = None
     try:
-        # --- Parse VoteSessionCreated event from logs --- 
-        event_signature_hash = blockchain_service.w3.keccak(text="VoteSessionCreated(uint256,string)").hex()
-        vote_session_id = None
-        for log in receipt.logs:
-            if log['topics'] and log['topics'][0].hex() == event_signature_hash:
-                event_abi = next((item for item in blockchain_service.contract.abi if item.get('type') == 'event' and item.get('name') == 'VoteSessionCreated'), None)
-                if event_abi:
-                    try:
-                        # Extract just the type strings from the ABI inputs
-                        types_list = [inp['type'] for inp in event_abi['inputs']]
-                        # Decode using the list of type strings
-                        decoded_data = blockchain_service.w3.codec.decode(
-                            types_list, 
-                            log['data']
-                        )
-                        # Arguments are returned as a tuple in order (id, title)
-                        vote_session_id = decoded_data[0] 
-                        logger.info(f"Parsed vote session ID {vote_session_id} from VoteSessionCreated event.")
-                        break # Found and parsed successfully
-                    except Exception as decode_err:
-                        # Log error specifically related to decoding
-                        logger.error(f"Error decoding VoteSessionCreated event data: {decode_err}")
-                        break # Stop trying if decoding fails
-                else:
-                    logger.error("Could not find VoteSessionCreated event ABI to decode logs.")
-                    break
+        # Convert dates to Unix timestamps
+        start_timestamp = int(datetime.fromisoformat(core_session_data.start_date.replace('Z', '+00:00')).timestamp())
+        end_timestamp = int(datetime.fromisoformat(core_session_data.end_date.replace('Z', '+00:00')).timestamp())
+        # Assuming sharesEndDate is also provided in ISO format
+        shares_end_timestamp = int(datetime.fromisoformat(core_session_data.shares_end_date.replace('Z', '+00:00')).timestamp())
+
+        # Convert required deposit from Ether to Wei
+        required_deposit_wei = blockchain_service.w3.to_wei(core_session_data.required_deposit, 'ether')
         
-        if vote_session_id is None:
-             logger.warning(f"Could not find or parse VoteSessionCreated event in transaction logs (tx: {receipt.transactionHash.hex()}). Metadata storage will be skipped.")
+        # Prepare metadata string (simple JSON for now, adjust if needed)
+        metadata_dict = {
+            # Add any specific metadata fields expected by the contract if any
+            # Example: "version": "1.0"
+        }
+        metadata_str = json.dumps(metadata_dict)
 
-        if vote_session_id is not None and (data.displayHint or data.sliderConfig):
-            slider_config_json = json.dumps(data.sliderConfig.model_dump()) if data.sliderConfig else None
+        logger.info(f"Attempting to create session via factory with params: title='{core_session_data.title}', start={start_timestamp}, end={end_timestamp}, shares_end={shares_end_timestamp}, deposit={required_deposit_wei}, threshold={core_session_data.min_share_threshold}")
+
+        # Call the updated blockchain service method
+        # This now handles the transaction and returns parsed event data
+        creation_result = await blockchain_service.create_vote_session(
+            title=core_session_data.title,
+            description=core_session_data.description,
+            start_date=start_timestamp,
+            end_date=end_timestamp,
+            shares_end_date=shares_end_timestamp,
+            options=core_session_data.options,
+            metadata=metadata_str, # Pass the prepared metadata string
+            required_deposit=required_deposit_wei,
+            min_share_threshold=core_session_data.min_share_threshold
+        )
+        
+        # Extract the new session ID from the result
+        vote_session_id = creation_result['sessionId']
+        session_contract_addr = creation_result['voteSessionContract']
+        registry_contract_addr = creation_result['participantRegistryContract']
+
+        logger.info(f"Successfully created session pair via factory. Session ID: {vote_session_id}, Session Addr: {session_contract_addr}, Registry Addr: {registry_contract_addr}")
+
+        # --- Store Frontend Metadata in DB --- 
+        # Use the session ID obtained from the event
+        if data.displayHint or data.sliderConfig:
+            try:
+                slider_config_json = json.dumps(data.sliderConfig.model_dump()) if data.sliderConfig else None
+                
+                metadata_to_store = {
+                    "vote_session_id": vote_session_id,
+                    "displayHint": data.displayHint,
+                    "sliderConfig": slider_config_json
+                }
+                logger.debug(f"Attempting to store frontend metadata: {metadata_to_store}") 
+                
+                await db.election_metadata.update_one(
+                    {"vote_session_id": vote_session_id},
+                    {"$set": metadata_to_store},
+                    upsert=True
+                )
+                logger.info(f"Stored/Updated frontend metadata for vote session ID {vote_session_id}")
             
-            metadata_to_store = {
-                "vote_session_id": vote_session_id,
-                "displayHint": data.displayHint,
-                "sliderConfig": slider_config_json
-            }
-            # Add debug log before DB call
-            logger.debug(f"Attempting to store metadata: {metadata_to_store}") 
-            
-            await db.election_metadata.update_one(
-                {"vote_session_id": vote_session_id},
-                {"$set": metadata_to_store},
-                upsert=True
+            except Exception as meta_err:
+                # Log error during DB storage but don't fail the whole request if session creation succeeded
+                logger.error(f"Exception occurred during frontend metadata storage for session {vote_session_id}. Error: {meta_err}")
+
+        # Return success response including the new session ID
+        return StandardResponse(
+            success=True,
+            message=f"Successfully created vote session with ID {vote_session_id}",
+            # Return the session ID and potentially contract addresses if useful for frontend
+            data=TransactionResponse( 
+                transaction_hash="N/A - Event Parsed", # tx hash is inside receipt used internally 
+                session_id=vote_session_id,
+                session_address=session_contract_addr,
+                registry_address=registry_contract_addr
             )
-            logger.info(f"Stored/Updated metadata for vote session ID {vote_session_id}")
-            
-    except Exception as meta_err:
-        # Simplify error logging
-        logger.error(f"Exception occurred during metadata processing/storage for tx {receipt.transactionHash.hex()}. Error type: {type(meta_err).__name__}")
-        # Optionally log the full traceback if needed for deeper debugging
-        # logger.exception("Full traceback for metadata error:") 
-    # --- End Metadata Storage --- 
+        )
 
-    return StandardResponse(
-        success=True,
-        message="Successfully created vote session"
-    )
+    except HTTPException as http_exc:
+        # Re-raise HTTPExceptions directly
+        raise http_exc
+    except TimeoutError as e:
+        logger.error(f"Timeout creating vote session: {e}")
+        raise HTTPException(status_code=504, detail=f"Blockchain transaction timed out: {e}")
+    except Exception as e:
+        # Handle potential errors from blockchain service or other issues
+        error_detail = handle_blockchain_error(e) 
+        logger.error(f"Failed to create vote session: {error_detail}")
+        raise HTTPException(status_code=500, detail=f"Failed to create vote session: {error_detail}")
+
+
+# --- Internal Helper for Fetching Enriched Session Data ---
+async def _get_enriched_session_data(session_id: int, blockchain_service: BlockchainService, db) -> Dict[str, Any] | None:
+    """Internal helper to fetch blockchain data and DB metadata for a single session."""
+    try:
+        # 0. Get Session and Registry Addresses first
+        session_addr, registry_addr = await blockchain_service.get_session_addresses(session_id)
+        if not session_addr or not registry_addr:
+            logger.warning(f"Could not retrieve valid contract addresses for session ID {session_id}.")
+            return None
+
+        # 1. Get Core Session Details & Status from VoteSession (using fetched session_addr)
+        # Modify get_session_details if it doesn't already accept session_addr, or fetch directly here.
+        # Assuming get_session_details primarily uses the session_id to look up addresses via factory,
+        # let's call it as before but use our verified addresses later.
+        session_details = await blockchain_service.get_session_details(session_id)
+        if not session_details:
+             logger.warning(f"No session details found for ID {session_id} in _get_enriched_session_data.")
+             return None # Session likely doesn't exist or failed to fetch
+        
+        params = session_details['parameters']
+        status = session_details['status']
+        # Verify registry address consistency (already done in get_session_details, but good practice)
+        if params.get('participantRegistry') != registry_addr:
+            logger.warning(f"Registry address mismatch for session {session_id}. Factory: {registry_addr}, Params: {params.get('participantRegistry')}")
+            # Prefer the one fetched directly from the factory
+
+        # 2. Get Registry Contract Instance (using fetched registry_addr)
+        registry_contract = blockchain_service.get_registry_contract(registry_addr)
+
+        # 3. Get Participant/Holder Counts & Details from ParticipantRegistry
+        total_secret_holders = 0
+        participant_count = 0 # Might differ if non-holders can vote
+        released_keys = 0 # Count of submitted shares
+        active_holders = []
+        
+        try:
+            # Get list of registered holder addresses
+            active_holders = await blockchain_service.call_contract_function(registry_contract, "getActiveHolders", session_id)
+            total_secret_holders = len(active_holders)
+            # Participant count might eventually come from registryContract.getRegisteredParticipantCount() if voters differ
+            participant_count = total_secret_holders # Adjust if voters != holders 
+            
+            # Concurrently check share submission status for each holder
+            share_checks = [blockchain_service.get_participant_details(session_id, holder) for holder in active_holders]
+            results = await asyncio.gather(*share_checks, return_exceptions=True)
+            
+            for result in results:
+                if isinstance(result, dict) and result.get('hasSubmittedShares') is True:
+                    released_keys += 1
+                elif isinstance(result, Exception):
+                     logger.error(f"Error fetching participant details for a holder in session {session_id}: {result}")
+                     # Decide how to handle? Continue counting?
+
+        except Exception as reg_err:
+            logger.error(f"Error fetching holder data from registry for session {session_id}: {reg_err}")
+            # Proceed with potentially zero counts if registry calls fail?
+
+        # 4. Get Required Keys (Threshold)
+        required_keys = params.get('minShareThreshold', 0)
+
+        # 5. Fetch Frontend Metadata from DB
+        metadata_db = await db.election_metadata.find_one({"vote_session_id": session_id})
+        slider_config_parsed = None
+        display_hint = None
+        if metadata_db:
+            display_hint = metadata_db.get('displayHint')
+            slider_config_raw = metadata_db.get('sliderConfig')
+            if slider_config_raw:
+                try:
+                    slider_config_parsed = json.loads(slider_config_raw)
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse sliderConfig JSON from DB for session {session_id}")
+
+        # 6. Format Output - Match old structure where possible
+        # Fetch reward pool separately
+        reward_wei = 0 # Default value
+        try:
+            reward_wei = await blockchain_service.call_contract_function(registry_contract, "getTotalRewardPool", session_id)
+        except Exception as reward_err:
+            logger.error(f"Error fetching reward pool for session {session_id}: {reward_err}")
+            # Continue with default value if fetch fails
+            
+        formatted_data = {
+            "id": session_id, 
+            "title": params.get('title'),
+            "description": params.get('description'),
+            "start_date": datetime.fromtimestamp(params.get('startDate', 0)).strftime("%Y-%m-%dT%H:%M"), 
+            "end_date": datetime.fromtimestamp(params.get('endDate', 0)).strftime("%Y-%m-%dT%H:%M"), 
+            "status": status,
+            "participant_count": participant_count,
+            "secret_holder_count": total_secret_holders,
+            "options": params.get('options'),
+            "reward_pool": str(blockchain_service.w3.from_wei(reward_wei, 'ether')), # Use fetched or default value
+            "required_deposit": str(blockchain_service.w3.from_wei(params.get('requiredDeposit', 0), 'ether')),
+            "required_keys": required_keys,
+            "released_keys": released_keys,
+            "displayHint": display_hint,
+            "sliderConfig": slider_config_parsed,
+            "sessionContractAddress": session_addr,
+            "registryContractAddress": registry_addr,
+            "sharesEndDate": datetime.fromtimestamp(params.get('sharesCollectionEndDate', 0)).strftime("%Y-%m-%dT%H:%M"),
+            "registrationEndDate": datetime.fromtimestamp(params.get('registrationEndDate', 0)).strftime("%Y-%m-%dT%H:%M"),
+            "metadata": params.get('metadata')
+        }
+        return formatted_data
+
+    except Exception as e:
+        logger.error(f"Error in _get_enriched_session_data for session {session_id}: {e}", exc_info=True)
+        # Optionally re-raise or return None based on desired error handling for callers
+        return None 
 
 
 @router.get("/all", response_model=StandardResponse[List[Dict[str, Any]]])
 async def get_all_vote_sessions(blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
+    """Retrieves summary information for all deployed vote sessions."""
     try:
-        # Get total number of votes from the smart contract
-        sessions = []
-        num_of_sessions = await blockchain_service.call_contract_function("voteSessionCount")
+        sessions_data = []
+        # Get total count from the factory service method
+        num_of_sessions = await blockchain_service.get_session_count()
+        logger.info(f"Found {num_of_sessions} sessions from factory.")
 
-        # Iterate through each vote and retrieve its data
-        for vote_session_id in range(num_of_sessions):
+        # Create tasks to fetch data for all sessions concurrently
+        tasks = [_get_enriched_session_data(session_id, blockchain_service, db) for session_id in range(num_of_sessions)]
+        results = await asyncio.gather(*tasks)
 
-            # Retrieve election information from the blockchain
-            session_info = await blockchain_service.call_contract_function("getVoteSession", vote_session_id)
-            
-            # Calculate the status of the session
-            session_status = await get_vote_session_status(session_info[3], session_info[4])
-
-            # --- Calculate counts using Contract Data --- 
-            # Total Secret Holders
-            total_secret_holders = await blockchain_service.call_contract_function("getNumHoldersByVoteSession", vote_session_id)
-            
-            # Required Keys (Threshold - assuming from first vote, might need better logic if votes vary)
-            required_keys = 0
-            try:
-                submitted_votes = await blockchain_service.call_contract_function("getEncryptedVotes", vote_session_id)
-                if submitted_votes and len(submitted_votes) > 0:
-                    required_keys = submitted_votes[0][6] # Index 6 is threshold
-            except Exception as vote_err:
-                 logger.warning(f"Could not retrieve encrypted votes for session {vote_session_id} to get threshold: {vote_err}")
-
-            # Released Keys (Submitted Shares)
-            released_keys = 0
-            active_holders = await blockchain_service.call_contract_function("getHoldersByVoteSession", vote_session_id)
-            # Use asyncio.gather for concurrent checks if list is large
-            submission_checks = [blockchain_service.has_holder_submitted_share(vote_session_id, holder) for holder in active_holders]
-            submission_results = await asyncio.gather(*submission_checks, return_exceptions=True)
-            
-            for result in submission_results:
-                if isinstance(result, bool) and result is True:
-                    released_keys += 1
-                elif isinstance(result, Exception):
-                    logger.error(f"Error checking submission status for a holder in session {vote_session_id}: {result}")
-                    # Decide how to handle errors - skip count? 
-
-            # Participant Count (Assuming only holders participate for now?)
-            # If voters are distinct, different contract logic needed.
-            participant_count = total_secret_holders 
-            # --- End Contract Data Counts --- 
-
-            # Fetch metadata (Requires DB)
-            metadata = await db.election_metadata.find_one({"vote_session_id": vote_session_id})
-            slider_config_parsed = None
-            if metadata and metadata.get('sliderConfig'):
-                try:
-                    slider_config_parsed = json.loads(metadata.get('sliderConfig'))
-                except json.JSONDecodeError:
-                    logger.error(f"Failed to parse sliderConfig JSON for session {vote_session_id}")
-
-            sessions.append(await vote_session_information_response(
-                session_info, 
-                session_status, 
-                participant_count, 
-                required_keys, 
-                released_keys, 
-                total_secret_holders, 
-                blockchain_service,
-                metadata.get('displayHint') if metadata else None,
-                slider_config_parsed
-            ))
+        # Filter out None results (errors during fetching)
+        sessions_data = [result for result in results if result is not None]
 
         return StandardResponse(
             success=True,
-            message=f"Successfully retrieved information for all vote sessions",
-            data=sessions
+            message=f"Successfully retrieved information for {len(sessions_data)} vote sessions",
+            data=sessions_data
         )
     except Exception as e:
-        logger.error(f"Error in get_all_vote_sessions: {str(e)}")
-        raise HTTPException(status_code=500, detail="failed to get all vote session information")
+        logger.error(f"Error in get_all_vote_sessions: {e}", exc_info=True)
+        # Use the error handling utility if available, or a generic message
+        error_detail = handle_blockchain_error(e)
+        raise HTTPException(status_code=500, detail=f"Failed to get all vote session information: {error_detail}")
 
 
 @router.get("/session/{vote_session_id}", response_model=StandardResponse[Dict[str, Any]])
 async def get_vote_session_information(vote_session_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service), db=Depends(get_db)):
-    try:
-        session_info = await blockchain_service.call_contract_function("getVoteSession", vote_session_id)
-        
-        # logger.info("session_info: ", session_info)
-        # logger.info("session_info[3]: ", session_info[3])
-        # logger.info("session_info[4]: ", session_info[4])
-        
-        session_status = await get_vote_session_status(session_info[3], session_info[4])
-        
-        # --- Calculate counts using Contract Data --- 
-        # Total Secret Holders
-        total_secret_holders = await blockchain_service.call_contract_function("getNumHoldersByVoteSession", vote_session_id)
+    """Retrieves detailed information for a specific vote session."""
+    session_data = await _get_enriched_session_data(vote_session_id, blockchain_service, db)
 
-        # Required Keys (Threshold)
-        required_keys = 0
-        try:
-            submitted_votes = await blockchain_service.call_contract_function("getEncryptedVotes", vote_session_id)
-            if submitted_votes and len(submitted_votes) > 0:
-                required_keys = submitted_votes[0][6]
-        except Exception as vote_err:
-            logger.warning(f"Could not retrieve encrypted votes for session {vote_session_id} to get threshold: {vote_err}")
+    if session_data is None:
+        # Error logged within the helper function
+        raise HTTPException(status_code=404, detail=f"Vote session with ID {vote_session_id} not found or failed to load.")
 
-        # Released Keys (Submitted Shares)
-        released_keys = 0
-        active_holders = await blockchain_service.call_contract_function("getHoldersByVoteSession", vote_session_id)
-        # Use asyncio.gather for concurrent checks
-        submission_checks = [blockchain_service.has_holder_submitted_share(vote_session_id, holder) for holder in active_holders]
-        submission_results = await asyncio.gather(*submission_checks, return_exceptions=True)
-        
-        for result in submission_results:
-            if isinstance(result, bool) and result is True:
-                released_keys += 1
-            elif isinstance(result, Exception):
-                logger.error(f"Error checking submission status for a holder in session {vote_session_id}: {result}")
-
-        # Participant Count (Assuming only holders participate)
-        participant_count = total_secret_holders
-        # --- End Contract Data Counts --- 
-
-        # Fetch metadata (Requires DB)
-        metadata = await db.election_metadata.find_one({"vote_session_id": vote_session_id})
-        slider_config_parsed = None
-        if metadata and metadata.get('sliderConfig'):
-            try:
-                slider_config_parsed = json.loads(metadata.get('sliderConfig'))
-            except json.JSONDecodeError:
-                logger.error(f"Failed to parse sliderConfig JSON for session {vote_session_id}")
-
-        # Call helper with metadata
-        session_data = await vote_session_information_response(
-            session_info, 
-            session_status, 
-            participant_count, 
-            required_keys, 
-            released_keys, 
-            total_secret_holders,
-            blockchain_service,
-            metadata.get('displayHint') if metadata else None,
-            slider_config_parsed
-        )
-
-        return StandardResponse(
-            success=True,
-            message=f"Successfully retrieved information for vote session {vote_session_id}",
-            data=session_data
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting vote session information: {str(e)}")
-        raise handle_blockchain_error("get vote session information", e)
+    return StandardResponse(
+        success=True,
+        message=f"Successfully retrieved information for vote session {vote_session_id}",
+        data=session_data
+    )
 
 
 @router.post("/trigger-reward-distribution/{vote_session_id}", response_model=StandardResponse[TransactionResponse])
@@ -282,44 +287,50 @@ async def trigger_reward_distribution(
     blockchain_service: BlockchainService = Depends(get_blockchain_service)
     # TODO: Add Auth dependency to ensure only authorized user can call this
 ):
-    """Triggers the on-chain reward distribution for a vote session."""
-    # Basic check: Ensure session exists (getVoteSession will raise error if not)
+    """Triggers the reward calculation process in the ParticipantRegistry contract."""
     try:
-        await blockchain_service.call_contract_function("getVoteSession", vote_session_id)
-    except Exception:
-         raise HTTPException(status_code=404, detail=f"Vote session {vote_session_id} not found.")
+        logger.info(f"Attempting to trigger reward calculation for session {vote_session_id}")
 
-    try:
-        # Build transaction to call distributeRewards
-        # This needs to be sent by an authorized account (e.g., backend wallet)
-        # that has gas. The contract handles the actual transfers.
-        distribute_tx = blockchain_service.contract.functions.distributeRewards(vote_session_id).build_transaction({
-            'from': WALLET_ADDRESS, # Use backend wallet
-            'nonce': blockchain_service.w3.eth.get_transaction_count(WALLET_ADDRESS),
-            # Estimate gas dynamically if possible, otherwise set a reasonable limit
-            # 'gas': estimated_gas,
-            # 'gasPrice': blockchain_service.w3.eth.gas_price,
-        })
+        # 1. Get the ParticipantRegistry address for this session
+        _, registry_addr = await blockchain_service.get_session_addresses(vote_session_id)
+        if not registry_addr:
+            raise ValueError(f"Could not find registry address for session ID {vote_session_id}")
 
-        # Sign and send
-        signed_tx = blockchain_service.w3.eth.account.sign_transaction(distribute_tx, PRIVATE_KEY)
-        tx_hash = blockchain_service.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-        receipt = await asyncio.to_thread(blockchain_service.w3.eth.wait_for_transaction_receipt, tx_hash, timeout=120) # Use await asyncio.to_thread for sync wait_for
+        # 2. Get the registry contract instance
+        registry_contract = blockchain_service.get_registry_contract(registry_addr)
 
-        if receipt.status == 1:
-            return StandardResponse(
-                success=True,
-                message=f"Reward distribution triggered successfully for vote session {vote_session_id}.",
-                data=TransactionResponse(transaction_hash=receipt.transactionHash.hex())
-            )
-        else:
-             logger.error(f"On-chain reward distribution failed for vote session {vote_session_id}. Tx: {receipt.transactionHash.hex()}")
-             raise HTTPException(status_code=500, detail="Reward distribution transaction failed on-chain.")
+        # 3. Call the calculateRewards function via send_transaction
+        #    This function might be callable by owner or the session contract.
+        #    The service's send_transaction uses the configured backend PRIVATE_KEY.
+        #    Ensure this account has permission to call calculateRewards.
+        tx_receipt = await blockchain_service.send_transaction(
+            registry_contract, 
+            "calculateRewards" 
+            # No arguments needed based on ParticipantRegistry.sol: calculateRewards()
+        )
 
+        tx_hash = tx_receipt.transactionHash.hex()
+        logger.info(f"Successfully triggered reward calculation for session {vote_session_id}. Tx Hash: {tx_hash}")
+
+        # Optional: Parse RewardsCalculated event from receipt if needed
+        # event_args = blockchain_service.parse_event(tx_receipt, registry_contract, "RewardsCalculated")
+        # total_pool = event_args.totalRewardPoolCalculated if event_args else None
+
+        return StandardResponse(
+            success=True,
+            message=f"Successfully triggered reward calculation for session {vote_session_id}",
+            data=TransactionResponse(transaction_hash=tx_hash, session_id=vote_session_id)
+        )
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except TimeoutError as e:
+        logger.error(f"Timeout triggering reward calculation for session {vote_session_id}: {e}")
+        raise HTTPException(status_code=504, detail=f"Blockchain transaction timed out: {e}")
     except Exception as e:
-        logger.error(f"Error triggering reward distribution for vote session {vote_session_id}: {str(e)}")
-        # Handle specific web3 errors if needed (e.g., gas estimation, revert reasons)
-        raise HTTPException(status_code=500, detail="Failed to trigger reward distribution.")
+        error_detail = handle_blockchain_error(e)
+        logger.error(f"Failed to trigger reward calculation for session {vote_session_id}: {error_detail}")
+        raise HTTPException(status_code=500, detail=f"Failed to trigger reward calculation: {error_detail}")
 
 
 @router.get("/session/{vote_session_id}/metadata", response_model=StandardResponse[VoteSessionMetadata])
