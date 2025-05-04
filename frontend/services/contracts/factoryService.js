@@ -1,9 +1,10 @@
 import { ethers } from 'ethers';
-import { config } from '../config';
+import { config } from '../../config';
 import { ethersBaseService } from './ethersBase.js';
 
 // Import Factory ABI
-import VoteSessionFactoryABI_File from '../../crypto-core/artifacts/contracts/VoteSessionFactory.sol/VoteSessionFactory.json';
+import VoteSessionFactoryABI_File from '../../../crypto-core/artifacts/contracts/VoteSessionFactory.sol/VoteSessionFactory.json';
+import ParticipantRegistryABI_File from '../../../crypto-core/artifacts/contracts/ParticipantRegistry.sol/ParticipantRegistry.json';
 
 // Basic check for ABI loading
 if (!VoteSessionFactoryABI_File?.abi) {
@@ -12,6 +13,8 @@ if (!VoteSessionFactoryABI_File?.abi) {
   // throw new Error("Missing VoteSessionFactory ABI");
 }
 const factoryAbi = VoteSessionFactoryABI_File.abi;
+
+const registryAbiFile = ParticipantRegistryABI_File.abi;
 
 // Get Factory address from config
 const factoryAddress = config.blockchain.voteSessionFactoryAddress;
@@ -103,8 +106,8 @@ class FactoryService {
 
           return { sessionAddress, registryAddress };
       } catch (error) {
-          console.error(`Error fetching addresses for session ${sessionId} from factory:`, error);
-          // Rethrow or handle specific errors (e.g., session ID not found)
+          // console.error(`Error fetching addresses for session ${sessionId} from factory:`, error); // Removed log
+          // Rethrow or handle specific errors
           throw new Error(`Failed to get addresses for session ${sessionId}. ${error.message}`);
       }
   }
@@ -122,36 +125,49 @@ class FactoryService {
    * @param {string} params.metadata - JSON string or other metadata format
    * @param {string} params.requiredDeposit - Deposit amount in ETH (will be converted to Wei)
    * @param {number} params.minShareThreshold
+   * @param {ethers.Signer} [signerOverride] - Optional signer to use for this transaction.
    * @returns {Promise<object>} - { sessionId, voteSessionContract, participantRegistryContract }
    */
-  async createVoteSession(params) {
-    // Ensure signer is available (checked by sendTransaction)
-    const factory = this._getFactoryContractWithSigner(); // Get instance for ABI parsing
+  async createVoteSession(params, signerOverride = null) {
+    // Use the override if provided, otherwise get from base service
+    const signerToUse = signerOverride || ethersBaseService.getSigner();
+    if (!signerToUse) {
+        throw new Error('Signer not available for createVoteSession transaction.');
+    }
+    
+    // Get a contract instance connected to the specific signer
+    const factory = new ethers.Contract(this.factoryAddress, this.factoryAbi, signerToUse);
 
     try {
-      // Convert deposit from ETH string/number to Wei BigInt
-      const requiredDepositWei = ethers.parseEther(params.requiredDeposit.toString());
+      // Handle requiredDeposit: Use BigInt if provided, otherwise parse ETH string
+      let requiredDepositWei;
+      if (typeof params.requiredDeposit === 'bigint') {
+          requiredDepositWei = params.requiredDeposit;
+      } else {
+          requiredDepositWei = ethers.parseEther(params.requiredDeposit.toString());
+      }
 
       const args = [
         params.title,
         params.description,
-        params.startDate, // Expecting timestamp number
-        params.endDate,   // Expecting timestamp number
-        params.sharesEndDate, // Expecting timestamp number
-        params.options,   // Expecting array of strings
-        params.metadata,  // Expecting string
-        requiredDepositWei, // Pass BigInt Wei amount
-        params.minShareThreshold // Expecting number/BigInt
+        params.startDate,
+        params.endDate,
+        params.sharesEndDate,
+        params.options,
+        params.metadata || "", // Ensure metadata is always a string
+        requiredDepositWei,
+        params.minShareThreshold
       ];
 
-      // Use base service to send transaction
-      const txReceipt = await ethersBaseService.sendTransaction(
-          this.factoryAddress,
-          this.factoryAbi,
-          'createSessionPair',
-          args,
-          {}
-      );
+      // Use base service to send transaction, but ensure it uses the correct signer instance
+      // We can directly call the contract method using the instance connected to signerToUse
+      console.log(`Sending transaction via factory contract instance -> createSessionPair(${args.join(', ')}) with options: {}`);
+      const tx = await factory.createSessionPair(...args); // Pass args directly
+      
+      // Wait for the transaction to be mined and get the receipt
+      console.log('Waiting for createSessionPair transaction confirmation...');
+      const txReceipt = await tx.wait();
+      console.log('Transaction confirmed:', txReceipt);
 
       // --- Event Parsing ---
       let deployedSessionInfo = null;
@@ -185,6 +201,23 @@ class FactoryService {
            throw new Error("Failed to parse session creation event from transaction logs.");
       }
 
+      // -------------- LINK REGISTRY TO SESSION ----------------
+      try {
+          const registryAddress = deployedSessionInfo.participantRegistryContract;
+          const sessionAddress = deployedSessionInfo.voteSessionContract;
+          const sessionId = BigInt(deployedSessionInfo.sessionId);
+
+          console.log(`Linking registry ${registryAddress} to session ${sessionAddress} (sessionId ${sessionId})...`);
+          const registryContract = new ethers.Contract(registryAddress, registryAbiFile, signerToUse);
+          const linkTx = await registryContract.setVoteSessionContract(sessionId, sessionAddress);
+          await linkTx.wait();
+          console.log('Registry linked successfully.');
+      } catch (linkErr) {
+          console.error('Failed to link registry to session:', linkErr);
+          // Decide whether to throw or continue. We'll throw to indicate critical failure.
+          throw new Error(`Failed to link registry to session: ${linkErr.message}`);
+      }
+
       return deployedSessionInfo;
 
     } catch (error) {
@@ -196,5 +229,5 @@ class FactoryService {
   }
 }
 
-// Export a single instance
-export const factoryService = new FactoryService(); 
+// Export a single instance using named export
+export const factoryService = new FactoryService();

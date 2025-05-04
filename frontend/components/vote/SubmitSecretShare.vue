@@ -52,37 +52,42 @@
 <script setup>
     import { ref, computed, onMounted, watch } from 'vue';
     import { useRoute } from 'vue-router';
-    import { encryptedVoteApi, shareApi } from '@/services/api';
-    import { ethersService } from '~/services/ethersService.js'; // Use ethersService
+    // Removed API imports
+    // import { encryptedVoteApi, shareApi } from '@/services/api';
+    // Import required services
+    import { ethersBaseService, registryService, voteSessionService } from '~/services/contracts/ethersService.js'; 
     import { 
         generateShares, 
         deriveKeyFromPassword, 
         AESDecrypt, 
         hexToBytes 
-    } from '@/services/cryptography.js'; 
-    import { config } from '@/config'; // Assuming config has contract address/abi
+    } from '~/services/utils/cryptographyUtils.js'; 
+    // Removed config import
+    // import { config } from '@/config'; 
     // import Cookies from "js-cookie"; // Removed cookie usage
-    import { ethers } from 'ethers'; // Import ethers for utils if needed (e.g., keccak256)
-    import jsonStableStringify from 'fast-json-stable-stringify'; // For deterministic JSON stringify
+    import { ethers } from 'ethers'; // Keep ethers for utils if needed
+    // Removed stable stringify
+    // import jsonStableStringify from 'fast-json-stable-stringify';
 
     const props = defineProps({
-        voteId: { type: String, required: true },
+        voteId: { type: [String, Number], required: true }, // Allow string or number
         endDate: { type: String, required: true }
+        // sharesEndDate might be more relevant than endDate + buffer?
+        // Add sharesEndDate prop if available from parent
+        // sharesEndDate: { type: String, required: false }
     });
 
     const loading = ref(false);
     const loadingMessage = ref('Processing...');
     const error = ref(null);
-    const hasSubmittedShare = ref(false);
+    const hasSubmittedShare = ref(false); // State managed by contract check
     const isWalletConnected = ref(false);
     const currentAccount = ref(null);
-    const isCheckingStatus = ref(true); // Loading state for initial status check
-    const decryptionPassword = ref(''); // Add password state for decryption
-
-    // TEMP: Still using cookie for initial check, should be replaced by contract check
-    // const shareSubmittedCookie = `vote_${props.voteId}_shareSubmitted`;
+    const isCheckingStatus = ref(true); 
+    const decryptionPassword = ref('');
 
     // --- Deadline Calculation ---
+    // TODO: Use props.sharesEndDate if provided, otherwise fallback to endDate + buffer?
     const submissionDeadline = computed(() => {
         if (!props.endDate) return null;
         try {
@@ -105,233 +110,154 @@
     // ------------------------
 
     onMounted(async () => {
-        // Check initial submission status from cookie (TEMP)
-        // if (Cookies.get(shareSubmittedCookie) === 'true') {
-        //     hasSubmittedShare.value = true;
-        // }
-        // Check wallet connection status
+        isCheckingStatus.value = true;
         try {
-            // Attempt init gently, might already be connected
-            if (ethersService.getAccount()) {
+            // Check wallet connection
+            if (ethersBaseService.getAccount()) {
                  isWalletConnected.value = true;
-                 currentAccount.value = ethersService.getAccount();
-                 // If connected, check submission status
+                 currentAccount.value = ethersBaseService.getAccount();
+                 // Check submission status via contract
                  await checkSubmissionStatus(); 
             } else {
                  isWalletConnected.value = false;
                  currentAccount.value = null;
-                // Optional: Automatically prompt connection? Or rely on user action.
             }
-            // TODO: Replace cookie check with call to contract getHolderStatus via backend/api
         } catch (e) {
             console.warn("Wallet check/init or status check failed on mount:", e);
             isWalletConnected.value = false;
+            error.value = "Failed to initialize: " + e.message;
         } finally {
             isCheckingStatus.value = false;
         }
     });
 
-    // New function to check submission status from contract
+    // --- Updated function to check submission status from registry contract ---
     async function checkSubmissionStatus() {
-        if (!currentAccount.value || !props.voteId) return;
+        if (!currentAccount.value || props.voteId === undefined) return;
         isCheckingStatus.value = true;
-        console.log(`Checking share submission status for ${currentAccount.value} in election ${props.voteId}...`);
+        const sessionId = Number(props.voteId);
+        if (isNaN(sessionId)) {
+            error.value = "Invalid vote session ID.";
+            isCheckingStatus.value = false;
+            return;
+        }
+        console.log(`Checking share submission status for ${currentAccount.value} in session ${sessionId}...`);
         try {
-            const statusResult = await ethersService.readContract(
-                config.contract.address,
-                config.contract.abi,
-                'getHolderStatus', 
-                [parseInt(props.voteId), currentAccount.value]
-            );
-            // Index 1 corresponds to hasSubmitted bool in the returned tuple
-            hasSubmittedShare.value = statusResult[1]; 
+            // Use registryService to get participant details
+            const participantDetails = await registryService.getParticipantDetails(sessionId, currentAccount.value);
+            
+            if (participantDetails) {
+                hasSubmittedShare.value = participantDetails.hasSubmittedShares; 
+            } else {
+                // If not registered, they cannot have submitted shares
+                hasSubmittedShare.value = false; 
+            }
             console.log("On-chain share submission status:", hasSubmittedShare.value);
 
         } catch (err) {
             console.error("Error checking share submission status:", err);
+            error.value = "Could not verify share submission status."; // Inform user
             hasSubmittedShare.value = false; // Assume not submitted on error
         } finally {
             isCheckingStatus.value = false;
         }
     }
 
-    // Renamed function
+    // --- Refactored function to submit share directly to contract ---
     const prepareAndSubmitShare = async () => {
         error.value = null;
         if (loading.value || !isWalletConnected.value || !currentAccount.value || !decryptionPassword.value) {
             error.value = "Please connect wallet and enter password.";
             return;
         }
+        
+        const sessionId = Number(props.voteId);
+        if (isNaN(sessionId)) {
+             error.value = "Invalid vote session ID.";
+             return;
+        }
 
         loading.value = true;
         loadingMessage.value = 'Retrieving encrypted key...';
-        let decryptedPrivateKeyHex = null; // To store the key temporarily
+        let decryptedPrivateKeyHex = null;
 
         try {
-            // --- Key Retrieval and Decryption ---
-            // Normalize address to lowercase for key consistency
+            // --- Key Retrieval and Decryption --- (logic mostly unchanged)
             const lowerCaseAccount = currentAccount.value.toLowerCase(); 
-            const encryptedKeyStorageKey = `vote_session_${props.voteId}_user_${lowerCaseAccount}_blsEncryptedPrivateKey`;
-            const saltStorageKey = `vote_session_${props.voteId}_user_${lowerCaseAccount}_blsSalt`;
-            
+            const encryptedKeyStorageKey = `vote_session_${sessionId}_user_${lowerCaseAccount}_blsEncryptedPrivateKey`;
+            const saltStorageKey = `vote_session_${sessionId}_user_${lowerCaseAccount}_blsSalt`;
             const encryptedKeyHex = localStorage.getItem(encryptedKeyStorageKey);
             const saltHex = localStorage.getItem(saltStorageKey);
-
             if (!encryptedKeyHex || !saltHex) {
-                throw new Error("Could not retrieve stored key details. Did you register for this election in this browser?");
+                throw new Error("Could not retrieve stored key details. Did you register in this browser?");
             }
-
             loadingMessage.value = 'Decrypting key...';
             const saltBytes = hexToBytes(saltHex);
             const derivedKey = await deriveKeyFromPassword(decryptionPassword.value, saltBytes);
             decryptedPrivateKeyHex = await AESDecrypt(encryptedKeyHex, derivedKey);
-            console.log("BLS key decrypted successfully."); // Avoid logging the key!
-            // --- End Key Retrieval and Decryption ---
+            console.log("BLS key decrypted successfully.");
+            // -------------------------------------
 
-            loadingMessage.value = 'Fetching vote data...';
-            // 1. Fetch necessary vote data (may contain g1r needed for share generation)
-            //    NOTE: This relies on the cryptography service. If shares are pre-computed
-            //    and stored elsewhere, this step changes.
-            const voteInformation = await fetchVoteInformation();
-            if (!voteInformation || voteInformation.length === 0) {
-                throw new Error("Could not retrieve necessary vote information.");
+            // --- Fetch g1r from VoteSession contract --- 
+            loadingMessage.value = 'Fetching round parameters...';
+            console.log(`Fetching vote round parameters for session ${sessionId}...`);
+            const roundParams = await voteSessionService.getVoteRoundParameters(sessionId);
+            if (!roundParams || !roundParams.g1r) {
+                throw new Error("Could not fetch necessary round parameters (g1r) from the contract.");
             }
+            const g1rValue = roundParams.g1r;
+            console.log(`Fetched g1r: ${g1rValue}`);
+            // -------------------------------------------
 
-            // Generate shares (using placeholder - replace with secure retrieval/generation)
-            loadingMessage.value = 'Generating shares...';
-            const sharesToSubmit = [];
-            for (const vote of voteInformation) {
-                 if (vote.g1r) {
-                    // Use the decrypted key to generate the actual share
-                    if (!decryptedPrivateKeyHex) {
-                        throw new Error("Decrypted key is not available for share generation."); // Should not happen if decryption succeeded
-                    }
-                    const generatedShare = generateShares(vote.g1r, decryptedPrivateKeyHex);
-                    sharesToSubmit.push({ vote_id: vote.vote_id, share: generatedShare });
-                 } else {
-                     console.error("g1r is not set for vote ID:", vote.vote_id);
-                 }
+            // --- Generate Share --- 
+            loadingMessage.value = 'Generating share...';
+            if (!decryptedPrivateKeyHex) {
+                throw new Error("Decrypted key is not available for share generation.");
             }
-
-            // Clear the decrypted key from memory ASAP after use
+            const generatedShareHex = generateShares(g1rValue, decryptedPrivateKeyHex);
+            // Clear the decrypted key from memory ASAP
             decryptedPrivateKeyHex = null;
+            console.log("Share generated:", generatedShareHex); 
             console.log("Decrypted key cleared from memory.");
+            // ----------------------
 
-            if (sharesToSubmit.length === 0) {
-                throw new Error("No shares could be generated or retrieved.");
-            }
-
-            // 2. Prepare data for signing and backend verification
-            loadingMessage.value = 'Preparing data...';
-            const holderAddress = currentAccount.value;
-            // Sort shares by vote_id just in case fetchVoteInformation didn't guarantee order
-            const sortedSharesData = sharesToSubmit.sort((a, b) => a.vote_id - b.vote_id);
-            const voteIndices = sortedSharesData.map(item => item.vote_id); 
-            // --- Prefix share strings with 0x for ethers --- 
-            const shareStringsPrefixed = sortedSharesData.map(item => 
-                item.share.startsWith('0x') ? item.share : `0x${item.share}`
-            );
-            // ----------------------------------------------
-
-            // Construct the message payload (must match backend)
-            // Use the non-prefixed shares for signing, as the backend expects raw hex strings
-            const shareStringsForSigning = sortedSharesData.map(item => item.share); 
-            const messagePayload = `SubmitShares:${props.voteId}:${jsonStableStringify(voteIndices)}:${jsonStableStringify(shareStringsForSigning)}:${holderAddress}`;
-
-            // 3. Sign the message using ethersService
-            loadingMessage.value = 'Waiting for signature...';
-            const signature = await ethersService.signMessage(messagePayload);
-
-            // 4. Send data + signature to backend for verification
-            loadingMessage.value = 'Verifying with server...';
-            // Send the original (non-prefixed) share strings to backend verification
-            const verificationPayload = {
-                shares: sortedSharesData, // Contains original non-prefixed shares
-                public_key: holderAddress,
-                signature: signature
-            };
-            await shareApi.submitShare(props.voteId, verificationPayload); // submitShare now only verifies
-
-            // 5. If backend verification is successful, send the actual transaction
+            // --- Submit Share to Contract --- 
             loadingMessage.value = 'Submitting transaction...';
-
-            // --- Calculate correct shareIndex for the current holder --- 
-            console.log("Fetching current holder list to determine share index...");
-            const sessionHolders = await ethersService.readContract(
-                config.contract.address,
-                config.contract.abi,
-                'getHoldersByVoteSession',
-                [parseInt(props.voteId)]
+            console.log(`Calling voteSessionService.submitShares for session ${sessionId}...`);
+            
+            // Assuming submitShares expects sessionId and the share data (bytes or hex string)
+            // Check the exact expected type in voteSessionService.js / VoteSession.sol
+            const txReceipt = await voteSessionService.submitShares(
+                sessionId,
+                generatedShareHex.startsWith('0x') ? generatedShareHex : `0x${generatedShareHex}` // Ensure 0x prefix for service
             );
-            const holderAddressesArray = Array.from(sessionHolders || []); // Convert proxy immediately
-            const lowerCaseMyAddress = holderAddress.toLowerCase();
-            const myIndex = holderAddressesArray.findIndex(addr => addr.toLowerCase() === lowerCaseMyAddress);
+            console.log("Share submission transaction successful:", txReceipt);
+            // -------------------------------
 
-            if (myIndex === -1) {
-                throw new Error("Could not find your address in the current vote session holder list. Cannot determine share index.");
-            }
-            const myShareIndex = myIndex + 1; // Contract likely expects 1-based index
-            console.log(`Determined your share index for this session: ${myShareIndex}`);
-            // Create the shareIndices array with the user's index repeated
-            const shareIndices = Array(voteIndices.length).fill(myShareIndex);
-            // ------------------------------------------------------------
-
-            // Prepare arguments for the smart contract function
-            const contractArgs = [
-                parseInt(props.voteId),    // uint256 voteSessionId
-                voteIndices,               // uint256[] voteIndices
-                shareIndices,              // uint256[] shareIndices (Corrected)
-                shareStringsPrefixed       // bytes[] shareDataList (Corrected - prefixed hex strings)
-            ];
-
-            const txOptions = {}; // Add { value: ... } if needed
-
-            console.log(`Sending transaction to ${config.contract.address} -> submitDecryptionShares(${contractArgs.join(', ')}) with options:`, txOptions);
-
-            const txResponse = await ethersService.sendTransaction(
-                config.contract.address, // Get address from config
-                config.contract.abi,     // Get ABI from config
-                'submitDecryptionShares', // Contract method name - CORRECTED
-                contractArgs,            // Arguments
-                txOptions                // Transaction options (e.g., value)
-            );
-
-            loadingMessage.value = 'Waiting for confirmation...';
-            // Optional: Wait for confirmation
-            // const receipt = await txResponse.wait();
-            // console.log('Transaction confirmed:', receipt);
-
+            // Update UI on success
             hasSubmittedShare.value = true;
-            // Cookies.set(shareSubmittedCookie, 'true', { expires: 365 }); // TEMP: Set cookie on tx *sent*
             error.value = null;
-            loadingMessage.value = 'Success!'; // Keep loading true briefly to show success
-            setTimeout(() => loading.value = false, 1500);
+            loadingMessage.value = 'Success!';
+            setTimeout(() => { loading.value = false; }, 1500); // Keep success message briefly
 
         } catch (err) {
             console.error("Failed during share submission process:", err);
-            error.value = err.message || 'An unexpected error occurred.';
+            error.value = err.message || 'An unexpected error occurred during share submission.';
+            // Check for specific errors like 'already submitted'
+            if (err.message && err.message.toLowerCase().includes('share already submitted')) {
+                 hasSubmittedShare.value = true; // Update UI if contract confirms already submitted
+                 error.value = "You have already submitted your share for this session.";
+            }
             loading.value = false;
         } finally {
-            // Ensure sensitive variables are cleared even on error
+            // Ensure sensitive variables are cleared
             decryptedPrivateKeyHex = null;
-            // Clear password field after attempt
             decryptionPassword.value = ''; 
         }
     };
 
-    // fetchVoteInformation (remains the same)
-    const fetchVoteInformation = async () => {
-        try {
-            const response = await encryptedVoteApi.getEncryptedVoteInfo(props.voteId);
-            return response.data.data
-        } catch (error) {
-            console.error("Failed to retrive vote information:", error);
-            alert('Error retrieving vote information. Please try again.');
-            return []; // Return empty array on error
-        }
-    };
-
-    // submitSecretShares function removed (logic integrated into prepareAndSubmitShare)
+    // Removed fetchVoteInformation - no longer needed as g1r is fetched directly
+    // Removed backend signing/verification logic
 
 </script>
 

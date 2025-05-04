@@ -40,29 +40,62 @@ These tasks focus on refining and hardening the existing contracts before full i
 
 ## Frontend Integration (`frontend/`)
 
--   [ ] **Update `ethersService` (`services/ethersService.js`):**
-    -   [X] Integrate ABIs for `ParticipantRegistry`, `VoteSession`, and `VoteSessionFactory`.
-    -   [X] Add functions for interacting with the factory (e.g., `createVoteSession`).
-    -   [X] Modify functions/helpers to interact with the correct `ParticipantRegistry` and `VoteSession` instances based on the active session ID (e.g. `getSessionAddresses`).
-    -   [ ] Adapt transaction functions for:
-        -   [X] Registration (`registerParticipant` calling `ParticipantRegistry.registerParticipant`)
-        -   [ ] Casting votes (`castVote` calling `VoteSession.castVote`)
-        -   [ ] Submitting shares (`submitShares` calling `VoteSession.submitShares`)
-        -   [ ] Submitting decryption values (`submitDecryptionValue` calling `VoteSession.submitDecryptionValue`)
-        -   [ ] Claiming deposits/rewards (`claimDepositOrReward` calling `ParticipantRegistry.claimDepositOrReward`)
-    -   [ ] Update/Add functions for reading contract state (e.g., `getParticipantDetails`, `getSessionInfo`, `getEncryptedVote`, `getDecryptionShare`, `hasClaimed`, etc.).
-    -   [ ] Remove all logic, ABI references, and contract address usage related to the old `TimedReleaseVoting` contract.
--   [ ] **Update Components:**
-    -   [ ] **`CreateVoteSession.vue`:** Adapt to use the factory contract via the updated `ethersService`.
-    -   [ ] **`pages/session/[id].vue` & Child Components:**
-        -   [ ] **`RegisterToVote.vue` (or similar):** Update registration logic to use `ethersService.registerParticipant`, handle deposits correctly, associate BLS public key via `ParticipantRegistry`.
-        -   [ ] **`CastYourVote.vue`:** Update vote casting logic to use `ethersService.castVote`. Ensure correct BLS public keys are fetched (likely from `ParticipantRegistry` via `ethersService`) and used for threshold logic.
-        -   [ ] **`SubmitSecretShare.vue`:** Update share submission logic to use `ethersService.submitShares`, ensuring interaction with the correct `VoteSession` instance.
-        -   [ ] **Decryption Submission Component (New/Existing):** Implement UI and logic for calling `ethersService.submitDecryptionValue`.
-        -   [ ] **Claim Component (New/Existing):** Implement UI and logic calling `ethersService.claimDepositOrReward`. Handle display of claimable amounts (deposit vs reward) and claimed status.
-        -   [ ] **Status Displays:** Update all displays (e.g., in `SessionDetails.vue`, `VoteResults.vue`, participant status components) for participant status, deposit amount, reward pool, session state, decryption progress, claim status etc., fetching data from the new contracts via the updated `ethersService`.
--   [ ] **BLS Key Handling (`services/cryptography.js`, `localStorage` usage):** Review and ensure the localStorage mechanism for encrypting/decrypting/storing BLS keys still aligns with the registration (`ParticipantRegistry`) and submission (`VoteSession`) flows using the new contracts.
--   [ ] **UI/UX Refinements:** Adjust text, button labels, flows, and information displays across the application to accurately reflect the new contract interactions (e.g., clear distinction between deposit return and reward claim).
+*   **Service Layer Integration:**
+    *   [x] `ethersBase.js`: Ensure connection logic is sound.
+    *   [x] `factoryService.js`: Update functions to use new `VoteSessionFactory` ABI and address.
+    *   [x] `registryService.js`: Update functions to use new `ParticipantRegistry` ABI and address. Add methods for `getParticipantDetails`, `getAllParticipantKeys`, `claimDepositOrReward`.
+    *   [x] `voteSessionService.js`: Update functions to use new `VoteSession` ABI and address. Add methods for `getSessionInfo`, `castVote`, `submitShares`, `getVoteRoundParameters`, `submitDecryptionValue`.
+    *   [ ] **Cryptography Utilities (`cryptography.js`, `utils/aesUtils.js`, `utils/conversionUtils.js`):**
+        *   [x] Refactor conversion helpers into `utils/conversionUtils.js`.
+        *   [x] Refactor AES/Password helpers into `utils/aesUtils.js`.
+        *   [x] `cryptography.js::generateBLSKeyPair`: Verify key generation.
+        *   [x] `cryptography.js::getKAndSecretShares` / `getKAndAlphas`: Verify threshold setup logic and outputs (k, g1r, g2r, alphas).
+        *   [x] `cryptography.js::recomputeKey`: Verify key reconstruction logic (Lagrange, XOR alphas) and AES key derivation.
+        *   [ ] `cryptography.js::encodeVoteToPoint`: **TODO:** Implement mapping of vote options to G1 points based on the specific scheme.
+        *   [ ] `cryptography.js::decodePointToVote`: **TODO:** Implement mapping of decrypted G1 points back to vote options.
+        *   [ ] `cryptography.js::calculateDecryptionShareForSubmission`: **TODO:** Implement calculation of the G2 share point (`sk * G2` or `alpha_i * sk * G2`) required by `VoteSession.submitShares`.
+        *   [ ] `cryptography.js::decryptVote`: **TODO:** Implement the core vote decryption logic using pairings, based on the specific scheme.
+        *   [ ] `cryptography.js::calculateDecryptionValue`: **TODO:** Implement logic to derive/decrypt the value needed for `VoteSession.submitDecryptionValue` (likely decrypting stored SK).
+        *   [ ] `cryptography.js::calculateNullifier`: **TODO:** Implement nullifier generation (e.g., `hash(sk, sessionId)`).
+        *   [ ] `cryptography.js::generateZkProof`: **TODO:** Implement ZK-SNARK proof generation using `snarkjs` or similar (requires circuit details).
+*   **Component Refactoring / Integration:**
+    *   [x] `pages/create-vote-session.vue`: Use `factoryService` to create new sessions.
+    *   [x] `pages/session/[id].vue`: 
+        *   [x] Fetch session details (`voteSessionService`, `factoryService`, `registryService`).
+        *   [x] Manage component display based on contract state (`Pending`, `Active`, `Shares`, `Complete`, `Failed`).
+        *   [x] Integrate `RegisterToVote`.
+        *   [x] Integrate `CastYourVote`.
+        *   [x] Integrate `SubmitSecretShare`.
+        *   [x] Integrate `VoteResults`.
+        *   [x] Integrate Decryption Submission logic (using `voteSessionService.submitDecryptionValue`).
+            *   [ ] **TODO:** Add secure password input field.
+            *   [ ] **TODO:** Call `cryptography.js::calculateDecryptionValue`.
+        *   [x] Integrate Claim logic (using `registryService.claimDepositOrReward`).
+            *   [ ] **TODO:** Fetch specific claimable amount (deposit vs reward) from `registryService`.
+    *   [x] `components/vote/RegisterToVote.vue`: Use `registryService.registerParticipant`.
+    *   [x] `components/vote/CastYourVote.vue`: Use `voteSessionService.castVote`.
+        *   [x] Fetch participant public keys using `registryService.getAllParticipantKeys`.
+        *   [ ] **TODO:** Generate Nullifier by calling `cryptography.js::calculateNullifier`.
+        *   [ ] **TODO:** Generate ZK-SNARK Proof by calling `cryptography.js::generateZkProof`.
+        *   [ ] **TODO:** Encode vote option by calling `cryptography.js::encodeVoteToPoint` before encryption.
+    *   [x] `components/vote/SubmitSecretShare.vue`: Use `voteSessionService.submitShares`.
+        *   [x] Fetch `g1r` using `voteSessionService.getVoteRoundParameters`.
+        *   [ ] **TODO:** Calculate G2 share by calling `cryptography.js::calculateDecryptionShareForSubmission`.
+    *   [x] `components/vote/VoteResults.vue`:
+        *   [x] Fetch state/results data (`voteSessionService` / `registryService`).
+        *   [x] Refactor into child components.
+        *   [x] Populate child components (`ResultsPending`, `DecryptionFailed`, `ResultsDisplay`, `HolderStatusAndClaim`).
+        *   [ ] **TODO:** Implement actual data fetching for decryption (`getAllEncryptedVotes`, `getAllDecryptionShares`, `getSessionInfo`) in `runDecryptionProcess`.
+        *   [ ] **TODO:** Implement actual decryption logic within `runDecryptionProcess` (calling `cryptography.js::decryptVote` and `cryptography.js::decodePointToVote`).
+*   **Testing:**
+    *   [ ] Set up Vitest framework.
+    *   [ ] Add unit tests for `cryptography.js` functions (including placeholders once implemented).
+    *   [ ] Add unit tests for `utils/aesUtils.js`.
+    *   [ ] Add unit tests for `utils/conversionUtils.js`.
+    *   [ ] Add integration tests for service functions (`registryService`, `voteSessionService`, etc.) interacting with mock contracts or a local node.
+    *   [ ] Add component tests for key components (`CastYourVote`, `VoteResults`, etc.) to verify prop handling and state changes.
+
+## Testing (Duplicate Section Removed)
 
 ## Documentation
 

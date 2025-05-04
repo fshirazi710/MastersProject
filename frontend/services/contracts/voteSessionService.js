@@ -3,7 +3,7 @@ import { ethersBaseService } from './ethersBase.js';
 import { factoryService } from './factoryService.js'; // Needed to get session address
 
 // Import Session ABI
-import VoteSessionABI_File from '../../crypto-core/artifacts/contracts/VoteSession.sol/VoteSession.json';
+import VoteSessionABI_File from '../../../crypto-core/artifacts/contracts/VoteSession.sol/VoteSession.json';
 
 // Basic check for ABI loading
 if (!VoteSessionABI_File?.abi) {
@@ -178,15 +178,18 @@ class VoteSessionService {
         return {
           title: info.title,
           description: info.description,
-          startDate: Number(info.startDate), // Convert BigInt timestamp to number
+          startDate: Number(info.startDate),
           endDate: Number(info.endDate),
           sharesEndDate: Number(info.sharesEndDate),
-          options: info.options, // Assuming it returns string[]
+          options: info.options,
           metadata: info.metadata,
-          requiredDeposit: ethers.formatEther(info.requiredDeposit), // Format Wei
-          minShareThreshold: Number(info.minShareThreshold), // Convert BigInt to number
-          participantRegistry: info.participantRegistry, // Address
-          sessionStatus: Number(info.sessionStatus) // Convert enum BigInt to number
+          // Conditionally format deposit only if it exists and is valid
+          requiredDeposit: (info.requiredDeposit !== null && info.requiredDeposit !== undefined) 
+              ? ethers.formatEther(info.requiredDeposit) 
+              : '0', // Or null, or throw an error, depending on desired behavior
+          minShareThreshold: Number(info.minShareThreshold),
+          participantRegistry: info.participantRegistry,
+          sessionStatus: Number(info.sessionStatus)
         };
       } else {
         return null;
@@ -295,6 +298,54 @@ class VoteSessionService {
       return share; // Should be bytes-like
     } catch (error) {
       console.error(`Error getting decryption share at index ${index} for session ${sessionId}:`, error);
+      return null; // Indicate failure
+    }
+  }
+
+  /**
+   * Retrieves parameters related to the voting round, like g1r and g2r.
+   * Uses read-only call.
+   * @param {number} sessionId - The ID of the session.
+   * @returns {Promise<{g1r: string, g2r: string}|null>} - Object with hex strings or null if error.
+   */
+  async getVoteRoundParameters(sessionId) {
+    if (sessionId === undefined) {
+      throw new Error('Session ID is required.');
+    }
+    try {
+      const sessionAddress = await this._getSessionAddress(sessionId);
+      // Check contract for the correct function name! Examples:
+      // - getRoundParams()
+      // - g1r() and g2r() as separate public variables/functions
+      // Assuming separate functions for this example:
+      console.log(`Reading g1r from VoteSession: ${sessionAddress}`);
+      const g1r = await ethersBaseService.readContract(
+        sessionAddress,
+        this.sessionAbi,
+        'g1r', // !!! CHECK CONTRACT FUNCTION NAME !!!
+        []
+      );
+      console.log(`Reading g2r from VoteSession: ${sessionAddress}`);
+      const g2r = await ethersBaseService.readContract(
+        sessionAddress,
+        this.sessionAbi,
+        'g2r', // !!! CHECK CONTRACT FUNCTION NAME !!!
+        []
+      );
+      
+      // Ensure results are valid hex strings (or bytes-like)
+      if (g1r && g2r) {
+          // Convert potential BytesLike to hex strings if needed
+          return {
+              g1r: ethers.hexlify(g1r),
+              g2r: ethers.hexlify(g2r)
+          };
+      } else {
+          console.error(`Failed to retrieve g1r/g2r for session ${sessionId}`);
+          return null;
+      }
+    } catch (error) {
+      console.error(`Error getting vote round parameters for session ${sessionId}:`, error);
       return null; // Indicate failure
     }
   }

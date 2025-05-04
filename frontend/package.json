@@ -7,7 +7,8 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "test": "vitest run"
   },
   "dependencies": {
     "@noble/curves": "^1.8.1",
@@ -25,8 +26,13 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.24",
+    "@vitejs/plugin-vue": "^5.2.3",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^26.1.0",
     "sass": "^1.69.0",
     "sass-embedded": "^1.72.0",
-    "sass-loader": "^13.3.0"
+    "sass-loader": "^13.3.0",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.1.2"
   }
 }

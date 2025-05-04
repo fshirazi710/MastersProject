@@ -246,7 +246,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { voteSessionApi } from '@/services/api'
-import { ethersBaseService, factoryService } from '~/services/ethersService'
+import { ethersBaseService, factoryService } from '~/services/contracts/ethersService'
 import { ethers } from 'ethers'
 
 const router = useRouter();

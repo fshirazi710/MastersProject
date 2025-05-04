@@ -1,0 +1,277 @@
+/* Use SASS variables if defined globally, otherwise use CSS vars or fallback values */
+$spacing-xs: 5px;
+$spacing-sm: 10px;
+$spacing-md: 15px;
+$spacing-lg: 20px;
+
+// TODO: Review if :root variables are needed here or should be defined globally
+:root {
+    --background-light: #f8f9fa;
+    --border-radius: 4px;
+    --text-secondary: #6c757d;
+    --info-light: #e2f3ff;
+    --info-dark: #0c5460;
+    --info: #17a2b8;
+    --success-light: #d4edda;
+    --success-dark: #155724;
+    --success: #28a745;
+    --warning-light: #fff3cd;
+    --warning-dark: #856404;
+    --warning: #ffc107;
+    --danger-light: #f8d7da;
+    --danger-dark: #721c24;
+    --danger: #dc3545;
+    --text-muted: #6c757d; // Added for check-back
+    --light-bg: #f8f9fa; // Added for decryption-pending
+    --border-color: #dee2e6; // Added border color
+    --primary-color: #007bff; // Added primary color
+    --background-alt: #e9ecef; // Added background-alt
+}
+
+// Styles originally from VoteResults.vue
+.results-section {
+  margin-top: $spacing-lg;
+}
+
+.results-display {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-lg;
+}
+
+.result-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch; 
+  width: 100%;
+  margin-bottom: $spacing-md; 
+}
+
+.result-header {
+  font-weight: bold;
+  margin-bottom: $spacing-xs;
+  text-align: left; 
+  width: 100%; 
+}
+
+.progress-bar {
+  width: 100%;
+  height: 20px;
+  background-color: #e0e0e0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: $spacing-xs;
+}
+
+.progress {
+  height: 100%;
+  background-color: #4caf50;
+  transition: width 0.3s ease-in-out;
+}
+
+.percentage {
+  font-size: 14px;
+  color: #333;
+  text-align: right; 
+  width: 100%;
+}
+
+.loading-message {
+  text-align: center;
+}
+
+.winner-check-section {
+  margin-top: 30px;
+  padding-top: $spacing-lg;
+  border-top: 1px solid var(--border-color);
+}
+
+.email-form {
+  margin-top: $spacing-md;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+  max-width: 400px;
+}
+
+.success-message {
+  color: var(--success);
+  font-weight: bold;
+  margin-top: $spacing-sm;
+}
+
+.error-message {
+  color: var(--danger);
+  margin-top: $spacing-sm;
+}
+
+.requirements-list {
+  text-align: left;
+  margin: $spacing-md auto;
+  padding-left: 0;
+  list-style: none;
+  max-width: 360px;
+}
+
+.requirements-list li {
+  margin-bottom: $spacing-md;
+  line-height: 1.4;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-sm;
+}
+
+.requirement-label {
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.requirement-status-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-grow: 1;
+}
+
+.requirement-status {
+  color: var(--warning);
+  text-align: right;
+}
+
+.requirement-status.completed {
+  color: var(--success);
+  font-weight: 500;
+}
+
+.shares-progress {
+  height: 6px;
+  background-color: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: $spacing-xs;
+  width: 100px;
+}
+
+.shares-progress-bar {
+  height: 100%;
+  background-color: var(--primary-color);
+  transition: width 0.5s ease;
+}
+
+.lock-container {
+  margin-bottom: $spacing-md;
+}
+
+.lock-icon {
+  font-size: 40px;
+  display: inline-block;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+.check-back {
+  margin-top: $spacing-md;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.decryption-pending {
+  background-color: var(--light-bg);
+  border-radius: var(--border-radius);
+  padding: 30px $spacing-lg;
+  text-align: center;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.average-result {
+    margin-top: $spacing-md;
+    font-size: 1.1em;
+    text-align: center;
+    padding: $spacing-sm;
+    background-color: var(--background-light);
+    border-radius: var(--border-radius);
+}
+
+.total-votes-slider {
+    margin-top: $spacing-xs;
+    font-size: 0.9em;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+/* Ensure chart has a defined height */
+#distribution-chart {
+    max-height: 400px;
+    margin: $spacing-md 0;
+}
+
+.decryption-failed .lock-icon {
+  color: var(--danger);
+  animation: none;
+}
+
+.requirement-status.warning {
+    color: var(--warning);
+}
+
+/* Styles for holder status section */
+.holder-status-section {
+  margin-top: 30px;
+  padding: $spacing-lg;
+  background-color: var(--background-alt);
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+
+  h3 {
+    margin-top: 0;
+    margin-bottom: $spacing-md;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: $spacing-sm;
+  }
+
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  li {
+    margin-bottom: $spacing-sm;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .status-label {
+    font-weight: 500;
+  }
+
+  .status-value {
+    text-align: right;
+  }
+
+  .status-icon {
+    margin-left: $spacing-xs;
+  }
+}
+
+/* Style for claim error message within the list */
+.error-message-li {
+  justify-content: flex-end;
+  small {
+    color: var(--danger);
+  }
+}
+
+/* Smaller button variant */
+.btn-sm {
+    padding: 4px 8px;
+    font-size: 0.85em;
+} 

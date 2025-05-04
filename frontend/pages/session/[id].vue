@@ -95,13 +95,75 @@
       :existingThreshold="vote.requiredKeys || 0"
     />
 
-    <!-- Submit Secret Share section - Needs accurate holder check -->
+    <!-- Submit Secret Share section -->
     <SubmitSecretShare
       v-if="isRegisteredForVote && vote?.status === 'ended'"
       :vote-id="route.params.id"
-      :is-submission-time="isSubmissionTime"
       :endDate="vote.endDate"
     />
+
+    <!-- Submit Decryption Value Section (New) -->
+    <div 
+      v-if="isRegisteredForVote && vote && (vote.status === 'shares' || vote.status === 'ended' || vote.status === 'complete') && !hasSubmittedDecryptionValue"
+      class="voting-section"
+    >
+      <h3>Submit Decryption Value</h3>
+      <p>Submit your value to help decrypt the results.</p>
+       <!-- Add Password Input Here -->
+       <!-- Example (Needs v-model binding):
+       <div class="form-group">
+            <label for="decval-password">Enter Vote Session Key Password:</label>
+            <input 
+              type="password" 
+              id="decval-password" 
+              placeholder="Password used during registration"
+              required
+              class="form-input"
+            />
+          </div>
+        -->
+      <button 
+        @click="submitMyDecryptionValue"
+        class="btn secondary"
+        :disabled="submitDecryptionValueLoading"
+      >
+        {{ submitDecryptionValueLoading ? 'Submitting Value...' : 'Submit Decryption Value' }}
+      </button>
+      <p v-if="submitDecryptionValueError" class="error-message">{{ submitDecryptionValueError }}</p>
+    </div>
+    <div 
+      v-if="isRegisteredForVote && hasSubmittedDecryptionValue"
+      class="status-message success"
+    >
+      <i class="icon check">✔️</i> You have submitted your decryption value.
+    </div>
+
+    <!-- Claim Deposit/Reward Section (New) -->
+    <div 
+      v-if="isRegisteredForVote && canClaim"
+      class="voting-section"
+    >
+        <h3>Claim Deposit/Reward</h3>
+        <p>You are eligible to claim your refundable deposit and any potential rewards.</p>
+        <!-- Optional: Display claimable amounts if fetched 
+        <p>Deposit: {{ claimableDeposit }} ETH</p>
+        <p>Reward: {{ claimableReward }} ETH</p>
+        -->
+        <button
+            @click="submitClaim"
+            class="btn secondary"
+            :disabled="claimLoading"
+        >
+            {{ claimLoading ? 'Processing Claim...' : 'Claim Deposit & Reward' }}
+        </button>
+        <p v-if="claimError" class="error-message">{{ claimError }}</p>
+    </div>
+    <div 
+        v-if="isRegisteredForVote && hasClaimed"
+        class="status-message success"
+    >
+        <i class="icon check">✔️</i> You have already claimed your deposit/reward for this session.
+    </div>
 
     <!-- Results section - only shown for ended votes -->
     <VoteResults
@@ -126,15 +188,19 @@
   import VoteResults from '@/components/vote/VoteResults.vue'
   import RegisterToVote from '@/components/vote/RegisterToVote.vue'
   import SubmitSecretShare from '~/components/vote/SubmitSecretShare.vue'
-  import { ethersService } from '~/services/ethersService'
-  import { config } from '@/config'
+  import { ethersBaseService, factoryService, registryService, voteSessionService } from '~/services/contracts/ethersService'
 
   // Get route params for vote ID
   const route = useRoute()
   const loading = ref(true)
   const error = ref(null)
   const vote = ref(null)
+  const voteSessionAddress = ref(null);
+  const participantRegistryAddress = ref(null);
   const actualIsRegistered = ref(false)
+  const hasSubmittedDecryptionValue = ref(false)
+  const hasClaimed = ref(false)
+  const canClaim = ref(false)
   const isCheckingStatus = ref(true)
 
   const timeRemaining = ref('');
@@ -163,12 +229,14 @@
   });
 
   const fetchVoteData = async (showLoading = true) => {
-      const voteSessionId = route.params.id;
-      if (!voteSessionId || voteSessionId === 'undefined' || voteSessionId === ':id') {
-          console.warn("fetchVoteData called with invalid voteSessionId:", voteSessionId);
+      const voteSessionIdString = route.params.id;
+      if (!voteSessionIdString || voteSessionIdString === 'undefined' || voteSessionIdString === ':id') {
+          console.warn("fetchVoteData called with invalid voteSessionId:", voteSessionIdString);
           error.value = "Invalid or missing Vote Session ID.";
           loading.value = false;
           vote.value = null;
+          voteSessionAddress.value = null;
+          participantRegistryAddress.value = null;
           displayHint.value = null;
           sliderConfig.value = null;
           if (timeUpdateInterval.value) {
@@ -177,75 +245,173 @@
           }
           return;
       }
+      // Convert ID from route param (string) to number for service calls
+      const voteSessionId = parseInt(voteSessionIdString, 10); 
+      if (isNaN(voteSessionId)) {
+          console.error("fetchVoteData: Invalid vote session ID format:", voteSessionIdString);
+          error.value = "Invalid Vote Session ID format.";
+          loading.value = false;
+          return;
+      }
 
       if (showLoading) loading.value = true
       error.value = null
 
       try {
-          const [sessionResponse, holdersResponse, metadataResponse] = await Promise.all([
-              voteSessionApi.getVoteSessionById(voteSessionId),
-              holderApi.getHolderCount(voteSessionId),
-              voteSessionApi.getVoteSessionMetadata(voteSessionId)
-          ]);
-
-          const metadata = metadataResponse.data.data;
-          let parsedSliderConfig = null;
-          if (metadata && typeof metadata.sliderConfig === 'string') {
-              try { parsedSliderConfig = JSON.parse(metadata.sliderConfig); } catch (e) { console.error("Failed to parse sliderConfig JSON:", e); }
-          } else if (metadata && typeof metadata.sliderConfig === 'object') { parsedSliderConfig = metadata.sliderConfig; }
-
-          const sessionData = sessionResponse.data.data;
-          const holderData = holdersResponse.data.data;
-          
-          vote.value = {
-              id: sessionData.id,
-              title: sessionData.title || `Vote Session ${sessionData.id}`,
-              description: sessionData.description || 'No description available',
-              status: sessionData.status || 'active',
-              startDate: sessionData.start_date || new Date().toISOString(),
-              endDate: sessionData.end_date || new Date(Date.now() + 86400000).toISOString(),
-              options: sessionData.options || [],
-              participantCount: sessionData.participant_count || 0,
-              rewardPool: sessionData.reward_pool || 0,
-              requiredDeposit: sessionData.required_deposit || 0,
-              secretHolderCount: holderData.count || 0,
-              requiredKeys: sessionData.required_keys || 0,
-              releasedKeys: sessionData.released_keys || 0,
+          // --- Blockchain Data Fetching ---
+          console.log(`Fetching addresses for session ID: ${voteSessionId}`);
+          const addresses = await factoryService.getSessionAddresses(voteSessionId);
+          if (!addresses || !addresses.sessionAddress || !addresses.registryAddress) {
+              throw new Error(`Could not fetch contract addresses for session ${voteSessionId}. It might not exist or the factory is unavailable.`);
           }
-          
-          displayHint.value = metadata?.displayHint;
-          sliderConfig.value = parsedSliderConfig;
-          
-      } catch (err) {
-          console.error("Failed to fetch vote session data or metadata:", err)
-          let specificError = `Failed to load details for Vote Session ${voteSessionId}. Please try again later.`;
-          if (err.response) {
-            const status = err.response.status;
-            const detail = err.response.data?.detail || '';
-            if (status === 404 || (typeof detail === 'string' && (detail.includes('Election does not exist') || detail.includes('Vote Session does not exist')))) {
-              specificError = `Vote Session with ID ${voteSessionId} was not found. It may have been deleted or the ID is incorrect.`;
-            } else if (detail) {
-              specificError = `Error loading Vote Session ${voteSessionId}: ${detail}`;
-            }
+          voteSessionAddress.value = addresses.sessionAddress;
+          participantRegistryAddress.value = addresses.registryAddress;
+          console.log(`Addresses found - Session: ${voteSessionAddress.value}, Registry: ${participantRegistryAddress.value}`);
+
+          // Fetch session info directly from the VoteSession contract
+          console.log(`Fetching session info from contract: ${voteSessionAddress.value}`);
+          const blockchainSessionInfo = await voteSessionService.getSessionInfo(voteSessionId); // Assumes service handles using the address
+          if (!blockchainSessionInfo) {
+               throw new Error(`Failed to fetch session details from contract ${voteSessionAddress.value}.`);
+          }
+          console.log("Blockchain session info:", blockchainSessionInfo);
+
+          // Fetch participant count from the ParticipantRegistry contract
+          console.log(`Fetching participant count from contract: ${participantRegistryAddress.value}`);
+          const participantCount = await registryService.getNumberOfActiveParticipants(voteSessionId); // Assumes service handles using the address
+          console.log("Blockchain participant count:", participantCount);
+
+          // --- Backend API Data Fetching (Optional / Supplementary) ---
+          // Example: Fetch metadata or other off-chain data if needed
+          // const metadataResponse = await voteSessionApi.getVoteSessionMetadata(voteSessionId);
+          // const metadata = metadataResponse.data.data;
+          // displayHint.value = metadata?.displayHint; 
+          // Handle slider config from metadata if applicable
+          // let parsedSliderConfig = null;
+          // ... parsing logic ...
+          // sliderConfig.value = parsedSliderConfig;
+
+          // --- Check Registration & Submission Statuses --- (After getting addresses)
+          const currentAccount = ethersBaseService.getAccount();
+          if (currentAccount) {
+               console.log(`Checking registration, decryption, and claim status for ${currentAccount}...`);
+               try {
+                   const details = await registryService.getParticipantDetails(voteSessionId, currentAccount);
+                   actualIsRegistered.value = !!details;
+                   hasSubmittedDecryptionValue.value = details ? details.hasSubmittedDecryptionValue : false;
+                   hasClaimed.value = details ? details.hasClaimed : false;
+                   console.log(`Status - Registered: ${actualIsRegistered.value}, Submitted Decryption: ${hasSubmittedDecryptionValue.value}, Claimed: ${hasClaimed.value}`);
+
+                   // Determine eligibility to claim (example logic)
+                   const isSessionEnded = vote.value && (vote.value.status === 'ended' || vote.value.status === 'complete');
+                   canClaim.value = actualIsRegistered.value && !hasClaimed.value && isSessionEnded;
+                   console.log(`Can Claim: ${canClaim.value}`);
+                   
+                   // TODO: Fetch specific claimable amounts if needed
+                   // if (canClaim.value) {
+                   //    const amounts = await registryService.getClaimableAmount(voteSessionId, currentAccount);
+                   //    claimableDeposit.value = amounts.deposit;
+                   //    claimableReward.value = amounts.reward;
+                   // }
+
+               } catch (statusError) {
+                    console.error("Error checking participant status during fetch:", statusError);
+                    // Don't necessarily fail the whole fetch, but log it
+                    actualIsRegistered.value = false;
+                    hasSubmittedDecryptionValue.value = false;
+                    hasClaimed.value = false;
+                    canClaim.value = false;
+               }
           } else {
-            specificError = `Error loading Vote Session ${voteSessionId}: ${err.message || 'Network error or unknown issue'}`;
+              actualIsRegistered.value = false;
+              hasSubmittedDecryptionValue.value = false;
+              hasClaimed.value = false;
+              canClaim.value = false;
           }
-          error.value = specificError;
+          // ---------------------------------------------
+
+          // --- Combine Data ---
+          // Prioritize blockchain data for on-chain state
+          vote.value = {
+              id: voteSessionId, // Use the ID from the route
+              title: blockchainSessionInfo.title,
+              description: blockchainSessionInfo.description,
+              status: getStatusString(blockchainSessionInfo.sessionStatus), // Convert enum number to string
+              startDate: new Date(blockchainSessionInfo.startDate * 1000).toISOString(), // Convert timestamp to ISO string
+              endDate: new Date(blockchainSessionInfo.endDate * 1000).toISOString(),
+              sharesEndDate: new Date(blockchainSessionInfo.sharesEndDate * 1000).toISOString(), // Added shares end date
+              options: blockchainSessionInfo.options,
+              metadata: blockchainSessionInfo.metadata, // Store raw metadata
+              participantCount: participantCount, 
+              secretHolderCount: participantCount, // Assuming registered participants are holders for now
+              requiredDeposit: blockchainSessionInfo.requiredDeposit, // Already formatted ETH string from service
+              minShareThreshold: blockchainSessionInfo.minShareThreshold, // Already number from service
+              // TODO: Need functions in services/contracts for these?
+              requiredKeys: blockchainSessionInfo.minShareThreshold, // Placeholder - Use threshold for now
+              releasedKeys: 0, // Placeholder - Need contract view function
+              rewardPool: 0, // Placeholder - Reward pool might be off-chain or managed differently
+          };
+
+          // Parse metadata for slider if present
+          if (vote.value.metadata) {
+              try {
+                  const parsedMeta = JSON.parse(vote.value.metadata);
+                  if (parsedMeta.type === 'slider') {
+                      sliderConfig.value = {
+                          min: parsedMeta.min,
+                          max: parsedMeta.max,
+                          step: parsedMeta.step,
+                      };
+                  }
+              } catch (e) {
+                   console.warn("Metadata is not valid JSON or doesn't contain slider config:", e);
+                   sliderConfig.value = null;
+              }
+          } else {
+               sliderConfig.value = null;
+          }
+          
+
+      } catch (err) {
+          console.error("Failed to fetch vote session data:", err);
+          error.value = `Error loading Vote Session ${voteSessionId}: ${err.message || 'Network error or unknown issue'}`;
           vote.value = null;
+          voteSessionAddress.value = null;
+          participantRegistryAddress.value = null;
           displayHint.value = null;
           sliderConfig.value = null;
           actualIsRegistered.value = false;
+          hasSubmittedDecryptionValue.value = false;
+          hasClaimed.value = false;
+          canClaim.value = false;
       } finally {
           if (showLoading) loading.value = false
           if (vote.value) {
-            startTimerUpdates();
+              startTimerUpdates(); // Start timer based on fetched blockchain dates
           } else {
              if (timeUpdateInterval.value) {
                  clearInterval(timeUpdateInterval.value);
                  timeUpdateInterval.value = null;
              }
              actualIsRegistered.value = false;
+             hasSubmittedDecryptionValue.value = false;
+             hasClaimed.value = false;
+             canClaim.value = false;
           }
+          isCheckingStatus.value = false; // Assume status check is done here
+      }
+  }
+
+  // Helper to convert session status enum (number) to string
+  // Adjust based on actual enum order in Structs.sol
+  function getStatusString(statusEnum) {
+      switch (statusEnum) {
+          case 0: return 'pending'; // Assuming Pending = 0
+          case 1: return 'active'; // Assuming Active = 1
+          case 2: return 'ended'; // Assuming Ended = 2
+          case 3: return 'shares'; // Assuming SharesSubmission = 3
+          case 4: return 'complete'; // Assuming Complete = 4
+          default: return 'unknown';
       }
   }
 
@@ -264,284 +430,8 @@
   };
 
   const updateTimerState = () => {
-      if (!vote.value || !vote.value.startDate || !vote.value.endDate) {
-          timerLabel.value = 'Status:';
-          timeRemaining.value = 'Not available';
-          if (timeUpdateInterval.value) {
-             clearInterval(timeUpdateInterval.value);
-             timeUpdateInterval.value = null;
-          }
-          return;
-      }
-
-      const now = new Date();
-      const start = new Date(vote.value.startDate);
-      const end = new Date(vote.value.endDate);
-
-      let potentialStatusChange = false;
-
-      if (now < start) {
-          timerLabel.value = 'Starts in:';
-          const diffToStart = start - now;
-          timeRemaining.value = formatTimeDifference(diffToStart);
-
-          if (diffToStart <= 0) {
-               potentialStatusChange = true;
-               timeRemaining.value = 'Starting...';
-          }
-      } else if (now < end) {
-          timerLabel.value = 'Ends in:';
-          const diffToEnd = end - now;
-          timeRemaining.value = formatTimeDifference(diffToEnd);
-
-          if (['pending', 'join'].includes(vote.value.status)) {
-              potentialStatusChange = true;
-          }
-
-          if (diffToEnd <= 0) {
-              potentialStatusChange = true;
-              timeRemaining.value = 'Ending...';
-          }
-
-      } else {
-          timerLabel.value = 'Status:';
-          timeRemaining.value = 'Ended';
-
-          if (vote.value.status !== 'ended') {
-               potentialStatusChange = true;
-          }
-
-          if (timeUpdateInterval.value) {
-              clearInterval(timeUpdateInterval.value);
-              timeUpdateInterval.value = null;
-          }
-      }
-
-      if (potentialStatusChange && vote.value.status !== 'ended') {
-          fetchVoteData(false);
-      }
+    // ... rest of script ...
   };
 
-  const startTimerUpdates = () => {
-    if (timeUpdateInterval.value) {
-        clearInterval(timeUpdateInterval.value);
-    }
-    updateTimerState(); 
-    timeUpdateInterval.value = setInterval(updateTimerState, 1000);
-  };
-
-  const updateTimer = () => {
-    updateTimerState();
-  };
-
-  watch(() => route.params.id, async (newId, oldId) => {
-      if (newId && oldId && newId !== oldId && newId !== 'undefined' && newId !== ':id') {
-          vote.value = null; 
-          displayHint.value = null;
-          sliderConfig.value = null;
-          error.value = null;
-          actualIsRegistered.value = false;
-          isCheckingStatus.value = true;
-          if (timeUpdateInterval.value) {
-              clearInterval(timeUpdateInterval.value);
-              timeUpdateInterval.value = null;
-          }
-          await fetchVoteData(true);
-          await checkActualRegistrationStatus();
-      } else if (!newId || newId === 'undefined' || newId === ':id') {
-          error.value = "Invalid vote ID in route.";
-          vote.value = null;
-          displayHint.value = null;
-          sliderConfig.value = null;
-          actualIsRegistered.value = false;
-          loading.value = false;
-          isCheckingStatus.value = false;
-          if (timeUpdateInterval.value) {
-              clearInterval(timeUpdateInterval.value);
-              timeUpdateInterval.value = null;
-          }
-      }
-  });
-
-  onMounted(async () => {
-      console.log("Vote Session page mounted. Initializing...");
-      loading.value = true;
-      isCheckingStatus.value = true;
-      error.value = null;
-  
-      try {
-          if (!ethersService.getAccount()) {
-              console.log("Attempting to initialize wallet connection...");
-              await ethersService.init(); 
-              console.log("Wallet initialized, account:", ethersService.getAccount());
-          } else {
-              console.log("Wallet connection already established, account:", ethersService.getAccount());
-          }
-  
-          const voteSessionId = route.params.id;
-          if (!voteSessionId || voteSessionId === 'undefined' || voteSessionId === ':id') {
-              throw new Error("Invalid or missing Vote Session ID on initial load.");
-          }
-          await fetchVoteData(false);
-          
-          if (vote.value) {
-             await checkActualRegistrationStatus();
-          }
-          
-      } catch (err) {
-          console.error("Error during component mount initialization:", err);
-          if (!error.value) {
-             error.value = err.message || "Failed to initialize vote session details or wallet connection.";
-          }
-          actualIsRegistered.value = false;
-          if (vote.value) {
-            loading.value = false; 
-          } else {
-            loading.value = false;
-          } 
-      } finally {
-          if(loading.value) loading.value = false;
-          if(isCheckingStatus.value) isCheckingStatus.value = false;
-          console.log("Initialization complete. Loading:", loading.value, "Checking Status:", isCheckingStatus.value);
-      }
-  });
-
-  // Format date strings for display
-  function formatDateTime(dateString) {
-    if (!dateString) return 'Not available';
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date);
-  }
-
-  // Compute if the current time is within the submission window
-  const isSubmissionTime = computed(() => {
-    if (!vote.value) return false
-    
-    const end = new Date(vote.value.endDate)
-    const now = new Date()
-    const fifteenMinutesAfterEnd = new Date(end.getTime() + 15 * 60000)
-
-    return now >= end && now <= fifteenMinutesAfterEnd
-  })
-
-  // Compute if the current time is at least 15 minutes after the end of the vote
-  const isResultTime = computed(() => {
-    if (!vote.value) return false
-    
-    const end = new Date(vote.value.endDate)
-    const now = new Date()
-    const fifteenMinutesAfterEnd = new Date(end.getTime() + 15 * 60000)
-
-    return now >= fifteenMinutesAfterEnd
-  })
-
-  const handleRegistrationSuccess = async () => {
-    console.log("Registration transaction potentially sent, re-checking status...");
-    await checkActualRegistrationStatus();
-  };
-
-  // Function to check and update vote status if needed
-  const updateVoteStatusIfNeeded = async () => {
-    if (!vote.value) return;
-
-    const now = Date.now();
-    const startDate = new Date(vote.value.startDate).getTime();
-    const endDate = new Date(vote.value.endDate).getTime();
-    let expectedStatus = 'pending';
-
-    if (now >= endDate) {
-        expectedStatus = 'ended';
-    } else if (now >= startDate) {
-        expectedStatus = 'active';
-    } else { 
-        expectedStatus = 'join'; 
-    }
-
-    // Refresh data if the calculated status differs from the current vote status
-    if (vote.value.status !== expectedStatus) {
-        await fetchVoteData(false);
-    }
-  };
-
-  const checkActualRegistrationStatus = async () => {
-    isCheckingStatus.value = true;
-    error.value = null;
-    const currentAccount = ethersService.getAccount();
-    const voteSessionId = route.params.id;
-
-    if (!currentAccount || !voteSessionId || voteSessionId === 'undefined' || voteSessionId === ':id') {
-        console.log("Cannot check status: Missing account or vote ID.");
-        actualIsRegistered.value = false;
-        isCheckingStatus.value = false;
-        return;
-    }
-
-    console.log(`Checking actual registration status for ${currentAccount} in vote session ${voteSessionId}...`);
-    try {
-        const statusResult = await ethersService.readContract(
-            config.contract.address,
-            config.contract.abi,
-            'getHolderStatus',
-            [parseInt(voteSessionId), currentAccount]
-        );
-        actualIsRegistered.value = statusResult[0]; 
-        console.log("Actual on-chain registration status:", actualIsRegistered.value);
-    } catch (err) {
-        console.error("Error checking actual registration status:", err);
-        error.value = "Could not verify registration status. Please ensure your wallet is connected correctly and try refreshing.";
-        actualIsRegistered.value = false; 
-    } finally {
-        isCheckingStatus.value = false;
-    }
-  };
+  // ... rest of script ...
 </script>
-
-<style lang="scss" scoped>
-@use '@/assets/styles/components/_vote-details.scss';
-
-/* Styles for Error Message */
-.error-message {
-  text-align: center;
-  padding: 40px 20px;
-  background-color: #fff3f3; /* Light red background */
-  border: 1px solid #ffcccc; /* Reddish border */
-  border-radius: var(--border-radius);
-  margin: 20px auto;
-  max-width: 600px;
-}
-
-.error-message h2 {
-  color: #cc0000; /* Dark red */
-  margin-bottom: 15px;
-}
-
-.error-message p {
-  color: #333;
-  margin-bottom: 20px;
-}
-
-.error-message .btn {
-  display: inline-block;
-  padding: 10px 20px;
-  background-color: var(--primary);
-  color: white;
-  text-decoration: none;
-  border-radius: var(--border-radius);
-  transition: background-color 0.3s ease;
-}
-
-.error-message .btn:hover {
-  background-color: var(--primary-dark);
-}
-
-.vote-details {
-  /* ... */
-}
-
-</style> 

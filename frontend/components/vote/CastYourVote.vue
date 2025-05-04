@@ -87,16 +87,24 @@
   
   <script setup>
   import { ref, computed, onMounted, watch } from 'vue'
-  import { holderApi, encryptedVoteApi } from '@/services/api'
-  import { getKAndSecretShares, AESEncrypt, importBigIntAsCryptoKey } from '@/services/cryptography';
-  import { ethersService } from '@/services/ethersService';
-  import { config } from '@/config'; // Import config for contract details
-  // Import the new custom slider component
+  // Removed API imports
+  // import { holderApi, encryptedVoteApi } from '@/services/api'
+  import { 
+      getKAndSecretShares, 
+      AESEncrypt, 
+      importBigIntAsCryptoKey, 
+      // Need functions for nullifier/proof generation (add later)
+      // generateNullifier, generateProof 
+  } from '~/services/utils/cryptographyUtils';
+  // Import required services
+  import { ethersBaseService, registryService, voteSessionService } from '~/services/ethersService.js'; 
+  // Removed config import
+  // import { config } from '@/config'; 
   import CustomSlider from '@/components/shared/CustomSlider.vue'
 
   const props = defineProps({
     voteId: {
-      type: String,
+      type: [String, Number], // Allow string or number
       required: true
     },
     options: {
@@ -123,7 +131,7 @@
         type: Object,
         default: null
     },
-    existingThreshold: {
+    existingThreshold: { // Keep receiving threshold from parent (fetched in [id].vue)
         type: Number,
         required: true,
         default: 0
@@ -133,10 +141,11 @@
   const loading = ref(false);
   const selectedOption = ref(null)
   const selectedSliderValue = ref(null)
-  const g1rValue = ref(null)
-  const hasVoted = ref(false);
+  // Removed g1rValue - not needed here
+  // const g1rValue = ref(null)
+  const hasVoted = ref(false); // Keep local state for UI feedback after voting
+  const error = ref(null); // Add error ref for user feedback
   
-  // Compute allowed steps for the CustomSlider
   const sliderSteps = computed(() => {
       if (props.displayHint === 'slider' && props.options) {
           // Map options to numbers and filter out NaN
@@ -148,7 +157,6 @@
       return [];
   });
 
-  // Initialize slider value if applicable
   onMounted(() => {
       if (props.displayHint === 'slider' && props.sliderConfig && sliderSteps.value.length > 0) {
           // Set initial value to min from config, ensure it's in the allowed steps
@@ -160,51 +168,32 @@
               selectedSliderValue.value = sliderSteps.value[0]; 
           }
       }
+      // TODO: Check if user has already voted using a read call?
+      // e.g., call voteSessionService.hasVoted(props.voteId, userAddress)
+      // and set hasVoted.value accordingly.
   });
   
-  // Method to validate the key pair
-  const validateKeyPair = async () => {
-    try {
-      // Get user address from ethersService
-      const userAddress = await ethersService.getAccount();
-      if (!userAddress) {
-        throw new Error("Wallet not connected. Please connect your wallet.");
-      }
-
-      // --- CORRECTED localStorage key ---
-      const lowerCaseAddress = userAddress.toLowerCase();
-      const publicKeyStorageKey = `vote_session_${props.voteId}_user_${lowerCaseAddress}_blsPublicKey`; 
-      const publicKeyHexRaw = localStorage.getItem(publicKeyStorageKey);
-
-      if (!publicKeyHexRaw) {
-        console.error(`BLS Public Key not found in localStorage for key: ${publicKeyStorageKey}`);
-        throw new Error("Your election-specific key pair was not found. Please ensure you have registered correctly for this vote.");
-      }
-      // --------------------------------
-      
-      // --- Ensure 0x prefix for API call --- 
-      const publicKeyHexPrefixed = publicKeyHexRaw.startsWith('0x') ? publicKeyHexRaw : `0x${publicKeyHexRaw}`;
-      // -------------------------------------
-
-      // Call backend API with the prefixed key
-      const response = await encryptedVoteApi.validatePublicKey({ public_key: publicKeyHexPrefixed });
-      return response.data.success
-    } catch (error) {
-      console.error("Failed to validate key pair:", error);
-      // Throw the error instead of alerting, let handleEncryptedVoteSubmit catch it
-      throw new Error(`Error validating key pair: ${error.message || 'Unknown error'}`); 
-    }
-  }
+  // Removed validateKeyPair - validation happens implicitly if registration key exists
   
-  // Handle vote submission
+  // --- Refactored handleEncryptedVoteSubmit ---
   const handleEncryptedVoteSubmit = async () => {
-    try {
-      if (loading.value) return;
-      loading.value = true;
-      // Validate the user's own key pair locally first
-      await validateKeyPair(); 
+    error.value = null; // Clear previous errors
+    if (loading.value) return;
+    loading.value = true;
 
-      // --- Determine the actual option string to encrypt --- 
+    try {
+      const userAddress = ethersBaseService.getAccount();
+      if (!userAddress) {
+          throw new Error("Wallet not connected.");
+      }
+      
+      // Convert voteId prop to number
+      const sessionId = Number(props.voteId);
+      if (isNaN(sessionId)) {
+          throw new Error("Invalid voteId prop.");
+      }
+
+      // Determine the actual option string to encrypt
       let optionToEncrypt = null;
       if (props.displayHint === 'slider') {
           if (selectedSliderValue.value === null) {
@@ -221,124 +210,89 @@
       } else {
           optionToEncrypt = selectedOption.value;
       }
-
       if (!optionToEncrypt) {
           throw new Error("No option selected or determined for voting.");
       }
       // -------------------------------------------------
 
-      // --- Fetch Holder Data from CONTRACT --- 
-      console.log("Fetching holder BLS keys and addresses from contract...");
-      const [holderBlsKeysResult, holderEthAddressesResult] = await Promise.all([
-          ethersService.readContract(
-              config.contract.address, 
-              config.contract.abi,
-              'getHolderBlsKeys',
-              [props.voteId]
-          ),
-          ethersService.readContract(
-              config.contract.address, 
-              config.contract.abi,
-              'getHoldersByVoteSession', 
-              [props.voteId]
-          )
-      ]);
+      // --- Fetch Participant BLS Keys using registryService --- 
+      console.log(`Fetching participant BLS keys for session ${sessionId}...`);
+      const participantBlsKeys = await registryService.getAllParticipantKeys(sessionId);
+      console.log("Retrieved Participant BLS Keys:", participantBlsKeys);
       
-      // Convert Proxy results to standard arrays IMMEDIATELY
-      const holderBlsKeysArray = Array.from(holderBlsKeysResult || []);
-      const holderEthAddressesArray = Array.from(holderEthAddressesResult || []);
-
-      console.log("Retrieved Holder BLS Keys (Array):", holderBlsKeysArray);
-      console.log("Retrieved Holder ETH Addresses (Array):", holderEthAddressesArray);
-
-      if (!holderBlsKeysArray || holderBlsKeysArray.length === 0) {
-            throw new Error("Could not retrieve holder BLS keys from the contract.");
+      if (!participantBlsKeys || participantBlsKeys.length === 0) {
+          throw new Error("Could not retrieve participant BLS keys from the registry contract.");
       }
-      if (!holderEthAddressesArray || holderEthAddressesArray.length === 0) {
-          throw new Error("Could not retrieve holder ETH addresses from the contract.");
-      }
-      if (holderBlsKeysArray.length !== holderEthAddressesArray.length) {
-          console.error("Mismatch between BLS key count and ETH address count from contract.");
-          throw new Error("Inconsistent holder data retrieved from contract.");
-      }
-
-      // Use BLS Keys for Crypto
-      const public_keys = holderBlsKeysArray; // Use the converted array
-      const totalHolders = public_keys.length;
+      const public_keys = participantBlsKeys;
+      const totalParticipants = public_keys.length;
       // ------------------------------------------------
       
-      // --- Calculate threshold dynamically --- 
-      let thresholdToUse = 0;
-      if (props.existingThreshold && props.existingThreshold > 0) {
-          // Use the threshold already set on-chain
-          thresholdToUse = props.existingThreshold;
-          console.log("Using existing threshold from chain:", thresholdToUse);
-      } else if (totalHolders > 0) {
-          // Calculate threshold if none exists yet
-          thresholdToUse = Math.floor(totalHolders / 2) + 1;
-          console.log(`Calculating new threshold (N/2 + 1): totalHolders=${totalHolders}, threshold=${thresholdToUse}`);
-      } else {
-           // Should not happen if holders are required, but handle defensively
-           console.error("Cannot calculate threshold: No secret holders found from contract."); // Updated log
-           throw new Error("Cannot determine decryption threshold: No secret holders.");
+      // --- Use existing threshold --- 
+      const threshold = props.existingThreshold;
+      if (threshold <= 0) {
+          // Threshold should have been fetched by parent
+          console.error("Invalid or missing threshold provided via props:", threshold);
+          throw new Error("Cannot proceed without a valid decryption threshold.");
       }
-      const threshold = thresholdToUse; // Assign to variable used below
+      console.log(`Using threshold: ${threshold} (from props)`);
       // --------------------------------------
 
-      // Pass the BLS keys to crypto function
-      const [k_bigint, g1r, g2r, alphas_array] = await getKAndSecretShares(public_keys, threshold, totalHolders);
-      g1rValue.value = g1r;
-
-      // --- Convert derived symmetric key (k_bigint) to CryptoKey ---
+      // --- Threshold Encryption --- 
+      // (This part remains largely the same, but doesn't need g1r/g2r/alphas returned here)
+      console.log("Generating threshold encryption components...");
+      const [k_bigint, , , ] = await getKAndSecretShares(public_keys, threshold, totalParticipants);
       console.log("Importing derived symmetric key k for AES...");
       const aesCryptoKey = await importBigIntAsCryptoKey(k_bigint);
       console.log("Symmetric key k imported successfully.");
+
+      const voteString = JSON.stringify({ vote: optionToEncrypt });
+      const encryptedVoteHex = await AESEncrypt(voteString, aesCryptoKey);
+      console.log("Vote encrypted successfully.");
       // -----------------------------------------------------------
 
-      // Encrypt the vote using the imported CryptoKey
-      const voteString = JSON.stringify({ vote: optionToEncrypt });
-      const combinedCiphertextHex = await AESEncrypt(voteString, aesCryptoKey);
+      // --- Generate Nullifier --- (Placeholder)
+      console.warn("Nullifier generation is required!");
+      // const nullifierHash = await generateNullifier(sessionId, userPrivateKey); // Needs implementation
+      const nullifierHash = ethersBaseService.hashMessage(`dummy_nullifier_${sessionId}_${userAddress}_${Date.now()}`); // TODO: REPLACE with real nullifier!
+      console.log("Generated Placeholder Nullifier Hash:", nullifierHash);
+      // ------------------------
 
-      // Prepare the payload FOR THE BACKEND API
-      const payload = {
-          voter: ethersService.getAccount(),
-          holderAddresses: holderEthAddressesArray,
-          g1r: g1r,
-          g2r: g2r,
-          ciphertext: combinedCiphertextHex,
-          alphas: alphas_array, // Send the array of alpha strings
-          threshold: threshold
+      // --- Generate ZK Proof --- (Placeholder)
+      console.warn("ZK Proof generation is required!");
+      // const proofInputs = { ... }; // Inputs based on circuit
+      // const zkProof = await generateProof(proofInputs); // Needs implementation & setup
+      const zkProof = { // TODO: REPLACE with real proof!
+          a: ['0x00', '0x00'],
+          b: [['0x00', '0x00'], ['0x00', '0x00']],
+          c: ['0x00', '0x00']
       };
+      console.log("Using Placeholder ZK Proof:", zkProof);
+      // -----------------------
 
-      // Submit the encrypted vote via API
-      console.log("Submitting encrypted vote payload to backend API:", payload);
-      const submitResponse = await encryptedVoteApi.submitEncryptedVote(props.voteId, payload);
+      // --- Call voteSessionService.castVote --- 
+      console.log(`Calling voteSessionService.castVote for session ${sessionId}...`);
+      const txReceipt = await voteSessionService.castVote(
+          sessionId,
+          encryptedVoteHex, 
+          nullifierHash, 
+          zkProof
+      );
+      console.log("castVote transaction successful:", txReceipt);
+      // ----------------------------------------
 
-      if (submitResponse.data.success) {
-        console.log("Encrypted vote submitted successfully:", submitResponse.data);
-        hasVoted.value = true; // Update state to show success message
-        alert("Your encrypted vote has been successfully submitted!");
-      } else {
-        throw new Error(submitResponse.data.message || "Failed to submit encrypted vote.");
-      }
+      // Update UI state on success
+      hasVoted.value = true; 
+      alert("Your encrypted vote has been successfully submitted to the blockchain!");
 
     } catch (error) {
-        console.error("Error submitting encrypted vote:", error);
-        
-        // Check for specific 'Voter already voted' error from backend
-        if (error.response && 
-            error.response.status === 400 && 
-            error.response.data && 
-            typeof error.response.data.detail === 'string' && 
-            error.response.data.detail === 'Voter has already cast a vote in this session') { 
-            // If it's the 'already voted' error, update the UI state
-            hasVoted.value = true; 
-            // Optionally, still show an alert or a different message
-            alert("You have already cast your vote in this session."); 
-        } else {
-             // Otherwise, show the generic error message
-             alert(`Failed to submit vote: ${error.message || 'An unexpected error occurred.'}`); 
+        console.error("Error submitting vote:", error);
+        error.value = `Failed to cast vote: ${error.message || 'An unexpected error occurred.'}`; // Set local error for display
+        // Check for specific contract errors if needed (e.g., already voted based on nullifier)
+        if (error.message && error.message.toLowerCase().includes('nullifier already used')) {
+             hasVoted.value = true; // Update UI if contract indicates already voted
+             error.value = "You have already cast your vote in this session.";
         }
+        // alert(error.value); // Optionally show alert too
     } finally {
         loading.value = false;
     }

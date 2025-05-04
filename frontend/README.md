@@ -2,62 +2,6 @@
 
 A Vue/Nuxt based frontend for the Timed Release Crypto System. This application provides the user interface for a decentralized voting system with time-locked result revelation.
 
-## Core Concepts
-
-The frontend serves as the user interface layer, focusing on:
-- Presenting voting information clearly to users
-- Collecting and validating user input
-- Communicating with backend API
-- Displaying encrypted vote status
-- Managing user interface state
-
-## Current Implementation Status
-
-### Completed Features
-- ✅ Basic application layout and navigation
-- ✅ Create Vote form with:
-  - Title and description
-  - Start/end dates
-  - Dynamic voting options
-  - Secret holder requirements
-  - Deposit configuration
-- ✅ Active Votes listing with:
-  - Search and filtering
-  - Status indicators
-  - Vote cards
-- ✅ Individual Vote View with:
-  - Timeline display
-  - Status indicators
-  - Secret holder list
-  - Result display (when available)
-- ✅ Secret Holder Features:
-  - Deposit requirements
-  - Holder registration
-  - Status tracking
-
-### Frontend TODO List
-- [ ] User Interface Components
-  - Connect wallet button
-  - Loading states
-  - Error handling
-  - Form validations
-  - Responsive design improvements
-- [ ] API Integration
-  - Vote submission
-  - Vote status fetching
-  - Result retrieval
-  - Error handling
-  - Deposit management
-- [ ] User Experience
-  - Loading indicators
-  - Success/error notifications
-  - Form validation feedback
-  - Mobile responsiveness
-- [ ] Documentation
-  - Component documentation
-  - API integration docs
-  - Usage examples
-  - Deposit flow documentation
 
 ## Technical Architecture
 
@@ -67,36 +11,7 @@ The frontend serves as the user interface layer, focusing on:
 - SCSS for styling
 - Axios for API requests
 
-### Directory Structure
-```
-frontend/
-├── assets/
-│   └── styles/
-│       ├── _variables.scss     # Global design tokens
-│       ├── _mixins.scss       # Reusable mixins
-│       ├── main.scss          # Main style entry
-│       ├── components/        # Component styles
-│       │   ├── _buttons.scss  # Button variations
-│       │   ├── _cards.scss    # Card components
-│       │   ├── _forms.scss    # Form elements
-│       │   └── _votes.scss    # Vote-specific styles
-│       └── pages/            # Page-specific styles
-│           ├── _home.scss    
-│           ├── _vote-details.scss
-│           ├── _faq.scss
-│           ├── _become-holder.scss
-│           └── _create-vote.scss
-├── components/               # Vue components
-│   └── AppLayout.vue        # Main layout wrapper
-├── pages/                   # Route pages
-│   ├── index.vue           # Home page
-│   ├── create-vote.vue     # Vote creation
-│   ├── active-votes.vue    # Vote listing
-│   ├── become-holder.vue   # Holder registration
-│   └── vote/
-│       └── [id].vue        # Individual vote view
-└── public/                 # Static assets
-```
+
 
 ### Key Principles
 
@@ -185,71 +100,61 @@ npm run dev
 npm run build
 ```
 
+## Testing
+
+This project uses Vitest for testing. The tests interact with a local Hardhat node.
+
+**Prerequisites:**
+
+1.  **Run Hardhat Node:** In the `../crypto-core` directory, start a local node: `npx hardhat node`
+2.  **Deploy Contracts:** In the `../crypto-core` directory, deploy contracts to the local node: `npx hardhat run scripts/deploy.js --network localhost` (or your deployment script).
+3.  **Configure Factory Address:** Ensure the `DEPLOYED_FACTORY_ADDRESS` in `frontend/test/setup.js` matches the address output by the deployment script.
+
+**Running All Tests:**
+
+```bash
+npm run test
+```
+
+**Running Specific Tests:**
+
+*   **Run a single test file:**
+    ```bash
+    # Replace path/to/file.test.js with the actual file path
+    npm run test -- path/to/file.test.js 
+    
+    # Example:
+    npm run test -- test/contracts-tests/factoryService.test.js
+    ```
+
+*   **Run tests matching a name pattern (describe or it blocks):** Use the `-t` flag.
+    ```bash
+    # Run all tests within the "RegistryService" describe block
+    npm run test -- -t "RegistryService"
+    
+    # Run only the test named "should return zero addresses for a non-existent session ID"
+    npm run test -- -t "should return zero addresses for a non-existent session ID"
+    
+    # You can often use a unique substring:
+    npm run test -- -t "non-existent session ID"
+    ```
+
+*   **Focus tests using `.only` (Temporary):** Modify test code by adding `.only` to `describe` or `it` blocks. Only these will run.
+    ```javascript
+    // Example in a test file:
+    describe('My Suite', () => {
+      it.only('My focused test', () => { // Only this test runs
+        // ...
+      });
+      it('Another test', () => { /* skipped */ });
+    });
+    describe.only('Another Suite', () => { // This whole suite runs
+       it('Test A', () => { /* runs */ });
+       it('Test B', () => { /* runs */ });
+    });
+    ```
+    *Remember to remove `.only` before committing code.*
+
 ## Environment Variables
 Create a `.env` file:
 ```
-VITE_API_URL=http://localhost:8000
-```
-
-## Important Notes
-1. **API Integration**: All blockchain and cryptographic operations are handled by the backend
-2. **Data Display**: Frontend only displays data, never processes sensitive information
-3. **User Input**: Frontend validates input before sending to backend
-4. **Error Handling**: Clear error messages for all API interactions
-5. **Responsive Design**: Must work well on all device sizes
-
-## Contributing
-1. Follow Vue.js style guide
-2. Maintain type safety with TypeScript
-3. Document all components and functions
-4. Write clear commit messages
-5. Test across different browsers and devices
-
-## Resources
-- [Nuxt Documentation](https://nuxt.com)
-- [Vue.js Documentation](https://vuejs.org)
-- [Vue Style Guide](https://vuejs.org/style-guide)
-
-## Package Dependencies
-
-### Production Dependencies
-Dependencies required to run the application in production:
-- `nuxt`: Core framework
-- `vue`: View library
-- `vue-router`: Routing functionality
-- `axios`: HTTP client
-
-These packages are essential for the actual functioning of the app and get shipped to production.
-
-### Development Dependencies
-Dependencies only needed during development or building:
-- `sass`: SCSS compiler
-- `sass-loader`: Webpack loader for SCSS
-
-These packages are used only during development/build and don't get shipped to production. For example, Sass compiles SCSS to CSS during build, but only the compiled CSS is shipped to production.
-
-### Key Design Decisions
-
-1. **Secret Holder System**
-   - No limit on number of secret holders (more = better security)
-   - Reward pool is divided equally among all participating holders
-   - Minimum deposits kept low (0.001 ETH) to encourage participation
-   - Security deposits are returned after successful participation
-
-2. **Information Architecture**
-   - Complex reward explanations belong in become-holder view
-   - Create-vote form keeps minimal, essential inputs
-   - Dynamic reward calculations shown where holders make decisions
-   - Clear separation between vote creation and holder recruitment
-
-3. **User Experience Principles**
-   - Show relevant information where decisions are made
-   - Display dynamic reward calculations for holders
-   - Keep forms simple and focused
-   - Provide clear feedback about deposits and rewards
-
-4. **Common Pitfalls to Avoid**
-   - Don't put holder-specific information in vote creation
-   - Avoid hardcoding minimum holder counts
-   - Don't complicate the vote creation process
-   - Keep deposit requirements clear and simple

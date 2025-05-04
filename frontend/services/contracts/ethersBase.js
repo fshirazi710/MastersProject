@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { config } from '../config'; // Assuming config holds provider URL
+import { config } from '../../config'; // Assuming config holds provider URL
 
 class EthersBaseService {
   constructor() {
@@ -207,21 +207,22 @@ class EthersBaseService {
 
 
       txResponse = await contract[methodName](...args, options); // Assign txResponse here
-      console.log('Transaction sent:', txResponse.hash);
+      console.log(`Transaction sent: ${txResponse.hash}`);
 
       // Wait for transaction confirmation
       console.log('Waiting for transaction confirmation...');
-      const txReceipt = await txResponse.wait(); // Wait for 1 confirmation by default
-      console.log('Transaction confirmed:', txReceipt);
+      const receipt = await txResponse.wait();
+      // console.log('Transaction confirmed:', receipt); // Commented out full receipt log
+      console.log(`Transaction confirmed. Hash: ${receipt.hash}, Status: ${receipt.status === 1 ? 'Success' : 'Failed'}`); // More concise log
 
-      if (txReceipt.status === 0) {
+      if (receipt.status === 0) {
          // Transaction was confirmed but failed (reverted)
-         console.error("Transaction confirmed but failed (reverted) on-chain.", txReceipt);
+         console.error("Transaction confirmed but failed (reverted) on-chain.", receipt);
          // Attempt to get revert reason (may require custom error parsing or provider support)
          throw new Error(`Transaction ${txResponse.hash} confirmed but failed on-chain. Check blockchain explorer for details.`);
       }
 
-      return txReceipt; // Return the receipt object after successful confirmation
+      return receipt; // Return the receipt object after successful confirmation
 
     } catch (error) {
         console.error(`Error sending transaction (${methodName}):`, error);
@@ -284,7 +285,7 @@ class EthersBaseService {
       return result;
 
     } catch (error) {
-        console.error(`Error reading contract (${methodName}) on ${contractAddress}:`, error);
+        // console.error(`Error reading contract (${methodName}) on ${contractAddress}:`, error); // Removed log
         // Add specific error handling if needed (e.g., contract doesn't exist, invalid args)
         // Check if the contract exists at the address?
         // const code = await provider.getCode(contractAddress);
@@ -292,6 +293,27 @@ class EthersBaseService {
         //    throw new Error(`Contract not found at address ${contractAddress} for read operation.`);
         // }
         throw new Error(`Failed to read contract method ${methodName}. Reason: ${error.message}`);
+    }
+  }
+
+  // Method to explicitly set the signer and account (useful for testing)
+  setSigner(newSigner) {
+    this.signer = newSigner;
+    if (newSigner) {
+         // Use a promise or handle async appropriately if getAddress might not be sync
+         Promise.resolve(newSigner.getAddress()).then(address => {
+             this.account = address;
+             console.log(`EthersBaseService: Signer explicitly set to ${address}`);
+             this.updateBalance(); // Update balance for the new account
+         }).catch(err => {
+             console.error("EthersBaseService: Error getting address for new signer:", err);
+             this.account = null;
+             this.balance = null;
+         });
+    } else {
+        this.account = null;
+        this.balance = null;
+         console.log("EthersBaseService: Signer explicitly cleared.");
     }
   }
 }
