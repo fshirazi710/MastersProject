@@ -351,199 +351,287 @@ export async function getKAndAlphas(r, tIndexes, tPubkeys, restIndexes, restPubk
     return [k, alphas];
 }
 
-
-// --- PLACEHOLDERS / TODOs for missing crypto logic ---
-
 /**
- * TODO: Implement vote encoding.
- * Converts a vote option (e.g., index, string) into an elliptic curve point.
- * The exact mapping depends on the cryptographic scheme.
- * @param {any} option The vote option.
- * @returns {object} The corresponding G1 ProjectivePoint object.
+ * Encodes a vote option string to a G1 point using the standard hash-to-curve function.
+ * @param {string} option The vote option string.
+ * @returns {string} The hex string representation of the G1 point.
+ * @throws {Error} If the input string cannot be hashed to a valid point.
  */
 export function encodeVoteToPoint(option) {
-    console.warn("TODO: Implement encodeVoteToPoint based on the specific scheme!");
-    // Placeholder: Map index i to (i+1) * G1.Base
-    const optionIndex = Number(option);
-    if (isNaN(optionIndex) || optionIndex < 0) {
-        throw new Error(`Invalid option for placeholder encoding: ${option}`);
+    if (typeof option !== 'string' || option.length === 0) {
+        throw new Error("Invalid vote option provided. Must be a non-empty string.");
     }
-    const scalar = BigInt(optionIndex + 1); // Map 0 to 1*G1, 1 to 2*G1 etc.
-    return bls12_381.G1.ProjectivePoint.BASE.multiply(scalar);
+    try {
+        // Convert the option string to UTF-8 bytes
+        const optionBytes = Buffer.from(option, 'utf8');
+        // Use the standard hash-to-curve function for G1
+        const point = bls12_381.G1.hashToCurve(optionBytes);
+        console.log(`[encodeVoteToPoint] Mapped "${option}" to G1 point: ${point.toHex()}`);
+        return point.toHex();
+    } catch (e) {
+        console.error(`Error hashing vote option "${option}" to curve:`, e);
+        throw new Error(`Failed to encode vote option "${option}": ${e.message}`);
+    }
 }
 
 /**
- * TODO: Implement vote decoding.
- * Converts a decrypted elliptic curve point back to the original vote option.
- * The exact mapping depends on the cryptographic scheme.
- * @param {object} point The G1 ProjectivePoint object.
- * @returns {any} The decoded vote option (e.g., index, string).
+ * Decodes a G1 point (hex string) back to a vote option string by comparing it
+ * against the encodings of possible options.
+ * @param {string} pointHex The hex string of the decrypted G1 point.
+ * @param {string[]} possibleOptions An array of possible vote option strings (e.g., ["Yes", "No"]).
+ * @returns {string | null} The matching vote option string, or null if no match is found.
+ * @throws {Error} If inputs are invalid.
  */
-export function decodePointToVote(point) {
-    console.warn("TODO: Implement decodePointToVote based on the specific scheme!");
-    // Placeholder: Inverse of index i to (i+1) * G1.Base
-    // This requires finding discrete log or comparing against precomputed points.
-    // For simplicity, returning point hex as placeholder.
-    if (!point || typeof point.toHex !== 'function') {
-         throw new Error("Invalid point object for placeholder decoding.");
+export function decodePointToVote(pointHex, possibleOptions) {
+    if (typeof pointHex !== 'string' || !pointHex.startsWith('0x') || pointHex.length % 2 !== 0) {
+         throw new Error("Invalid pointHex provided. Must be a valid hex string starting with 0x.");
     }
-    // This is NOT the real decoded vote, just a placeholder.
-    // A real implementation would likely involve comparing point against
-    // G1.Base * 1, G1.Base * 2, etc., up to the number of options.
-    return point.toHex();
-}
-
-/**
- * TODO: Implement decryption share calculation for contract submission.
- * This likely involves sk * G2 or alpha_i * sk * G2.
- * @param {bigint} privateKey User's private key.
- * @param {bigint | string | null} alpha Alpha value (BigInt, hex string, or null) if index > t, null otherwise.
- * @returns {Promise<object>} Object containing hex coordinates { x, y } of the G2 share point.
- */
-export async function calculateDecryptionShareForSubmission(privateKey, alpha = null) {
-    if (typeof privateKey !== 'bigint') {
-        throw new Error("Private key must be a BigInt.");
+     if (!Array.isArray(possibleOptions) || possibleOptions.some(opt => typeof opt !== 'string' || opt.length === 0)) {
+        throw new Error("Invalid possibleOptions provided. Must be an array of non-empty strings.");
     }
 
-    let scalar = privateKey; // Default to sk if alpha is not provided or not needed
-
-    // If alpha is provided, calculate scalar = sk * alpha mod N
-    if (alpha !== null) {
-        let alphaBigInt;
-        try {
-            if (typeof alpha === 'bigint') {
-                alphaBigInt = alpha;
-            } else if (typeof alpha === 'string') {
-                alphaBigInt = stringToBigInt(alpha); // Use conversion utility
-            } else {
-                throw new Error(`Invalid alpha type: ${typeof alpha}`);
-            }
-            console.log(`Calculating share with alpha: 0x${alphaBigInt.toString(16)}`);
-            // scalar = (privateKey * alphaBigInt) % FIELD_ORDER;
-            scalar = mod(privateKey * alphaBigInt, FIELD_ORDER); // Use mod helper
-        } catch (e) {
-            console.error("Error processing alpha value:", alpha, e);
-            throw new Error(`Invalid alpha value format: ${e.message}`);
-        }
-    } else {
-        console.log("Calculating share without alpha (sk * G2).");
-        // scalar remains privateKey
-    }
-
-    // Calculate the final share point on G2: scalar * G2.Base
-    const finalSharePoint = bls12_381.G2.ProjectivePoint.BASE.multiply(scalar);
-
-    // Contract likely expects affine coordinates
-    const affinePoint = finalSharePoint.toAffine();
-
-    // Format the Fp2 coordinates (c0, c1) into hex strings array [c0_hex, c1_hex]
-    // as expected by the Solidity ABI for G2Point struct
-    const formatFq2 = (fq2) => {
-        if (!fq2 || typeof fq2.c0 !== 'bigint' || typeof fq2.c1 !== 'bigint') {
-            console.error("Invalid Fq2 structure detected:", fq2);
-            throw new Error("Invalid Fq2 structure for formatting");
-        }
-        // Return hex strings with "0x" prefix
-        return ['0x' + fq2.c0.toString(16), '0x' + fq2.c1.toString(16)];
-    };
+    console.log(`[decodePointToVote] Attempting to decode point: ${pointHex}`);
+    console.log(`[decodePointToVote] Possible options:`, possibleOptions);
 
     try {
-        const xFormatted = formatFq2(affinePoint.x);
-        const yFormatted = formatFq2(affinePoint.y);
-        // Return the structure matching the Solidity G2Point struct
-        return {
-            x: xFormatted, // [x.c0 hex, x.c1 hex]
-            y: yFormatted  // [y.c0 hex, y.c1 hex]
-        };
+        // Pre-compute the encodings for efficiency if many points need decoding later,
+        // but for a single call, direct comparison is fine.
+        for (const option of possibleOptions) {
+            const encodedOptionHex = encodeVoteToPoint(option); // Reuse the encoding function
+            if (encodedOptionHex === pointHex) {
+                console.log(`[decodePointToVote] Decoded point ${pointHex} as: "${option}"`);
+                return option;
+            }
+        }
+
+        console.warn(`[decodePointToVote] Point ${pointHex} did not match any possible option.`);
+        return null; // No match found
     } catch (e) {
-         console.error("Error formatting G2 point coordinates:", e);
-         throw new Error(`Failed to format G2 point coordinates: ${e.message}`);
+         console.error(`Error during point decoding for point ${pointHex}:`, e);
+         // Re-throw specific errors from encodeVoteToPoint if needed, or a general one
+         throw new Error(`Failed to decode point ${pointHex}: ${e.message}`);
     }
 }
 
 /**
- * TODO: Implement the actual decryption of a single vote.
- * This depends heavily on the encryption scheme (ElGamal variant?).
- * It likely involves pairing operations.
- * @param {object} c1 Encrypted vote component 1 (G1 point).
- * @param {object} c2 Encrypted vote component 2 (G1 point).
- * @param {object} reconstructedKey Share or key reconstructed from shares (e.g., sk*G2 point?).
- * @param {object} params Other necessary params (e.g., g1r, aggregate pk?).
- * @returns {Promise<object>} The decrypted G1 point representing the vote.
+ * TODO: Implement calculation of the G2 share point required by VoteSession.submitShares.
+ * This likely involves the participant's private key (sk) and potentially alpha_i.
+ * Currently, this acts as a wrapper around `generateShares` which calculates g1r * sk (G1 point).
+ * This might need to change based on the exact requirements of the off-chain decryption process
+ * and what `VoteSession.submitShares` expects as `_shareData`.
+ * @param {bigint | string} privateKey The participant's private key (BigInt or hex string).
+ * @param {string} g1r_hex Hex string of the G1 point g1^r (needed by current `generateShares`).
+ * @param {any} alpha Optional alpha value if needed for the specific scheme (currently unused).
+ * @returns {string} The hex representation of the calculated share point (currently G1: g1r * sk).
  */
-export async function decryptVote(c1, c2, reconstructedKey, params) {
-     console.warn("TODO: Implement actual decryptVote logic using pairings!");
-     // Placeholder: return c2 - this is INCORRECT
-     if (!c1 || typeof c1.subtract !== 'function') { // Check c1 instead of c2 for return
-          throw new Error("Invalid c1 point for placeholder decryption.");
-     }
-     // Returning c1 as a dummy placeholder to avoid errors, REAL logic needed.
-     return c1;
+export async function calculateDecryptionShareForSubmission(privateKey, g1r_hex, alpha = null) {
+    console.warn("[calculateDecryptionShareForSubmission] - Current implementation calculates G1 point (g1r * sk) via generateShares. Verify if this matches the expected `_shareData` for submitShares and off-chain decryption.");
+    if (!g1r_hex) {
+        throw new Error("g1r_hex parameter is required for the current implementation.");
+    }
+    // Note: Alpha is currently ignored, add logic if scheme requires alpha * sk * G2 or similar.
+    if (alpha) {
+        console.warn("[calculateDecryptionShareForSubmission] - Alpha parameter provided but ignored by current implementation.");
+    }
+    try {
+        // Delegate to the existing generateShares function which computes G1 point g1r*sk
+        const shareHex = generateShares(g1r_hex, privateKey);
+        console.log("[calculateDecryptionShareForSubmission] Calculated share (g1r*sk):", shareHex);
+        return shareHex;
+    } catch (e) {
+        console.error("Error in calculateDecryptionShareForSubmission calling generateShares:", e);
+        throw new Error(`Failed to calculate decryption share: ${e.message}`);
+    }
+}
+
+/**
+ * TODO: Implement decryption of the vote ciphertext using the reconstructed key.
+ * Assumes AES-GCM symmetric encryption where the key 'k' was derived via threshold mechanism.
+ * @param {string} encryptedVoteHex Hex string containing the IV prepended to the ciphertext.
+ * @param {CryptoKey} reconstructedKey The AES-GCM CryptoKey derived from the reconstructed BigInt k.
+ * @param {any} params Optional parameters (e.g., g1r, g2r) - Currently unused for AES decryption.
+ * @returns {Promise<string>} The decrypted vote string.
+ * @throws {Error} If decryption fails.
+ */
+export async function decryptVote(encryptedVoteHex, reconstructedKey, params = null) {
+    console.log("[decryptVote] Attempting to decrypt vote...");
+    if (typeof encryptedVoteHex !== 'string' || !encryptedVoteHex.startsWith('0x') || encryptedVoteHex.length < 48) { // Min length: 0x + 24 hex (IV) + 2 hex (tag?)
+         throw new Error("Invalid encryptedVoteHex provided. Must be a hex string containing IV + ciphertext.");
+    }
+    if (!(reconstructedKey instanceof CryptoKey)) {
+         throw new Error("Invalid reconstructedKey provided. Must be a CryptoKey.");
+    }
+    if (params) {
+        console.warn("[decryptVote] 'params' argument provided but ignored for AES decryption.");
+    }
+
+    try {
+        // Dynamically import AESDecrypt from aesUtils.js
+        const { AESDecrypt } = await import('./aesUtils.js');
+        
+        console.log(`  Input Encrypted Hex (IV+Cipher): ${encryptedVoteHex.substring(0,40)}...`);
+        console.log(`  Using reconstructed key:`, reconstructedKey); 
+
+        // AESDecrypt handles splitting the IV and ciphertext
+        const decryptedString = await AESDecrypt(encryptedVoteHex, reconstructedKey);
+        
+        console.log("[decryptVote] Decryption successful. Result:", decryptedString);
+        return decryptedString;
+    } catch (error) {
+        console.error("Error during AES decryption in decryptVote:", error);
+        throw new Error(`Vote decryption failed: ${error.message}`);
+    }
 }
 
 /**
  * TODO: Implement Nullifier Calculation.
+ * Calculates a unique identifier for a user in a specific session without revealing their private key.
  * Typically hash(secret_key, session_id or domain_separator).
- * @param {bigint | string} privateKey User's private key.
+ * @param {bigint} privateKey User's private key as a BigInt.
  * @param {string | number} sessionId Identifier for the vote session.
- * @returns {Promise<string>} The calculated nullifier hash (hex string).
+ * @returns {Promise<string>} The calculated nullifier hash (hex string, prefixed with 0x).
  */
 export async function calculateNullifier(privateKey, sessionId) {
-    console.warn("TODO: Implement calculateNullifier!");
-    // Placeholder implementation using SHA-256
-    const skHex = typeof privateKey === 'bigint' ? privateKey.toString(16) : stringToBigInt(privateKey).toString(16); // Ensure BigInt then hex
-    const sessionStr = String(sessionId);
-    const dataToHash = new TextEncoder().encode(skHex + sessionStr); // Simple concatenation
-    const hashBuffer = await window.crypto.subtle.digest('SHA-256', dataToHash);
-    return bytesToHex(new Uint8Array(hashBuffer)); // Use imported conversion util
+    if (typeof privateKey !== 'bigint') {
+        throw new Error("privateKey must be a BigInt for calculateNullifier.");
+    }
+    if (sessionId === undefined || sessionId === null || String(sessionId).length === 0) {
+        throw new Error("sessionId is required and must be non-empty for calculateNullifier.");
+    }
+
+    try {
+        // Convert sk to a fixed-length hex string (e.g., 64 chars for 32 bytes)
+        const skHex = privateKey.toString(16).padStart(64, '0');
+        const sessionStr = String(sessionId);
+        
+        // Use domain separation
+        const dataToHashString = `nullifier:${skHex}:${sessionStr}`;
+        const dataToHashBytes = new TextEncoder().encode(dataToHashString);
+
+        // Use Web Crypto API for SHA-256
+        const hashBuffer = await window.crypto.subtle.digest('SHA-256', dataToHashBytes);
+        
+        // Convert hash buffer to hex string
+        const { bytesToHex } = await import('./conversionUtils.js'); // Dynamic import
+        const nullifierHex = bytesToHex(new Uint8Array(hashBuffer));
+
+        console.log(`[calculateNullifier] Input sk: ${skHex.substring(0,10)}..., sessionId: ${sessionStr}`);
+        console.log(`[calculateNullifier] Data Hashed: ${dataToHashString}`);
+        console.log(`[calculateNullifier] Result: 0x${nullifierHex}`);
+
+        return '0x' + nullifierHex;
+    } catch (error) {
+        console.error("Error calculating nullifier:", error);
+        throw new Error(`Nullifier calculation failed: ${error.message}`);
+    }
 }
 
 /**
  * TODO: Implement ZK-SNARK Proof Generation.
- * Requires circuit definition, proving key, and ZKP library (e.g., snarkjs).
- * @param {object} inputs Inputs required by the ZK circuit (e.g., sk, vote, merkle proof, nullifier...).
- * @param {ArrayBuffer} wasmBuffer Circuit WASM code.
- * @param {ArrayBuffer} provingKey ZKey file.
- * @returns {Promise<object>} The generated proof and public signals.
+ * Requires circuit definition (e.g., Circom), compiled WASM, proving key (.zkey),
+ * and a library like snarkjs.
+ * The specific inputs depend entirely on the circuit design.
+ * @param {object} inputs Inputs required by the ZK circuit (e.g., sk, vote, nullifier, merkle path, etc.).
+ * @param {ArrayBuffer | string} wasmBufferOrPath Path or buffer for circuit WASM.
+ * @param {ArrayBuffer | string} provingKeyOrPath Path or buffer for proving key (.zkey).
+ * @returns {Promise<{proof: object, publicSignals: string[]}>} The generated proof object and public signals array.
+ * @throws {Error} If ZK proof generation is not implemented or fails.
  */
-export async function generateZkProof(inputs, wasmBuffer, provingKey) {
-     console.warn("TODO: Implement generateZkProof using snarkjs or similar!");
-     // Placeholder:
-     return {
-         proof: { /* proof structure */ pi_a: [], pi_b: [], pi_c: [], protocol: "groth16" },
-         publicSignals: [ /* public signals array */ ]
-     };
+export async function generateZkProof(inputs, wasmBufferOrPath, provingKeyOrPath) {
+    console.error("ZK-SNARK proof generation is not yet implemented!");
+    console.error("Requires circuit details (WASM/zKey) and snarkjs integration.");
+    console.log("Inputs received by generateZkProof:", inputs);
+    // In a real implementation, you would load snarkjs, load keys/wasm,
+    // format inputs, call groth16.fullProve, and return the result.
+    // Example structure (replace with actual logic):
+    /*
+    try {
+        // Dynamically import snarkjs if not globally available
+        const snarkjs = window.snarkjs; // Assuming snarkjs is loaded globally
+        if (!snarkjs) throw new Error("snarkjs library not found.");
+
+        console.log("Generating ZK proof with snarkjs...");
+        const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+            inputs, 
+            wasmBufferOrPath, // Can be ArrayBuffer or path/URL
+            provingKeyOrPath  // Can be ArrayBuffer or path/URL
+        );
+
+        console.log("ZK Proof Generated:", proof);
+        console.log("Public Signals:", publicSignals);
+
+        return { proof, publicSignals };
+
+    } catch (error) {
+        console.error("Error during ZK proof generation:", error);
+        throw new Error(`Failed to generate ZK proof: ${error.message}`);
+    }
+    */
+
+    // Return dummy data or throw error for now
+    throw new Error("generateZkProof is not implemented. ZK circuit and proving logic required.");
+    // Or return dummy data:
+    // return {
+    //     proof: { pi_a: ['0', '0'], pi_b: [[ '0', '0' ], [ '0', '0' ]], pi_c: ['0', '0'], protocol: "groth16", curve: "bls12381" },
+    //     publicSignals: ['1'] // Example public signal
+    // };
 }
 
 /**
- * TODO: Implement calculation of the value submitted via submitDecryptionValue.
- * This might involve decrypting the stored BLS key using a password.
- * @param {string} password User's password.
- * @param {string} encryptedSkHex Encrypted BLS secret key (hex).
- * @param {Uint8Array} salt Salt used during key derivation.
- * @returns {Promise<bigint>} The decrypted BLS secret key as a BigInt. (Assumes contract expects the raw SK).
+ * TODO: Implement calculation of the final decryption value (v_i).
+ * This is the value submitted to `VoteSession.submitDecryptionValue`.
+ * It should be derived from the user's private key but SHOULD NOT expose the key itself.
+ * Current implementation calculates SHA256(sk) as bytes32.
+ * @param {string} password User's password to decrypt the stored private key.
+ * @param {string} encryptedSkHex Hex string of the AES-encrypted BLS private key from local storage.
+ * @param {string} saltHex Hex string of the salt used during key encryption.
+ * @returns {Promise<string>} The calculated decryption value (bytes32 hex string, prefixed with 0x).
  */
 export async function calculateDecryptionValue(password, encryptedSkHex, salt) {
-    // Placeholder:
-    // 1. Derive AES key from password
-    // 2. Decrypt BLS sk
-    // 3. Return decrypted sk (or whatever the contract expects)
-    const { deriveKeyFromPassword, AESDecrypt } = await import('./aesUtils.js');
+    console.log("[calculateDecryptionValue] Starting...");
+    if (!password || !encryptedSkHex || !salt) {
+        throw new Error("Password, encryptedSkHex, and salt are required.");
+    }
+
     try {
-         const aesKey = await deriveKeyFromPassword(password, salt);
-         const decryptedSkHex = await AESDecrypt(encryptedSkHex, aesKey);
-         console.log("Decrypted SK (hex) in calculateDecryptionValue:", decryptedSkHex);
+        // Dynamically import utilities
+        const { hexToBytes, bytesToHex } = await import('./conversionUtils.js');
+        const { deriveKeyFromPassword, AESDecrypt } = await import('./aesUtils.js');
 
-         // Convert the decrypted hex string to a BigInt
-         const decryptedSkBigInt = stringToBigInt(decryptedSkHex); // Use conversion utility
+        const saltBytes = hexToBytes(salt);
+        
+        console.log("Deriving key from password...");
+        const aesKey = await deriveKeyFromPassword(password, saltBytes);
+        
+        console.log("Decrypting stored BLS private key...");
+        const decryptedSkHex = await AESDecrypt(encryptedSkHex, aesKey);
+        console.log("BLS Private Key decrypted (hex):", decryptedSkHex.substring(0, 10) + "...");
 
-         // ASSUMPTION: The contract's submitDecryptionValue function expects the raw private key (sk) as a uint256.
-         // If it expects something else (e.g., a derived value, a share), this needs modification.
-         console.log("Returning decrypted SK as BigInt:", decryptedSkBigInt.toString());
-         return decryptedSkBigInt;
+        // --- Calculate the value to submit --- 
+        // We should NOT submit the raw private key. Submit its hash (bytes32).
+        console.log("Hashing the decrypted private key (SHA-256) to get submission value...");
+
+        // Convert hex private key to bytes
+        const skBytes = hexToBytes(decryptedSkHex);
+
+        // Hash the private key bytes using SHA-256
+        const hashBuffer = await window.crypto.subtle.digest('SHA-256', skBytes);
+        
+        // The result is already 32 bytes (bytes32)
+        const valueBytes = new Uint8Array(hashBuffer);
+        const valueHex = bytesToHex(valueBytes);
+
+        console.log(`[calculateDecryptionValue] Calculated value (SHA256(sk)): 0x${valueHex}`);
+
+        // Return the bytes32 hash as a hex string (prefixed with 0x)
+        return '0x' + valueHex;
 
     } catch (error) {
         console.error("Failed in calculateDecryptionValue:", error);
-        throw error; // Re-throw to be handled by caller
+        // Add more context to the error potentially
+        if (error.message.includes("decryption failed")) {
+             throw new Error("Failed to decrypt private key. Check your password.");
+        }
+        throw error; // Re-throw other errors
     }
 }

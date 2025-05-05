@@ -371,7 +371,7 @@
                sliderConfig.value = null;
           }
           
-
+          
       } catch (err) {
           console.error("Failed to fetch vote session data:", err);
           error.value = `Error loading Vote Session ${voteSessionId}: ${err.message || 'Network error or unknown issue'}`;

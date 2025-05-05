@@ -45,19 +45,19 @@ These tasks focus on refining and hardening the existing contracts before full i
     *   [x] `factoryService.js`: Update functions to use new `VoteSessionFactory` ABI and address.
     *   [x] `registryService.js`: Update functions to use new `ParticipantRegistry` ABI and address. Add methods for `getParticipantDetails`, `getAllParticipantKeys`, `claimDepositOrReward`.
     *   [x] `voteSessionService.js`: Update functions to use new `VoteSession` ABI and address. Add methods for `getSessionInfo`, `castVote`, `submitShares`, `getVoteRoundParameters`, `submitDecryptionValue`.
-    *   [ ] **Cryptography Utilities (`cryptography.js`, `utils/aesUtils.js`, `utils/conversionUtils.js`):**
+    *   [ ] **Cryptography Utilities (`cryptographyUtils.js`, `utils/aesUtils.js`, `utils/conversionUtils.js`):**
         *   [x] Refactor conversion helpers into `utils/conversionUtils.js`.
         *   [x] Refactor AES/Password helpers into `utils/aesUtils.js`.
-        *   [x] `cryptography.js::generateBLSKeyPair`: Verify key generation.
-        *   [x] `cryptography.js::getKAndSecretShares` / `getKAndAlphas`: Verify threshold setup logic and outputs (k, g1r, g2r, alphas).
-        *   [x] `cryptography.js::recomputeKey`: Verify key reconstruction logic (Lagrange, XOR alphas) and AES key derivation.
-        *   [ ] `cryptography.js::encodeVoteToPoint`: **TODO:** Implement mapping of vote options to G1 points based on the specific scheme.
-        *   [ ] `cryptography.js::decodePointToVote`: **TODO:** Implement mapping of decrypted G1 points back to vote options.
-        *   [ ] `cryptography.js::calculateDecryptionShareForSubmission`: **TODO:** Implement calculation of the G2 share point (`sk * G2` or `alpha_i * sk * G2`) required by `VoteSession.submitShares`.
-        *   [ ] `cryptography.js::decryptVote`: **TODO:** Implement the core vote decryption logic using pairings, based on the specific scheme.
-        *   [ ] `cryptography.js::calculateDecryptionValue`: **TODO:** Implement logic to derive/decrypt the value needed for `VoteSession.submitDecryptionValue` (likely decrypting stored SK).
-        *   [ ] `cryptography.js::calculateNullifier`: **TODO:** Implement nullifier generation (e.g., `hash(sk, sessionId)`).
-        *   [ ] `cryptography.js::generateZkProof`: **TODO:** Implement ZK-SNARK proof generation using `snarkjs` or similar (requires circuit details).
+        *   [x] `cryptographyUtils.js::generateBLSKeyPair`: Verify key generation.
+        *   [x] `cryptographyUtils.js::getKAndSecretShares` / `getKAndAlphas`: Verify threshold setup logic and outputs (k, g1r, g2r, alphas).
+        *   [x] `cryptographyUtils.js::recomputeKey`: Verify key reconstruction logic (Lagrange, XOR alphas) and AES key derivation.
+        *   [x] `cryptographyUtils.js::encodeVoteToPoint`: Implemented using hash-to-curve.
+        *   [x] `cryptographyUtils.js::decodePointToVote`: Implemented using comparison against hash-to-curve encodings.
+        *   [x] `cryptographyUtils.js::calculateDecryptionShareForSubmission`: Implemented (currently calls `generateShares` which calculates `g1r*sk`). Needs verification against off-chain decryption needs.
+        *   [x] `cryptographyUtils.js::decryptVote`: Implemented using AES-GCM and reconstructed key.
+        *   [x] `cryptographyUtils.js::calculateNullifier`: Implemented using SHA-256 with domain separation.
+        *   [ ] `cryptographyUtils.js::generateZkProof`: Placeholder implemented (throws error). **TODO:** Requires ZK circuit implementation.
+        *   [x] `cryptographyUtils.js::calculateDecryptionValue`: Implemented using SHA256(sk).
 *   **Component Refactoring / Integration:**
     *   [x] `pages/create-vote-session.vue`: Use `factoryService` to create new sessions.
     *   [x] `pages/session/[id].vue`: 
@@ -69,27 +69,27 @@ These tasks focus on refining and hardening the existing contracts before full i
         *   [x] Integrate `VoteResults`.
         *   [x] Integrate Decryption Submission logic (using `voteSessionService.submitDecryptionValue`).
             *   [ ] **TODO:** Add secure password input field.
-            *   [ ] **TODO:** Call `cryptography.js::calculateDecryptionValue`.
+            *   [ ] **TODO:** Call `cryptographyUtils.js::calculateDecryptionValue`.
         *   [x] Integrate Claim logic (using `registryService.claimDepositOrReward`).
             *   [ ] **TODO:** Fetch specific claimable amount (deposit vs reward) from `registryService`.
     *   [x] `components/vote/RegisterToVote.vue`: Use `registryService.registerParticipant`.
     *   [x] `components/vote/CastYourVote.vue`: Use `voteSessionService.castVote`.
         *   [x] Fetch participant public keys using `registryService.getAllParticipantKeys`.
-        *   [ ] **TODO:** Generate Nullifier by calling `cryptography.js::calculateNullifier`.
-        *   [ ] **TODO:** Generate ZK-SNARK Proof by calling `cryptography.js::generateZkProof`.
-        *   [ ] **TODO:** Encode vote option by calling `cryptography.js::encodeVoteToPoint` before encryption.
+        *   [ ] **TODO:** Generate Nullifier by calling `cryptographyUtils.js::calculateNullifier`.
+        *   [ ] **TODO:** Generate ZK-SNARK Proof by calling `cryptographyUtils.js::generateZkProof`.
+        *   [ ] **TODO:** Encode vote option by calling `cryptographyUtils.js::encodeVoteToPoint` before encryption.
     *   [x] `components/vote/SubmitSecretShare.vue`: Use `voteSessionService.submitShares`.
         *   [x] Fetch `g1r` using `voteSessionService.getVoteRoundParameters`.
-        *   [ ] **TODO:** Calculate G2 share by calling `cryptography.js::calculateDecryptionShareForSubmission`.
+        *   [ ] **TODO:** Calculate G2 share by calling `cryptographyUtils.js::calculateDecryptionShareForSubmission`.
     *   [x] `components/vote/VoteResults.vue`:
         *   [x] Fetch state/results data (`voteSessionService` / `registryService`).
         *   [x] Refactor into child components.
         *   [x] Populate child components (`ResultsPending`, `DecryptionFailed`, `ResultsDisplay`, `HolderStatusAndClaim`).
         *   [ ] **TODO:** Implement actual data fetching for decryption (`getAllEncryptedVotes`, `getAllDecryptionShares`, `getSessionInfo`) in `runDecryptionProcess`.
-        *   [ ] **TODO:** Implement actual decryption logic within `runDecryptionProcess` (calling `cryptography.js::decryptVote` and `cryptography.js::decodePointToVote`).
+        *   [ ] **TODO:** Implement actual decryption logic within `runDecryptionProcess` (calling `cryptographyUtils.js::decryptVote` and `cryptographyUtils.js::decodePointToVote`).
 *   **Testing:**
     *   [ ] Set up Vitest framework.
-    *   [ ] Add unit tests for `cryptography.js` functions (including placeholders once implemented).
+    *   [ ] Add unit tests for `cryptographyUtils.js` functions (including placeholders once implemented).
     *   [ ] Add unit tests for `utils/aesUtils.js`.
     *   [ ] Add unit tests for `utils/conversionUtils.js`.
     *   [ ] Add integration tests for service functions (`registryService`, `voteSessionService`, etc.) interacting with mock contracts or a local node.

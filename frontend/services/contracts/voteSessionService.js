@@ -77,38 +77,49 @@ class VoteSessionService {
    * Submits decryption shares for a specific session.
    * Requires wallet connection.
    * @param {number} sessionId - The ID of the session.
-   * @param {ethers.BytesLike[]} shares - An array of decryption shares (bytes or similar).
+   * @param {number} voteIndex - The index of the vote being decrypted (likely 0).
+   * @param {string} shareDataHex - The calculated share data as a hex string.
+   * @param {number} shareIndex - The index for the share (likely 0, contract handles). 
    * @returns {Promise<object>} - The transaction receipt.
    */
-  async submitShares(sessionId, shares) {
-    if (sessionId === undefined || !Array.isArray(shares) || shares.length === 0) {
-        throw new Error('Session ID and a non-empty array of shares are required to submit shares.');
+  async submitShares(sessionId, voteIndex, shareDataHex, shareIndex) {
+    // Validate inputs
+    if (sessionId === undefined || typeof sessionId !== 'number') {
+        throw new Error('Session ID (number) is required.');
+    }
+    if (voteIndex === undefined || typeof voteIndex !== 'number') {
+        throw new Error('Vote Index (number) is required.');
+    }
+    if (typeof shareDataHex !== 'string' || !shareDataHex.startsWith('0x')) {
+        throw new Error('Share Data (hex string) is required.');
+    }
+    if (shareIndex === undefined || typeof shareIndex !== 'number') {
+        throw new Error('Share Index (number) is required.');
     }
 
-    console.log(`Submitting ${shares.length} shares for session ${sessionId}...`);
+    console.log(`Submitting share for session ${sessionId}, voteIndex ${voteIndex}, shareIndex ${shareIndex}...`);
+    console.log(`Share data: ${shareDataHex.substring(0, 20)}...`); // Log truncated share data
 
     try {
-        // 1. Get the specific VoteSession contract address
         const sessionAddress = await this._getSessionAddress(sessionId);
-        console.log(`Found VoteSession address for session ${sessionId}: ${sessionAddress}`);
+        console.log(`Found VoteSession address: ${sessionAddress}`);
 
-        // 2. Send the transaction using the base service
-        console.log(`Sending shares transaction to VoteSession ${sessionAddress}...`);
+        console.log(`Sending submitShares transaction to ${sessionAddress}...`);
         const txReceipt = await ethersBaseService.sendTransaction(
             sessionAddress,
             this.sessionAbi,
-            'submitShares', // Function name in VoteSession.sol
-            [shares], // Arguments for submitShares (expects an array)
-            {} // No value needed for share submission
+            'submitShares',
+            // Arguments match the contract function signature
+            [voteIndex, shareDataHex, shareIndex],
+            {} // No ETH value needed
         );
 
-        console.log(`Share submission transaction successful for session ${sessionId}`, txReceipt);
+        console.log(`submitShares transaction successful for session ${sessionId}`, txReceipt);
         return txReceipt;
 
     } catch (error) {
-        console.error(`Error submitting shares for session ${sessionId}:`, error);
-        // Error is likely already processed by sendTransaction, re-throw
-        throw error;
+        console.error(`Error in submitShares for session ${sessionId}:`, error);
+        throw error; // Re-throw after logging
     }
   }
 
