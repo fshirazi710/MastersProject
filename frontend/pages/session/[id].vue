@@ -110,18 +110,17 @@
       <h3>Submit Decryption Value</h3>
       <p>Submit your value to help decrypt the results.</p>
        <!-- Add Password Input Here -->
-       <!-- Example (Needs v-model binding):
        <div class="form-group">
             <label for="decval-password">Enter Vote Session Key Password:</label>
             <input 
               type="password" 
               id="decval-password" 
+              v-model="decryptionPassword"
               placeholder="Password used during registration"
               required
               class="form-input"
             />
           </div>
-        -->
       <button 
         @click="submitMyDecryptionValue"
         class="btn secondary"
@@ -145,10 +144,10 @@
     >
         <h3>Claim Deposit/Reward</h3>
         <p>You are eligible to claim your refundable deposit and any potential rewards.</p>
-        <!-- Optional: Display claimable amounts if fetched 
-        <p>Deposit: {{ claimableDeposit }} ETH</p>
-        <p>Reward: {{ claimableReward }} ETH</p>
-        -->
+        <div v-if="canClaim && (claimableDeposit !== '0' || claimableReward !== '0')" class="claimable-amounts">
+          <p>Claimable Deposit: <strong>{{ claimableDeposit }} ETH</strong></p>
+          <p>Claimable Reward: <strong>{{ claimableReward }} ETH</strong></p>
+        </div>
         <button
             @click="submitClaim"
             class="btn secondary"
@@ -189,6 +188,8 @@
   import RegisterToVote from '@/components/vote/RegisterToVote.vue'
   import SubmitSecretShare from '~/components/vote/SubmitSecretShare.vue'
   import { ethersBaseService, factoryService, registryService, voteSessionService } from '~/services/contracts/ethersService'
+  import { aesUtils } from '~/services/utils/aesUtils';
+  import { cryptographyUtils } from '~/services/utils/cryptographyUtils';
 
   // Get route params for vote ID
   const route = useRoute()
@@ -202,6 +203,11 @@
   const hasClaimed = ref(false)
   const canClaim = ref(false)
   const isCheckingStatus = ref(true)
+  const decryptionPassword = ref('');
+  const submitDecryptionValueLoading = ref(false);
+  const submitDecryptionValueError = ref(null);
+  const claimableDeposit = ref('0');
+  const claimableReward = ref('0');
 
   const timeRemaining = ref('');
   const timeUpdateInterval = ref(null);
@@ -303,16 +309,25 @@
                    console.log(`Status - Registered: ${actualIsRegistered.value}, Submitted Decryption: ${hasSubmittedDecryptionValue.value}, Claimed: ${hasClaimed.value}`);
 
                    // Determine eligibility to claim (example logic)
-                   const isSessionEnded = vote.value && (vote.value.status === 'ended' || vote.value.status === 'complete');
-                   canClaim.value = actualIsRegistered.value && !hasClaimed.value && isSessionEnded;
-                   console.log(`Can Claim: ${canClaim.value}`);
+                   const sessionState = getStatusString(blockchainSessionInfo.sessionStatus);
+                   const isSessionEffectivelyEnded = sessionState === 'ended' || sessionState === 'complete' || sessionState === 'shares'; // Shares state also means voting is over
                    
-                   // TODO: Fetch specific claimable amounts if needed
-                   // if (canClaim.value) {
-                   //    const amounts = await registryService.getClaimableAmount(voteSessionId, currentAccount);
-                   //    claimableDeposit.value = amounts.deposit;
-                   //    claimableReward.value = amounts.reward;
-                   // }
+                   canClaim.value = actualIsRegistered.value && !hasClaimed.value && isSessionEffectivelyEnded;
+                   console.log(`Can Claim: ${canClaim.value} (Registered: ${actualIsRegistered.value}, Not Claimed: ${!hasClaimed.value}, Session Ended: ${isSessionEffectivelyEnded})`);
+                   
+                   if (canClaim.value) {
+                      console.log(`Fetching claimable amounts for ${currentAccount} in session ${voteSessionId}`);
+                      const amounts = await registryService.getClaimableAmounts(voteSessionId, currentAccount);
+                      if (amounts) {
+                        claimableDeposit.value = amounts.deposit;
+                        claimableReward.value = amounts.reward;
+                        console.log(`Claimable amounts - Deposit: ${amounts.deposit} ETH, Reward: ${amounts.reward} ETH`);
+                      } else {
+                        console.warn("Could not fetch claimable amounts, defaulting to 0.");
+                        claimableDeposit.value = '0';
+                        claimableReward.value = '0';
+                      }
+                   }
 
                } catch (statusError) {
                     console.error("Error checking participant status during fetch:", statusError);
@@ -321,12 +336,16 @@
                     hasSubmittedDecryptionValue.value = false;
                     hasClaimed.value = false;
                     canClaim.value = false;
+                    claimableDeposit.value = '0'; // Reset on error or no vote
+                    claimableReward.value = '0'; // Reset on error or no vote
                }
           } else {
               actualIsRegistered.value = false;
               hasSubmittedDecryptionValue.value = false;
               hasClaimed.value = false;
               canClaim.value = false;
+              claimableDeposit.value = '0'; // Reset on error or no vote
+              claimableReward.value = '0'; // Reset on error or no vote
           }
           // ---------------------------------------------
 
@@ -384,6 +403,8 @@
           hasSubmittedDecryptionValue.value = false;
           hasClaimed.value = false;
           canClaim.value = false;
+          claimableDeposit.value = '0'; // Reset on error or no vote
+          claimableReward.value = '0'; // Reset on error or no vote
       } finally {
           if (showLoading) loading.value = false
           if (vote.value) {
@@ -397,6 +418,8 @@
              hasSubmittedDecryptionValue.value = false;
              hasClaimed.value = false;
              canClaim.value = false;
+             claimableDeposit.value = '0'; // Reset on error or no vote
+             claimableReward.value = '0'; // Reset on error or no vote
           }
           isCheckingStatus.value = false; // Assume status check is done here
       }
@@ -433,5 +456,95 @@
     // ... rest of script ...
   };
 
+  // Placeholder for where encrypted SK might be stored/retrieved
+  // This needs to be implemented based on how you store it during registration
+  async function getEncryptedSessionSK(voteSessionId) {
+    // Example: retrieve from localStorage or a secure store
+    // IMPORTANT: Replace with your actual secure retrieval logic
+    const storedKeyInfo = localStorage.getItem(`vote_${voteSessionId}_encrypted_sk`);
+    if (!storedKeyInfo) {
+      console.error("Encrypted SK not found for session:", voteSessionId);
+      throw new Error("Encrypted secret key not found. Please ensure you registered correctly.");
+    }
+    try {
+      const keyInfo = JSON.parse(storedKeyInfo);
+      // Assuming keyInfo has { encryptedKey, salt, iv }
+      return keyInfo; 
+    } catch (e) {
+      console.error("Error parsing stored encrypted SK:", e);
+      throw new Error("Could not retrieve stored secret key information.");
+    }
+  }
+
+  const submitMyDecryptionValue = async () => {
+    if (!vote.value || !vote.value.id) {
+        submitDecryptionValueError.value = "Vote session details are not loaded.";
+        return;
+    }
+    if (!decryptionPassword.value) {
+        submitDecryptionValueError.value = "Please enter your vote session key password.";
+        return;
+    }
+
+    submitDecryptionValueLoading.value = true;
+    submitDecryptionValueError.value = null;
+
+    try {
+        const voteSessionId = vote.value.id;
+        const currentAccount = ethersBaseService.getAccount();
+        if (!currentAccount) {
+            throw new Error("Wallet not connected or account not found.");
+        }
+
+        // 1. Retrieve the encrypted secret key (sk) and salt/iv
+        // This needs to be securely stored during registration and retrieved here.
+        // For demonstration, using a placeholder function.
+        console.log(`Attempting to retrieve encrypted SK for session ${voteSessionId}`);
+        const { encryptedKey, salt, iv } = await getEncryptedSessionSK(voteSessionId);
+        if (!encryptedKey || !salt || !iv) {
+          throw new Error("Could not retrieve complete encrypted key information.");
+        }
+        console.log("Encrypted key information retrieved.");
+
+        // 2. Decrypt the secret key (sk) using the provided password
+        console.log("Attempting to decrypt SK with provided password...");
+        const secretKeyHex = await aesUtils.decryptWithPassword(encryptedKey, decryptionPassword.value, salt, iv);
+        if (!secretKeyHex) {
+            throw new Error("Failed to decrypt the secret key. Please check your password.");
+        }
+        // Assuming the secretKeyHex needs to be a Uint8Array for calculateDecryptionValue
+        // const secretKeyBytes = cryptographyUtils.hexToBytes(secretKeyHex); // Or however your crypto utils expect it
+        console.log("Secret key decrypted successfully.");
+
+        // 3. Calculate the decryption value using the decrypted sk
+        // The `calculateDecryptionValue` function in `cryptographyUtils` expects the raw secret key.
+        // The output of `decryptWithPassword` is hex, ensure `calculateDecryptionValue` handles hex or convert it.
+        // For now, assuming calculateDecryptionValue can take the hex string or you have a hexToBytes utility.
+        console.log(`Calculating decryption value with SK (hex): ${secretKeyHex.substring(0,10)}...`); // Log only a part of the key
+        const decryptionValue = await cryptographyUtils.calculateDecryptionValue(secretKeyHex); // Pass the hex string directly
+        console.log("Decryption value calculated:", decryptionValue);
+
+
+        // 4. Submit the decryption value to the contract
+        console.log(`Submitting decryption value to VoteSession contract for session ID: ${voteSessionId}`);
+        const tx = await voteSessionService.submitDecryptionValue(voteSessionId, currentAccount, decryptionValue);
+        console.log("Decryption value submission transaction:", tx);
+        await tx.wait(); // Wait for transaction confirmation
+
+        hasSubmittedDecryptionValue.value = true; // Update UI
+        decryptionPassword.value = ''; // Clear password field
+        // Optionally, re-fetch vote data or participant status to confirm
+        // await fetchVoteData(false); 
+
+    } catch (err) {
+        console.error("Error submitting decryption value:", err);
+        submitDecryptionValueError.value = `Error: ${err.message || 'An unexpected error occurred.'}`;
+    } finally {
+        submitDecryptionValueLoading.value = false;
+    }
+  };
+
+  // Claim Deposit/Reward Logic
+  const claimLoading = ref(false);
   // ... rest of script ...
 </script>

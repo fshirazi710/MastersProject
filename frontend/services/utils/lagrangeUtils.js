@@ -1,7 +1,7 @@
 import { mod } from "@noble/curves/abstract/modular";
 
-// Field order needs to be accessible here too
-const FIELD_ORDER = BigInt("0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001");
+// Import shared constants
+import { FIELD_ORDER } from './constants.js';
 
 /**
  * Computes the modular multiplicative inverse of a modulo m using the extended Euclidean algorithm.

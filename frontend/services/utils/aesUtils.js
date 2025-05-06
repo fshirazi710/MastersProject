@@ -40,7 +40,7 @@ export async function AESEncrypt(text, key) {
         const { bytesToHex } = await import('./conversionUtils.js'); // Dynamic import
         const ivHex = bytesToHex(iv);
         const ciphertextHex = bytesToHex(new Uint8Array(ciphertextBuffer));
-        return ivHex + ciphertextHex;
+        return "0x" + ivHex + ciphertextHex;
 
     } catch (error) {
         console.error("Encryption failed:", error);
@@ -57,9 +57,9 @@ export async function AESEncrypt(text, key) {
  */
 export async function AESDecrypt(encryptedHex, key) {
     // Input validation
-    if (typeof encryptedHex !== 'string' || encryptedHex.length < 24 || !(key instanceof CryptoKey)) {
-        console.error("Invalid input types or format for AESDecrypt");
-        throw new Error("Invalid arguments for AES decryption.");
+    if (typeof encryptedHex !== 'string' || !encryptedHex.startsWith("0x") || encryptedHex.length < 26) { // Min length: 0x + 12-byte IV (24 hex) = 26 chars
+        console.error("Invalid input types or format for AESDecrypt. Expected '0x' prefixed hex string with IV.");
+        throw new Error("Invalid arguments for AES decryption. Expected '0x' prefixed hex string.");
     }
     if (key.algorithm.name !== 'AES-GCM' || key.algorithm.length !== 256) {
         console.warn("AESDecrypt called with potentially incorrect key type/length.");
@@ -68,10 +68,11 @@ export async function AESDecrypt(encryptedHex, key) {
     const { hexToBytes } = await import('./conversionUtils.js'); // Dynamic import
     let iv, ciphertext;
     try {
-        iv = hexToBytes(encryptedHex.slice(0, 24)); // First 12 bytes (24 hex chars) are IV
-        ciphertext = hexToBytes(encryptedHex.slice(24)); // The rest is ciphertext
+        // Slice to remove "0x", then take IV and ciphertext
+        iv = hexToBytes(encryptedHex.slice(2, 26)); // First 12 bytes (24 hex chars) after "0x" are IV
+        ciphertext = hexToBytes(encryptedHex.slice(26)); // The rest is ciphertext
     } catch (e) {
-        console.error("Failed to parse encrypted hex string:", e);
+        console.error("Failed to parse encrypted hex string (after 0x prefix):", e);
         throw new Error("Invalid encrypted data format.");
     }
 
@@ -181,5 +182,101 @@ export async function importBigIntAsCryptoKey(bigintKey) {
     } catch (error) {
         console.error("Error importing BigInt as CryptoKey:", error);
         throw new Error("Failed to import key material.");
+    }
+}
+
+// --- Password-Based Encryption Wrappers ---
+const SALT_LENGTH_BYTES = 16; // 128-bit salt
+const IV_HEX_LENGTH = 24; // 12-byte IV is 24 hex characters
+const SALT_HEX_LENGTH = SALT_LENGTH_BYTES * 2;
+
+/**
+ * Encrypts plaintext using a password. Generates a random salt, derives a key using PBKDF2,
+ * then encrypts with AES-GCM. The salt and IV are prepended to the ciphertext.
+ * @param {string} plaintext The text string to encrypt.
+ * @param {string} password The password to use for key derivation.
+ * @returns {Promise<string>} A hex string: "0x" + SALT_HEX + IV_HEX + CIPHERTEXT_HEX.
+ * @throws {Error} If encryption or key derivation fails.
+ */
+export async function encryptWithPassword(plaintext, password) {
+    if (typeof plaintext !== 'string') {
+        throw new Error("Plaintext must be a string.");
+    }
+    if (typeof password !== 'string' || password.length === 0) {
+        throw new Error("Password must be a non-empty string.");
+    }
+
+    try {
+        const { bytesToHex } = await import('./conversionUtils.js');
+
+        // 1. Generate a random salt
+        const salt = randomBytes(SALT_LENGTH_BYTES);
+        const saltHex = bytesToHex(salt);
+
+        // 2. Derive encryption key from password and salt
+        const cryptoKey = await deriveKeyFromPassword(password, salt);
+
+        // 3. Encrypt using AESEncrypt (which handles IV generation and prepends IV)
+        // AESEncrypt already returns "0x" + IV_HEX + CIPHERTEXT_HEX
+        const ivAndCiphertextHex = await AESEncrypt(plaintext, cryptoKey);
+
+        // 4. Prepend saltHex to the ivAndCiphertextHex. 
+        // Need to insert saltHex after the "0x" from AESEncrypt's output.
+        const finalEncryptedHex = "0x" + saltHex + ivAndCiphertextHex.substring(2); // Remove "0x" from ivAndCiphertextHex before concatenation
+
+        console.log(`[encryptWithPassword] Encrypted. SaltHex length: ${saltHex.length}, IV+Ciphertext part length (excl 0x): ${ivAndCiphertextHex.substring(2).length}`);
+        return finalEncryptedHex;
+
+    } catch (error) {
+        console.error("encryptWithPassword failed:", error);
+        throw new Error(`Password-based encryption failed: ${error.message}`);
+    }
+}
+
+/**
+ * Decrypts data that was encrypted with a password using `encryptWithPassword`.
+ * Extracts salt, derives key, extracts IV, and then decrypts.
+ * @param {string} encryptedDataHex The hex string "0xSALT_HEXIV_HEXCIPHERTEXT_HEX".
+ * @param {string} password The password for decryption.
+ * @returns {Promise<string>} The decrypted plaintext string.
+ * @throws {Error} If decryption or key derivation fails, or format is invalid.
+ */
+export async function decryptWithPassword(encryptedDataHex, password) {
+    if (typeof encryptedDataHex !== 'string' || !encryptedDataHex.startsWith("0x")) {
+        throw new Error("Encrypted data must be a hex string starting with '0x'.");
+    }
+    // Min length: "0x" + SALT_HEX_LENGTH + IV_HEX_LENGTH + at least 1 byte ciphertext (2 hex chars)
+    if (encryptedDataHex.length < 2 + SALT_HEX_LENGTH + IV_HEX_LENGTH + 2) { 
+        throw new Error("Encrypted data hex string is too short to contain salt, IV, and ciphertext.");
+    }
+    if (typeof password !== 'string' || password.length === 0) {
+        throw new Error("Password must be a non-empty string for decryption.");
+    }
+
+    try {
+        const { hexToBytes } = await import('./conversionUtils.js');
+
+        // 1. Extract salt (comes after "0x")
+        const saltHex = encryptedDataHex.substring(2, 2 + SALT_HEX_LENGTH);
+        const salt = hexToBytes(saltHex);
+
+        // 2. Derive decryption key
+        const cryptoKey = await deriveKeyFromPassword(password, salt);
+
+        // 3. Prepare the part that AESDecrypt expects: "0x" + IV_HEX + CIPHERTEXT_HEX
+        const ivAndCiphertextHex = "0x" + encryptedDataHex.substring(2 + SALT_HEX_LENGTH);
+        
+        // 4. Decrypt using AESDecrypt
+        const plaintext = await AESDecrypt(ivAndCiphertextHex, cryptoKey);
+
+        console.log(`[decryptWithPassword] Decrypted successfully.`);
+        return plaintext;
+
+    } catch (error) {
+        console.error("decryptWithPassword failed:", error);
+        // It might be a password error, format error, or data integrity error.
+        // AESDecrypt throws "Decryption failed. Check password or data integrity."
+        // deriveKeyFromPassword throws "Failed to derive encryption key from password."
+        throw new Error(`Password-based decryption failed: ${error.message}`); 
     }
 }
