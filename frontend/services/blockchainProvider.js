@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { config } from '../../config'; // Assuming config holds provider URL
+import { config } from '../config'; // Assuming config holds provider URL
 
 /**
  * @class BlockchainProviderService

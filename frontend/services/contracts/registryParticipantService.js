@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import { blockchainProviderService } from '../blockchainProvider.js';
 import { factoryService } from './factoryService.js';
+import { voteSessionViewService } from './voteSessionViewService.js';
 
 // Import ABIs
 import ParticipantRegistryABI_File from '../../../crypto-core/artifacts/contracts/ParticipantRegistry.sol/ParticipantRegistry.json';
@@ -61,6 +62,13 @@ class RegistryParticipantService {
       if (!registryAddress || registryAddress === ethers.ZeroAddress || !sessionAddress || sessionAddress === ethers.ZeroAddress) {
         throw new Error('RegistryParticipantService: Could not find valid registry or session address for session ID ' + sessionId + '.');
       }
+
+      // Pre-check if registration is open
+      const registrationOpen = await voteSessionViewService.isRegistrationOpen(sessionAddress);
+      if (!registrationOpen) {
+        throw new Error('Registration is not currently open');
+      }
+
       const voteSessionContract = blockchainProviderService.getContractInstance(sessionAddress, this.sessionAbi, false);
       if (!voteSessionContract) {
         throw new Error('RegistryParticipantService: Failed to get VoteSession contract instance for session ' + sessionId + '.');
@@ -69,7 +77,6 @@ class RegistryParticipantService {
       if (requiredDepositWei === undefined || requiredDepositWei === null) {
         throw new Error('RegistryParticipantService: Failed to fetch required deposit from session ' + sessionId + '.');
       }
-      // TODO: Add check for VoteSession.isRegistrationOpen()
       const registryContractSigner = blockchainProviderService.getContractInstance(registryAddress, this.registryAbi, true);
       if (!registryContractSigner) {
         throw new Error('RegistryParticipantService: Failed to get ParticipantRegistry contract instance with signer for session ' + sessionId + '.');
@@ -96,8 +103,18 @@ class RegistryParticipantService {
     }
     console.log('RegistryParticipantService: Registering as voter for session ' + sessionId + '...');
     try {
-      const registryAddress = await this._getRegistryAddress(sessionId);
-      // TODO: Add check for VoteSession.isRegistrationOpen()
+      // We need both registryAddress and sessionAddress
+      const { registryAddress, sessionAddress } = await factoryService.getSessionAddresses(sessionId);
+      if (!registryAddress || registryAddress === ethers.ZeroAddress || !sessionAddress || sessionAddress === ethers.ZeroAddress) {
+        throw new Error('RegistryParticipantService: Could not find valid registry or session address for voter registration on session ID ' + sessionId + '.');
+      }
+
+      // Pre-check if registration is open
+      const registrationOpen = await voteSessionViewService.isRegistrationOpen(sessionAddress);
+      if (!registrationOpen) {
+        throw new Error('Registration is not currently open');
+      }
+    
       const registryContractSigner = blockchainProviderService.getContractInstance(registryAddress, this.registryAbi, true);
       if (!registryContractSigner) {
         throw new Error('RegistryParticipantService: Failed to get registry contract instance with signer for registerAsVoter.');
@@ -276,19 +293,21 @@ class RegistryParticipantService {
     }
     console.log(`RegistryParticipantService: Claiming deposit for session ${sessionId}...`);
     try {
-      const registryAddress = await this._getRegistryAddress(sessionId);
+      const { registryAddress, sessionAddress } = await factoryService.getSessionAddresses(sessionId);
+      if (!registryAddress || registryAddress === ethers.ZeroAddress || !sessionAddress || sessionAddress === ethers.ZeroAddress) {
+        throw new Error('RegistryParticipantService: Could not find valid registry or session address for claimDeposit on session ID ' + sessionId + '.');
+      }
+
+      // Check if deposit claim period is active
+      const isDepositClaimActive = await voteSessionViewService.isDepositClaimPeriodActive(sessionAddress);
+      if (!isDepositClaimActive) {
+        throw new Error(`Deposit claim period is not currently active for session ${sessionId}.`);
+      }
+
       const registryContractSigner = blockchainProviderService.getContractInstance(registryAddress, this.registryAbi, true);
       if (!registryContractSigner) {
         throw new Error(`RegistryParticipantService: Failed to get ParticipantRegistry contract instance with signer for session ${sessionId}.`);
       }
-
-      // TODO: Optionally, check if VoteSession.isDepositClaimPeriodActive() before sending transaction.
-      // const { sessionAddress } = await factoryService.getSessionAddresses(sessionId);
-      // const voteSessionContract = blockchainProviderService.getContractInstance(sessionAddress, this.sessionAbi, false);
-      // const isDepositClaimActive = await blockchainProviderService.readContract(voteSessionContract, 'isDepositClaimPeriodActive');
-      // if (!isDepositClaimActive) {
-      //   throw new Error(`RegistryParticipantService: Deposit claim period is not active for session ${sessionId}.`);
-      // }
 
       // From CONTRACT_API.md: ParticipantRegistry.claimDeposit(uint256 sessionId)
       const txReceipt = await blockchainProviderService.sendTransaction(

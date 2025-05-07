@@ -61,8 +61,9 @@ class VoteSessionVotingService {
       if (!Array.isArray(alpha) || alpha.some(a => !ethers.isBytesLike(a))) {
         throw new Error('VoteSessionVotingService: Invalid alpha array provided. Expected array of BytesLike.');
       }
-      if (typeof threshold !== 'number' || threshold <= 0) {
-        throw new Error('VoteSessionVotingService: Invalid threshold provided. Expected a positive number.');
+      if (!((typeof threshold === 'bigint' && threshold > 0n) || 
+            (typeof threshold === 'number' && Number.isInteger(threshold) && threshold > 0))) {
+        throw new Error('VoteSessionVotingService: Invalid threshold provided. Expected a positive BigInt or positive integer number.');
       }
     } catch(validationError) {
         console.error("VoteSessionVotingService: Input validation error for castEncryptedVote:", validationError);

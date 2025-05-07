@@ -28,6 +28,7 @@ interface IParticipantRegistry {
     function getRequiredDeposit() external view returns (uint256);
     function isRewardCalculationPeriodActive() external view returns (bool);
     function isDepositClaimPeriodActive() external view returns (bool);
+    function getNumberOfActiveHolders(uint256 sessionId) external view returns (uint256);
 }
 
 /**
@@ -97,6 +98,10 @@ contract VoteSession is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrad
     // Flag to prevent multiple reward calculation triggers
     bool public rewardsCalculatedTriggered;
 
+    // --- Dynamic Threshold State ---
+    uint256 public actualMinShareThreshold; // Stores the dynamically calculated threshold
+    bool public dynamicThresholdFinalized; // Flag to ensure finalization happens once
+
     // --- Decryption Coordination State ---
     // Parameters set by owner
     bytes32[] public alphas;
@@ -117,6 +122,8 @@ contract VoteSession is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrad
     event DecryptionValueSubmitted(uint256 indexed sessionId, address indexed holder, uint256 index, bytes32 value);
     event DecryptionThresholdReached(uint256 indexed sessionId);
     event RewardsCalculationTriggered(uint256 indexed sessionId, address indexed triggerer);
+    event DynamicMinShareThresholdSet(uint256 indexed sessionId, uint256 newThreshold, uint256 numberOfHolders);
+    event DynamicThresholdFinalizationSkipped(uint256 indexed sessionId, uint256 numberOfHolders, uint256 initialMinThreshold);
 
     // --- Disabled Constructor for Implementation Contract ---
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -172,8 +179,9 @@ contract VoteSession is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrad
         // If block.timestamp check was possible, we could set RegistrationOpen directly
         currentStatus = SessionStatus.Created;
         emit SessionStatusChanged(_sessionId, currentStatus);
-        // Explicitly call updateSessionStatus maybe?
-        // updateSessionStatus(); // This would emit a second event if state changes immediately
+        // Initialize actualMinShareThreshold to the initial minShareThreshold
+        actualMinShareThreshold = _minShareThreshold; 
+        // dynamicThresholdFinalized remains false by default
     }
 
     // --- Owner Functions ---
@@ -223,6 +231,47 @@ contract VoteSession is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrad
                  currentStatus = SessionStatus.Completed;
              }
         } else if (currentStatus == SessionStatus.RegistrationOpen && block.timestamp >= startDate) {
+            // --- BEGIN DYNAMIC THRESHOLD FINALIZATION LOGIC ---
+            if (!dynamicThresholdFinalized) {
+                uint256 numberOfActiveHolders = participantRegistry.getNumberOfActiveHolders(sessionId);
+
+                if (numberOfActiveHolders >= minShareThreshold) { // Viability check: enough holders compared to initial min threshold
+                    uint256 calculatedThresholdBasedOnHolders = (numberOfActiveHolders / 2) + 1;
+                    uint256 newActualThreshold = calculatedThresholdBasedOnHolders;
+
+                    if (newActualThreshold < minShareThreshold) {
+                        newActualThreshold = minShareThreshold; // Floor by initial minThreshold
+                    }
+                    if (newActualThreshold > numberOfActiveHolders) {
+                        newActualThreshold = numberOfActiveHolders; // Cap by actual number of holders
+                    }
+                     // Ensure it's at least 2 if somehow numberOfActiveHolders was 0 or 1 and minShareThreshold was bypassed (should not happen due to initialize and viability check)
+                    if (newActualThreshold < 2 && numberOfActiveHolders > 0) { // if newActualThreshold is 1 (e.g. 1 holder), make it 1. If 0 holders, it's caught by viability. If it was calculated to less than 2 for some reason.
+                        if (numberOfActiveHolders == 1) newActualThreshold = 1; // A 1-of-1 scheme is trivial but possible if minShareThreshold allowed it
+                        else newActualThreshold = 2; // Default to 2 if calculation led to <2 for >1 holders
+                    }
+                     if (numberOfActiveHolders == 0 && minShareThreshold >=2) { // This case should be caught by 'numberOfActiveHolders >= minShareThreshold'
+                         // If it gets here, it implies minShareThreshold was somehow not met, yet we proceed.
+                         // This path indicates a logic flaw if minShareThreshold is the absolute minimum.
+                         // For safety, stick to initial minShareThreshold.
+                         newActualThreshold = minShareThreshold;
+                     }
+
+
+                    actualMinShareThreshold = newActualThreshold;
+                    dynamicThresholdFinalized = true;
+                    emit DynamicMinShareThresholdSet(sessionId, actualMinShareThreshold, numberOfActiveHolders);
+                } else {
+                    // Not enough holders to meet the initial viability criteria for dynamic adjustment.
+                    // actualMinShareThreshold remains its initial value (minShareThreshold from initialize).
+                    // dynamicThresholdFinalized remains false, or set to true to prevent re-attempts on subsequent status updates in this state.
+                    // Let's set it to true to avoid re-querying and re-evaluating this block unnecessarily if updateSessionStatus is called multiple times in this window.
+                    dynamicThresholdFinalized = true; 
+                    emit DynamicThresholdFinalizationSkipped(sessionId, numberOfActiveHolders, minShareThreshold);
+                }
+            }
+            // --- END DYNAMIC THRESHOLD FINALIZATION LOGIC ---
+
             if (block.timestamp < endDate) {
                 currentStatus = SessionStatus.VotingOpen;
             } else if (block.timestamp < sharesCollectionEndDate) {
@@ -235,13 +284,6 @@ contract VoteSession is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrad
                  currentStatus = SessionStatus.SharesCollectionOpen;
             } else {
                 currentStatus = SessionStatus.Completed;
-            }
-            // Trigger reward calculation when voting ends
-            if (!rewardsCalculatedTriggered) {
-                 // Note: This internal call might be complex. Consider an external trigger.
-                 // For now, let's assume ParticipantRegistry handles its own timing checks.
-                 // participantRegistry.calculateRewards(sessionId); // Call registry
-                 // rewardsCalculated = true; // Mark as calculated *in this contract*
             }
         } else if (currentStatus == SessionStatus.SharesCollectionOpen && block.timestamp >= sharesCollectionEndDate) {
             currentStatus = SessionStatus.Completed;
@@ -442,9 +484,21 @@ contract VoteSession is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrad
             options,
             metadata,
             requiredDeposit,
-            minShareThreshold,
+            minShareThreshold, // This returns the initial one
             currentStatus
         );
+    }
+
+    /**
+     * @dev Returns the actual minimum share threshold.
+     * If the dynamic threshold has been finalized, it returns that.
+     * Otherwise, it returns the initial minShareThreshold set during session creation.
+     */
+    function getActualMinShareThreshold() external view returns (uint256) {
+        if (dynamicThresholdFinalized) {
+            return actualMinShareThreshold;
+        }
+        return minShareThreshold; // Return initial if not finalized yet
     }
 
     // --- View Functions for Decryption Data Retrieval ---

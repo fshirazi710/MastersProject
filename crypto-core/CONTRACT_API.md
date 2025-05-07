@@ -202,6 +202,9 @@ The system uses a factory pattern with upgradeable contracts:
     *   `decryptionShares` (public DecryptionShare[]): Array storing submitted shares.
     *   `hasVoted` (public mapping(address => bool)): Tracks if a participant has voted.
     *   `rewardsCalculatedTriggered` (public bool): Flag to prevent multiple reward calculation triggers *on the registry*.
+*   **Dynamic Threshold State (New)**
+    *   `actualMinShareThreshold` (public uint256): Stores the dynamically calculated and finalized minimum share threshold. Initialized to the `minShareThreshold` from `initialize`.
+    *   `dynamicThresholdFinalized` (public bool): Flag indicating if `actualMinShareThreshold` has been finalized. Defaults to `false`.
 *   **Decryption Coordination State**
     *   `alphas` (public bytes32[]): Decryption parameters set by owner.
     *   `decryptionThreshold` (public uint256): Required number of decryption values, set by owner.
@@ -220,6 +223,10 @@ The system uses a factory pattern with upgradeable contracts:
 *   **`DecryptionValueSubmitted(uint256 indexed sessionId, address indexed holder, uint256 index, bytes32 value)`**
 *   **`DecryptionThresholdReached(uint256 indexed sessionId)`**
 *   **`RewardsCalculationTriggered(uint256 indexed sessionId, address indexed triggerer)`**
+*   **`DynamicMinShareThresholdSet(uint256 indexed sessionId, uint256 newThreshold, uint256 numberOfHolders)` (New)**
+    *   Emitted by `updateSessionStatus` when it successfully calculates and sets the `actualMinShareThreshold` during the transition from `RegistrationOpen` to `VotingOpen`.
+*   **`DynamicThresholdFinalizationSkipped(uint256 indexed sessionId, uint256 numberOfHolders, uint256 initialMinThreshold)` (New)**
+    *   Emitted by `updateSessionStatus` if the dynamic threshold finalization attempt is skipped because the number of active holders was less than the initial `minShareThreshold` (from `initialize`) at the time of attempted finalization.
 *   **`Initialized(uint8 version)`** (Inherited)
 *   **`OwnershipTransferred(...)`** (Inherited)
 
@@ -230,7 +237,7 @@ The system uses a factory pattern with upgradeable contracts:
     *   Disabled initializer. Used only for the implementation contract deployment.
 *   **`initialize(...)`**
     *   `initialize(uint256 _sessionId, address _registryAddress, address _initialOwner, string memory _title, string memory _description, uint256 _startDate, uint256 _endDate, uint256 _sharesEndDate, string[] memory _options, string memory _metadata, uint256 _requiredDeposit, uint256 _minShareThreshold) public initializer`
-    *   Initializes the contract instance (proxy) with all session parameters. Sets owner, links registry, sets dates, options, etc. Sets initial status to `Created`.
+    *   Initializes the contract instance (proxy) with all session parameters. Sets owner, links registry, sets dates, options, etc. Sets initial status to `Created`. `actualMinShareThreshold` is initially set to `_minShareThreshold`. The `_minShareThreshold` must be `>= 2`.
 *   **`setDecryptionParameters(bytes32[] calldata _alphas, uint256 _threshold)`**
     *   `setDecryptionParameters(bytes32[] calldata _alphas, uint256 _threshold) external onlyOwner`
     *   Sets the `alphas` and `decryptionThreshold` required for the final decryption coordination phase.
@@ -238,6 +245,18 @@ The system uses a factory pattern with upgradeable contracts:
 *   **`updateSessionStatus()`**
     *   `updateSessionStatus() public`
     *   Advances the `currentStatus` based on `block.timestamp` and the configured session dates (`startDate`, `endDate`, `sharesCollectionEndDate`). Callable by anyone. Should be called before status-dependent actions.
+    *   **Dynamic Threshold Finalization (Integrated):** This logic is attempted *once* within `updateSessionStatus`. It occurs when the function is called and determines that `block.timestamp >= startDate` while the `currentStatus` is `RegistrationOpen` (i.e., the session is due to transition to `VotingOpen`), provided `dynamicThresholdFinalized` is `false`.
+        1.  The function retrieves `numberOfActiveHolders` from the linked `ParticipantRegistry`.
+        2.  **Viability Check:** It checks if `numberOfActiveHolders >= minShareThreshold` (the value set during `initialize`).
+        3.  **If Viable:**
+            *   `actualMinShareThreshold` is calculated based on `(numberOfActiveHolders / 2) + 1`.
+            *   This calculated value is then adjusted: it will not be less than the initial `minShareThreshold` and not more than `numberOfActiveHolders`.
+            *   `dynamicThresholdFinalized` is set to `true`.
+            *   The `DynamicMinShareThresholdSet` event is emitted with the `sessionId`, the new `actualMinShareThreshold`, and the `numberOfActiveHolders`.
+        4.  **If Not Viable (fewer holders than initial `minShareThreshold`):**
+            *   The dynamic calculation is skipped. `actualMinShareThreshold` will effectively remain the value it was initialized with (i.e., the initial `minShareThreshold`).
+            *   `dynamicThresholdFinalized` is set to `true` to prevent further attempts.
+            *   The `DynamicThresholdFinalizationSkipped` event is emitted, indicating the `sessionId`, the `numberOfActiveHolders` found, and the `initialMinThreshold` that was not met for dynamic adjustment.
 *   **`castEncryptedVote(...)`**
     *   `castEncryptedVote(bytes memory ciphertext, bytes memory g1r, bytes memory g2r, bytes[] memory alpha, uint256 threshold) external nonReentrant`
     *   Allows a registered participant (voter or holder) to cast their encrypted vote.
@@ -254,9 +273,10 @@ The system uses a factory pattern with upgradeable contracts:
     *   **Requirements:** Status must be `Completed` (or potentially `SharesCollectionOpen`? Check logic). Caller must be registered holder who *has submitted shares* (checked via Registry). Caller must not have submitted a value yet. Decryption parameters (`alphas`, `threshold`) must be set. `thresholdReached` must be false.
     *   Stores the value (`submittedValues`), the holder's index (`submittedValueIndex` - fetched from Registry), adds holder to `valueSubmitters`, increments `submittedValueCount`. Emits `DecryptionValueSubmitted`. Checks if `submittedValueCount` reaches `decryptionThreshold`, sets `thresholdReached = true`, and emits `DecryptionThresholdReached` if so.
 *   **`triggerRewardCalculation()`**
-    *   `triggerRewardCalculation() external nonReentrant`
-    *   Allows anyone to **set a flag (`rewardsCalculatedTriggered`)** indicating that reward calculation *should* happen on the registry. **It does NOT directly call the calculation function.**
-    *   **Requirements:** Status must be `Completed`. Flag must not already be set. Emits `RewardsCalculationTriggered`. The actual call to `ParticipantRegistry.calculateRewards()` must be made externally (e.g., by owner or keeper).
+    *   `triggerRewardCalculation() external onlyOwner nonReentrant`
+    *   Allows the owner of the `VoteSession` contract to trigger rewards calculation on the linked `ParticipantRegistry` contract.
+    *   **Requirements:** `onlyOwner`. Status must be `Completed` (i.e., `block.timestamp >= sharesCollectionEndDate`). `rewardsCalculatedTriggered` flag (within `VoteSession`) must be `false`.
+    *   Calls `participantRegistry.calculateRewards(sessionId)`. Sets `rewardsCalculatedTriggered = true`. Emits `RewardsCalculationTriggered`.
 *   **Interface Functions (Called *by* Registry)**
     *   `isRegistrationOpen() external view returns (bool)`: Checks if `block.timestamp < registrationEndDate`.
     *   `getRequiredDeposit() external view returns (uint256)`: Returns `requiredDeposit`.
@@ -270,9 +290,10 @@ The system uses a factory pattern with upgradeable contracts:
     *   `getNumberOfVotes() external view returns (uint256)`: Returns the count of cast votes.
     *   `getDecryptionShare(uint256 shareLogIndex) external view returns (DecryptionShare memory)`: Returns data for a specific submitted share.
     *   `getNumberOfSubmittedShares() external view returns (uint256)`: Returns the count of submitted shares.
+    *   `getActualMinShareThreshold() external view returns (uint256)` (New): Returns `actualMinShareThreshold` if finalized; otherwise, returns the initial `minShareThreshold`.
     *   `getDecryptionParameters() external view returns (uint256 threshold, bytes32[] memory alphas)`: Returns the set decryption parameters.
     *   `getSubmittedValues() external view returns (address[] memory submitters, uint256[] memory indexes, bytes32[] memory values)`: Returns the first `decryptionThreshold` submitted decryption values and their submitters/indexes. Reverts if threshold not reached.
-*   **Public Accessors for State Variables:** `sessionId`, `participantRegistry`, `title`, `description`, `registrationEndDate`, `startDate`, `endDate`, `sharesCollectionEndDate`, `options`, `metadata`, `requiredDeposit`, `minShareThreshold`, `currentStatus`, `hasVoted`, `rewardsCalculatedTriggered`, `alphas`, `decryptionThreshold`, `submittedValues`, `submittedValueIndex`, `hasSubmittedDecryptionValue`, `valueSubmitters`, `submittedValueCount`, `thresholdReached`.
+*   **Public Accessors for State Variables:** `sessionId`, `participantRegistry`, `title`, `description`, `registrationEndDate`, `startDate`, `endDate`, `sharesCollectionEndDate`, `options`, `metadata`, `requiredDeposit`, `minShareThreshold`, `currentStatus`, `hasVoted`, `rewardsCalculatedTriggered`, `actualMinShareThreshold` (New), `dynamicThresholdFinalized` (New), `alphas`, `decryptionThreshold`, `submittedValues`, `submittedValueIndex`, `hasSubmittedDecryptionValue`, `valueSubmitters`, `submittedValueCount`, `thresholdReached`.
 *   **`owner()` / `transferOwnership(...)`** (Inherited from OwnableUpgradeable)
 
 ---
