@@ -1,7 +1,8 @@
 import { mod } from "@noble/curves/abstract/modular";
+import { FIELD_ORDER } from './constants.js';
 
 // Field order for BLS12-381 scalar field
-const FIELD_ORDER = BigInt("0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001");
+// const FIELD_ORDER = BigInt("0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001");
 
 /**
  * Converts a BigInt to a hexadecimal string.
@@ -93,10 +94,13 @@ export function stringToBigInt(str) {
     try {
         if (trimmedStr.startsWith('0x')) {
             return BigInt(trimmedStr);
-        } else if (/^[0-9a-fA-F]+$/.test(trimmedStr)) { // Check if it IS a hex string (without 0x)
-            return BigInt('0x' + trimmedStr);
-        } else { // Assume decimal if not hex
-            return BigInt(trimmedStr); // Let BigInt handle potential decimal errors
+        } else if (/^[0-9]+$/.test(trimmedStr)) { // Check if it's purely decimal digits FIRST
+             return BigInt(trimmedStr);
+        } else if (/^[0-9a-fA-F]+$/.test(trimmedStr)) { // THEN check if it's hex characters (potentially mixed)
+            return BigInt('0x' + trimmedStr); // Treat as hex only if it contains a-f or was not purely decimal
+        } else {
+            // If it contains non-hex, non-decimal characters, BigInt will throw later anyway
+            throw new Error("Invalid numeric string format"); 
         }
     } catch (e) {
         console.error(`Failed to convert string "${str}" to BigInt:`, e);

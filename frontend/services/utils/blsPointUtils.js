@@ -1,8 +1,9 @@
 import { bls12_381 } from "@noble/curves/bls12-381";
 import { mod } from "@noble/curves/abstract/modular";
+import { FIELD_ORDER } from './constants.js';
 
 // Field order might be needed here too
-const FIELD_ORDER = BigInt("0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001");
+// const FIELD_ORDER = BigInt("0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001");
 
 /**
  * Generates a random BigInt r modulo the field order.

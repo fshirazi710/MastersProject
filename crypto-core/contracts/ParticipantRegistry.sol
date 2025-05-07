@@ -32,7 +32,7 @@ contract ParticipantRegistry is Initializable, OwnableUpgradeable, ReentrancyGua
     mapping(uint256 => EnumerableSet.AddressSet) private activeHolders;
     mapping(uint256 => address) public voteSessionContracts;
     mapping(uint256 => mapping(address => uint256)) public rewardsOwed;
-    mapping(uint256 => mapping(address => bool)) public rewardClaimed;
+    mapping(uint256 => mapping(address => bool)) public hasClaimedReward;
     mapping(uint256 => mapping(address => bool)) public depositClaimed;
 
     // --- Events ---
@@ -43,6 +43,7 @@ contract ParticipantRegistry is Initializable, OwnableUpgradeable, ReentrancyGua
     event RewardsCalculated(uint256 indexed sessionId, address indexed calculator, uint256 totalRewardPoolCalculated);
     event RewardClaimed(uint256 indexed sessionId, address indexed claimer, uint256 amount);
     event DepositClaimed(uint256 indexed sessionId, address indexed claimer, uint256 amount);
+    event RewardFundingAdded(uint256 indexed sessionId, address indexed funder, uint256 amount);
 
     // --- Modifiers ---
     modifier onlyVoteSession(uint256 sessionId) {
@@ -87,8 +88,7 @@ contract ParticipantRegistry is Initializable, OwnableUpgradeable, ReentrancyGua
         require(voteSessionContracts[sessionId] != address(0), "Registry: Session does not exist");
         require(msg.value > 0, "Registry: Funding amount must be positive");
         totalRewardPool[sessionId] += msg.value;
-        // Optional: Emit an event for funding added
-        // emit RewardFundingAdded(sessionId, msg.sender, msg.value);
+        emit RewardFundingAdded(sessionId, msg.sender, msg.value);
     }
 
     // --- Registration Functions ---
@@ -196,12 +196,12 @@ contract ParticipantRegistry is Initializable, OwnableUpgradeable, ReentrancyGua
         uint256 rewardAmount = rewardsOwed[sessionId][claimer];
 
         // Check claimed status *before* checking amount
-        require(!rewardClaimed[sessionId][claimer], "Registry: Reward already claimed");
+        require(!hasClaimedReward[sessionId][claimer], "Registry: Reward already claimed");
         require(rewardAmount > 0, "Registry: No reward owed or calculation pending");
 
         // Checks-Effects-Interaction Pattern
         rewardsOwed[sessionId][claimer] = 0; // Effect: Clear owed amount first
-        rewardClaimed[sessionId][claimer] = true; // Effect: Mark as claimed
+        hasClaimedReward[sessionId][claimer] = true; // Effect: Mark as claimed
 
         // Interaction: Transfer funds
         (bool success, ) = claimer.call{value: rewardAmount}("");

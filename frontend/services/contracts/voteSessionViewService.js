@@ -14,16 +14,16 @@ const voteSessionAbi = VoteSessionABI_File.abi;
 class VoteSessionViewService {
   constructor() {
     this.voteSessionAbi = voteSessionAbi;
-  }
-
-  _SessionStatusEnum = {
-    0: 'Pending',
-    1: 'RegistrationOpen',
-    2: 'VotingOpen',
-    3: 'SharesCollectionOpen',
-    4: 'DecryptionOpen',
-    5: 'Completed',
-    6: 'Cancelled'
+    this.blockchainProviderService = blockchainProviderService;
+    this._SessionStatusEnum = {
+      0: 'Created',
+      1: 'RegistrationOpen',
+      2: 'VotingOpen',
+      3: 'SharesCollectionOpen',
+      4: 'DecryptionOpen',
+      5: 'Completed',
+      6: 'Cancelled'
+    };
   }
 
   _getContractInstance(voteSessionAddress, withSigner = false) {
@@ -171,17 +171,15 @@ class VoteSessionViewService {
 
   async getStatus(voteSessionAddress) {
     if (!voteSessionAddress || !ethers.isAddress(voteSessionAddress)) {
-      throw new Error('VoteSessionViewService: Invalid or missing VoteSession address for getStatus.');
+      console.error('VoteSessionViewService: Invalid voteSessionAddress provided for getStatus.');
+      throw new Error('VoteSessionViewService: Invalid voteSessionAddress provided.');
     }
-    console.log('VoteSessionViewService: Getting status for session ' + voteSessionAddress + '...');
     try {
-      const contractReader = this._getContractInstance(voteSessionAddress, false);
-      const statusEnumIndex = await blockchainProviderService.readContract(contractReader, 'status', []);
-      const statusString = this._SessionStatusEnum[Number(statusEnumIndex)] || 'Unknown';
-      console.log('VoteSessionViewService: Status for session ' + voteSessionAddress + ': ' + statusString + ' (Enum Index: ' + statusEnumIndex + ')');
-      return statusString;
+      const contractReader = await this._getContractInstance(voteSessionAddress, false);
+      const statusEnumIndex = await this.blockchainProviderService.readContract(contractReader, 'currentStatus', []);
+      return this._SessionStatusEnum[Number(statusEnumIndex)] || 'Unknown';
     } catch (error) {
-      console.error('VoteSessionViewService: Error getting status for session ' + voteSessionAddress + ':', error);
+      console.error(`VoteSessionViewService: Error getting status for session ${voteSessionAddress}:`, error);
       throw error;
     }
   }
@@ -244,12 +242,17 @@ class VoteSessionViewService {
     try {
       const contractReader = this._getContractInstance(voteSessionAddress, false);
       const shareData = await blockchainProviderService.readContract(contractReader, 'getDecryptionShare', [shareLogIndex]);
+      
+      // Log the raw return value from ethers
+      console.log('VoteSessionViewService: Raw shareData received:', shareData); 
+
       if (shareData) {
+        // Use field names from the Solidity struct definition
         const formattedShareData = {
-          submitter: shareData.submitter,
-          voteIndex: Number(shareData.voteIndex),
-          shareIndex: Number(shareData.shareIndex),
-          share: shareData.share
+          submitter: shareData.holderAddress || undefined, // Changed from submitter
+          voteIndex: typeof shareData.voteIndex !== 'undefined' ? Number(shareData.voteIndex) : NaN,
+          shareIndex: typeof shareData.index !== 'undefined' ? Number(shareData.index) : NaN, // Changed from shareIndex
+          share: shareData.share || null
         };
         console.log('VoteSessionViewService: Decryption share data for session ' + voteSessionAddress + ', shareLogIndex ' + shareLogIndex + ':', formattedShareData);
         return formattedShareData;
@@ -262,19 +265,19 @@ class VoteSessionViewService {
     }
   }
 
-  async getNumberOfSubmittedShares(voteSessionAddress) {
+  async getNumberOfDecryptionShares(voteSessionAddress) {
     if (!voteSessionAddress || !ethers.isAddress(voteSessionAddress)) {
-      throw new Error('VoteSessionViewService: Invalid or missing VoteSession address for getNumberOfSubmittedShares.');
+      throw new Error('VoteSessionViewService: Invalid or missing VoteSession address for getNumberOfDecryptionShares.');
     }
-    console.log('VoteSessionViewService: Getting number of submitted shares for session ' + voteSessionAddress + '...');
+    console.log('VoteSessionViewService: Getting number of decryption shares for session ' + voteSessionAddress + '...');
     try {
       const contractReader = this._getContractInstance(voteSessionAddress, false);
-      const numberOfShares = await blockchainProviderService.readContract(contractReader, 'getNumberOfSubmittedShares', []);
+      const numberOfShares = await blockchainProviderService.readContract(contractReader, 'getNumberOfDecryptionShares', []);
       const count = Number(numberOfShares);
-      console.log('VoteSessionViewService: Number of submitted shares for session ' + voteSessionAddress + ': ' + count);
+      console.log('VoteSessionViewService: Number of decryption shares for session ' + voteSessionAddress + ': ' + count);
       return count;
     } catch (error) {
-      console.error('VoteSessionViewService: Error getting number of submitted shares for session ' + voteSessionAddress + ':', error);
+      console.error('VoteSessionViewService: Error getting number of decryption shares for session ' + voteSessionAddress + ':', error);
       throw error;
     }
   }
@@ -287,16 +290,29 @@ class VoteSessionViewService {
     try {
       const contractReader = this._getContractInstance(voteSessionAddress, false);
       const params = await blockchainProviderService.readContract(contractReader, 'getDecryptionParameters', []);
-      if (params) {
+      
+      // Log the raw return value
+      console.log('VoteSessionViewService: Raw params received:', params);
+
+      if (params && Array.isArray(params) && params.length >= 2) {
+         // Access by index based on raw log observation
         const formattedParams = {
-          alphas: params.alphas || params[0],
-          threshold: Number(params.threshold || params[1])
+          alphas: params[1], // Index 1 is alphas array
+          threshold: typeof params[0] !== 'undefined' ? Number(params[0]) : NaN // Index 0 is threshold
         };
+        
+        // Basic validation after index access
+        if (!Array.isArray(formattedParams.alphas) || isNaN(formattedParams.threshold)) {
+             console.error('VoteSessionViewService: Could not parse decryption parameters from raw data (index access):', params);
+             return null;
+        }
+
         console.log('VoteSessionViewService: Decryption parameters for session ' + voteSessionAddress + ':', formattedParams);
         return formattedParams;
+      } else {
+          console.error('VoteSessionViewService: Invalid raw data received for decryption parameters:', params);
+          return null;
       }
-      console.warn('VoteSessionViewService: No decryption parameters returned for session ' + voteSessionAddress);
-      return null;
     } catch (error) {
       console.error('VoteSessionViewService: Error getting decryption parameters for session ' + voteSessionAddress + ':', error);
       throw error;
@@ -305,20 +321,38 @@ class VoteSessionViewService {
 
   async getSubmittedValues(voteSessionAddress) {
     if (!voteSessionAddress || !ethers.isAddress(voteSessionAddress)) {
-      throw new Error('VoteSessionViewService: Invalid or missing VoteSession address for getSubmittedValues.');
+      console.error('VoteSessionViewService: Invalid voteSessionAddress provided for getSubmittedValues.');
+      return null;
     }
-    console.log('VoteSessionViewService: Getting submitted decryption values for session ' + voteSessionAddress + '...');
     try {
-      const contractReader = this._getContractInstance(voteSessionAddress, false);
-      const valuesData = await blockchainProviderService.readContract(contractReader, 'getSubmittedValues', []);
-      if (valuesData) {
-        const formattedValuesData = {
-          submitters: valuesData.submitters || valuesData[0] || [],
-          indexes: (valuesData.indexes || valuesData[1] || []).map(Number),
-          values: valuesData.values || valuesData[2] || []
+      // Request a signer-connected instance to satisfy the strict check in blockchainProviderService.readContract
+      // even though this is a read operation. This is a workaround for the provider.provider check.
+      const contractReader = await this._getContractInstance(voteSessionAddress, true); 
+      if (!contractReader) {
+        console.error(`VoteSessionViewService: Failed to get contract instance for ${voteSessionAddress} in getSubmittedValues.`);
+        return null;
+      }
+      // Ensure that blockchainProviderService has its signer set, so contractReader (if from signer) has a provider.
+      // This should be handled by test setup or general app flow.
+      const submittedData = await blockchainProviderService.readContract(contractReader, 'getSubmittedDecryptionValues', []);
+      
+      // Log the raw return value from ethers
+      console.log('VoteSessionViewService: Raw submittedData received:', submittedData);
+
+      // Helper to make sure we always hand back a real array
+      const ensureArray = (v) =>
+        Array.isArray(v)               ? v :
+        v && typeof v[Symbol.iterator] === 'function' ? Array.from(v) :
+        []; // Default to empty if not array or iterable
+
+      if (submittedData) {
+        const formattedSubmittedData = {
+          submitters: ensureArray(submittedData[0]), // Use positional access for tuple element
+          indexes:    ensureArray(submittedData[1]).map(Number), // Use positional access
+          values:     ensureArray(submittedData[2]), // Use positional access
         };
-        console.log('VoteSessionViewService: Submitted decryption values for session ' + voteSessionAddress + ':', formattedValuesData);
-        return formattedValuesData;
+        console.log('VoteSessionViewService: Submitted decryption values for session ' + voteSessionAddress + ':', formattedSubmittedData);
+        return formattedSubmittedData;
       }
       console.warn('VoteSessionViewService: No submitted decryption values returned (or threshold not met) for session ' + voteSessionAddress);
       return null;

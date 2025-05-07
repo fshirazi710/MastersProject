@@ -8,6 +8,8 @@ import { blockchainProviderService } from '../../services/blockchainProvider.js'
 import { registryParticipantService } from '../../services/contracts/registryParticipantService.js'; // For registering participants
 import { registryAdminService } from '../../services/contracts/registryAdminService.js'; // For calculating rewards
 import { voteSessionVotingService } from '../../services/contracts/voteSessionVotingService.js'; // For submitting shares
+import { voteSessionAdminService } from '../../services/contracts/voteSessionAdminService.js';
+import { voteSessionViewService } from '../../services/contracts/voteSessionViewService.js';
 
 // Utilities
 import { generateBLSKeyPair } from '../../services/utils/blsCryptoUtils.js';
@@ -32,11 +34,11 @@ async function deploySessionForFundTests(customParams = {}) {
         title: "Registry Fund Test Session",
         description: "Session for testing RegistryFundService",
         options: ["FundOpt A", "FundOpt B"],
-        startDate: now + ONE_HOUR, // e.g., 1 hour from now (registration opens)
+        startDate: now + ONE_HOUR, // e.g., 1 hour from now (registration opens/ends)
         endDate: now + ONE_HOUR + ONE_DAY, // e.g., 1 day after start (voting ends)
         sharesEndDate: now + ONE_HOUR + ONE_DAY + ONE_HOUR, // e.g., 1 hour after voting ends (share submission ends)
         requiredDeposit: ethers.parseEther("0.01"),
-        minShareThreshold: 1,
+        minShareThreshold: 2,
         metadata: "registry-fund-test"
     };
     const sessionParams = { ...defaultSessionParams, ...customParams };
@@ -46,16 +48,30 @@ async function deploySessionForFundTests(customParams = {}) {
         sessionId: deployedInfo.sessionId,
         registryAddress: deployedInfo.participantRegistryContract,
         voteSessionAddress: deployedInfo.voteSessionContract,
-        initialDepositRequired: sessionParams.requiredDeposit
+        initialDepositRequired: sessionParams.requiredDeposit,
+        startDate: sessionParams.startDate, // Return the calculated start date
+        endDate: sessionParams.endDate,     // Return the calculated end date
+        sharesEndDate: sessionParams.sharesEndDate // Return the calculated shares end date
     };
 }
 
 describe('RegistryFundService', () => {
-    let testContext; // To hold deployed session info
+    let originalTestContext; // To hold deployed session info from beforeAll
+    let snapshotId; // Store snapshot ID from beforeAll
+    let testContext; // Per-test context, reset from originalTestContext
+
+    beforeAll(async () => {
+        blockchainProviderService.setSigner(deployerSigner); // Set signer for deployment
+        originalTestContext = await deploySessionForFundTests();
+        snapshotId = await provider.send('evm_snapshot', []); // Snapshot the state after deployment
+    }, 60000); // Longer timeout for initial deployment
 
     beforeEach(async () => {
-        blockchainProviderService.setSigner(deployerSigner); // Default to deployer (owner)
-        testContext = await deploySessionForFundTests();
+        await provider.send('evm_revert', [snapshotId]); // Revert to the clean deployed state
+        // Take a new snapshot for isolating the current test (and update snapshotId for the next revert)
+        snapshotId = await provider.send('evm_snapshot', []); 
+        testContext = originalTestContext; // Reuse the deployed context addresses/IDs
+        blockchainProviderService.setSigner(deployerSigner); // Reset default signer for consistency
     });
 
     afterEach(() => {
@@ -89,13 +105,16 @@ describe('RegistryFundService', () => {
 
         it('should prevent a non-owner from adding reward funding', async () => {
             const { sessionId } = testContext;
-            const fundingAmount = ethers.parseEther("0.5");
-
+            const fundingAmount = ethers.parseEther('0.5');
+            // Setup: Switch to a non-owner signer
             blockchainProviderService.setSigner(userSigner); // Set to non-owner
             
             await expect(registryFundService.addRewardFunding(sessionId, fundingAmount))
                 .rejects
-                .toThrow(/Ownable: caller is not the owner/i); // Or similar contract error for non-owner
+                .toThrow(/OwnableUnauthorizedAccount/i); // Updated to OZ5 custom error
+
+            // Teardown: Switch back to owner/deployer for subsequent tests if necessary
+            blockchainProviderService.setSigner(deployerSigner);
         }, 60000);
 
         it('should accumulate total reward pool with multiple fundings', async () => {
@@ -157,90 +176,102 @@ describe('RegistryFundService', () => {
         let participantAddress;
 
         beforeEach(async () => {
-            // This beforeEach will be more involved:
-            // 1. Deploy session
+            // This beforeEach attempts the full success path setup for claimReward
+            
+            // 1. Deploy session (now returns dates)
             claimTestContext = await deploySessionForFundTests({ title: "Claim Reward Test Session" });
-            const { sessionId, voteSessionAddress, initialDepositRequired } = claimTestContext;
+            const { sessionId, voteSessionAddress, registryAddress, startDate, endDate, sharesEndDate } = claimTestContext;
             
             // 2. Register a holder
             const { pk } = generateBLSKeyPair();
             blockchainProviderService.setSigner(userSigner);
             participantAddress = await userSigner.getAddress();
             await registryParticipantService.registerAsHolder(sessionId, pk.toHex());
+            console.log(`DEBUG (claimReward beforeEach): Registered holder ${participantAddress}`);
 
             // 3. Admin adds reward funding
             blockchainProviderService.setSigner(deployerSigner);
-            const fundingAmount = ethers.parseEther("2.0"); // Sufficient funding
+            const fundingAmount = ethers.parseEther("2.0");
             await registryFundService.addRewardFunding(sessionId, fundingAmount);
+            console.log(`DEBUG (claimReward beforeEach): Added funding`);
 
-            // 4. Simulate Share Submission by the holder (userSigner)
-            // Advance time to Shares Collection Period
-            const latestBlockSetup = await provider.getBlock('latest');
-            const nowSetup = latestBlockSetup.timestamp;
-            // Assuming sessionParams in deploySessionForFundTests sets endDate relative to 'now' at its call time.
-            // We need to get the actual endDate of the deployed session to advance time correctly.
-            // For now, let's use a fixed offset from deploySessionForFundTests's definition, assuming it's robust enough.
-            // A better way would be for deploySessionForFundTests to return session timing details.
-            // Let's assume deploySessionForFundTests sets endDate = (its_now + ONE_HOUR + ONE_DAY)
-            // And current time is roughly its_now.
-            // This part needs careful timing based on how deploySessionForFundTests sets dates.
-            // Let's assume the session in claimTestContext is fresh.
-            // We need to find its actual endDate.
-            // This is tricky without returning exact dates from deploySessionForFundTests or reading from contract.
-            // For now, a simpler time advance:
-            // Suppose deploySessionForFundTests's 'now' was X. endDate is X + 1hr + 1day. sharesEndDate is X + 1hr + 1day + 1hr.
-            // current 'now' is Y. We need to advance to Y > (X + 1hr + 1day)
-            
-            // Let's get the session's actual end date (approximate for now, ideally from contract or returned by deploy helper)
-            // This requires session details. For simplicity, let's just advance a significant amount.
-            // A more robust setup would involve voteSessionViewService.getSessionDetails(voteSessionAddress)
-            // and using its endDate.
-            
-            const ONE_DAY_SECONDS = 24 * 3600;
-            const TWO_HOURS_SECONDS = 2 * 3600;
-            await provider.send('evm_increaseTime', [ONE_DAY_SECONDS + TWO_HOURS_SECONDS]); // Advance well past voting
-            await provider.send('evm_mine', []);
-            
+            // 4. Advance time to VOTING period & update status
+            let blockTimestamp = (await provider.getBlock('latest')).timestamp;
+            let timeToAdvance = startDate - blockTimestamp + 5; // 5s into voting period
+            if (timeToAdvance > 0) {
+                await provider.send('evm_increaseTime', [timeToAdvance]);
+                await provider.send('evm_mine', []);
+            }
+            await voteSessionAdminService.updateSessionStatus(voteSessionAddress); // Update VoteSession status
+            console.log(`DEBUG (claimReward beforeEach): Advanced to Voting period. Status: ${await voteSessionViewService.getStatus(voteSessionAddress)}`);
+
+            // 5. Cast a Vote (as the registered holder)
             blockchainProviderService.setSigner(userSigner);
-            const mockVoteIndex = 0;
+            const mockVoteDataBytes = ethers.toUtf8Bytes("mock_vote_claim_reward");
+            const voteG1r = ethers.randomBytes(32);
+            const voteG2r = ethers.randomBytes(64);
+            const voteAlphas = [ethers.randomBytes(32)]; 
+            const voteThreshold = 1n; // Assuming minShareThreshold was 1 from helper
+            await voteSessionVotingService.castEncryptedVote(voteSessionAddress, mockVoteDataBytes, voteG1r, voteG2r, voteAlphas, voteThreshold);
+            console.log(`DEBUG (claimReward beforeEach): Cast vote`);
+
+            // 6. Advance time to SHARES collection period & update status
+            blockTimestamp = (await provider.getBlock('latest')).timestamp;
+            timeToAdvance = endDate - blockTimestamp + 5; // 5s into shares period
+            if (timeToAdvance > 0) {
+                await provider.send('evm_increaseTime', [timeToAdvance]);
+            await provider.send('evm_mine', []);
+            }
+            await voteSessionAdminService.updateSessionStatus(voteSessionAddress); // Update VoteSession status
+            console.log(`DEBUG (claimReward beforeEach): Advanced to Shares period. Status: ${await voteSessionViewService.getStatus(voteSessionAddress)}`);
+            
+            // 7. Simulate Share Submission by the holder (userSigner)
+            blockchainProviderService.setSigner(userSigner);
+            const mockVoteIndex = 0; // Vote just cast is index 0
             const mockShareData = ethers.toUtf8Bytes("mock_share_data_for_claim_reward_test");
             const mockShareIndex = 0;
             try {
                 await voteSessionVotingService.submitDecryptionShare(voteSessionAddress, mockVoteIndex, mockShareData, mockShareIndex);
                 console.log(`DEBUG (claimReward beforeEach): Submitted shares for ${participantAddress}`);
-                // Verify hasSubmittedShares
                 const pInfo = await registryParticipantService.getParticipantInfo(sessionId, participantAddress);
                 if (!pInfo || !pInfo.hasSubmittedShares) {
                      console.error("DEBUG (claimReward beforeEach): CRITICAL - hasSubmittedShares is false after share submission call.");
                 }
             } catch (e) {
                 console.error("DEBUG (claimReward beforeEach): Failed to submit shares", e);
+                // Fail fast if share submission fails, as subsequent steps depend on it
+                throw new Error("Share submission failed during claimReward setup: " + e.message);
             }
 
-            // 5. Advance time past sharesEndDate for reward calculation
-            // Assuming sharesEndDate was approx now + 1hr + 1day + 1hr from its creation.
-            // We've already advanced by 1 day + 2hrs. So we should be past shares submission.
-            // Let's add a bit more to be sure.
-            await provider.send('evm_increaseTime', [TWO_HOURS_SECONDS]); // More advance
+            // 8. Advance time past sharesEndDate for reward calculation & update status
+            blockTimestamp = (await provider.getBlock('latest')).timestamp;
+            timeToAdvance = sharesEndDate - blockTimestamp + 5; // 5s past shares end
+            if (timeToAdvance > 0) {
+                await provider.send('evm_increaseTime', [timeToAdvance]);
             await provider.send('evm_mine', []);
+            }
+            await voteSessionAdminService.updateSessionStatus(voteSessionAddress); // IMPORTANT: Update status *before* calculating rewards
+            console.log(`DEBUG (claimReward beforeEach): Advanced past Shares period. Status: ${await voteSessionViewService.getStatus(voteSessionAddress)}`);
 
-            // 6. Admin calculates rewards
+            // 9. Admin calculates rewards (should now be in correct period)
             blockchainProviderService.setSigner(deployerSigner);
             try {
-                // TODO: Need to ensure VoteSession.isRewardCalculationPeriodActive is true.
-                // This might require calling voteSessionAdminService.updateSessionStatus(voteSessionAddress)
-                // or ensuring the VoteSession automatically transitions to a state where rewards can be calculated.
-                // For now, assume it's ready or calculateRewards handles it.
                 console.log(`DEBUG (claimReward beforeEach): Attempting to calculate rewards for session ${sessionId}`);
+                // Check if the period is active before calling (good practice)
+                const isCalcPeriod = await voteSessionViewService.isRewardCalculationPeriodActive(voteSessionAddress);
+                if (!isCalcPeriod) {
+                    throw new Error("Reward calculation period is unexpectedly not active in VoteSession.");
+                }
                 await registryAdminService.calculateRewards(sessionId);
                 console.log(`DEBUG (claimReward beforeEach): Calculated rewards for session ${sessionId}`);
             } catch (e) {
                 console.error(`DEBUG (claimReward beforeEach): Failed to calculate rewards for session ${sessionId}`, e);
+                 throw new Error("Reward calculation failed during claimReward setup: " + e.message);
             }
 
-            // 7. Set signer back to user for claim attempts in tests
+            // 10. Set signer back to user for claim attempts in tests
             blockchainProviderService.setSigner(userSigner);
-        }, 90000); // Increased timeout for this complex beforeEach
+        }, 120000); // Increased timeout further (e.g., 120s)
 
         it('should allow a participant to claim their reward after calculation and share submission', async () => {
             const { sessionId } = claimTestContext;
@@ -290,17 +321,106 @@ describe('RegistryFundService', () => {
             // First claim (should succeed if initialRewardsOwed > 0)
             await registryFundService.claimReward(sessionId);
             
-            // Attempt second claim
+            // 3. Attempt to claim reward again (should fail)
+            blockchainProviderService.setSigner(userSigner); // participant claims
             await expect(registryFundService.claimReward(sessionId))
                 .rejects
-                .toThrow(/Registry: Reward already claimed/i); // Or similar contract error
+                .toThrow(/Registry: No reward owed or calculation pending/i); // Updated error
         }, 70000);
 
-        // The following tests require more specific setup (e.g., skipping parts of the main beforeEach)
-        // They might be better in separate describe blocks or with more complex conditional logic in beforeEach.
-        it.todo('should prevent claiming reward if shares were not submitted');
+        it('should prevent claiming reward if shares were not submitted', async () => {
+            // Setup similar to the main beforeEach, but *skip* share submission
+            // 1. Deploy session
+            const noSharesContext = await deploySessionForFundTests({ title: "No Shares Claim Test" });
+            const { sessionId, voteSessionAddress, registryAddress, startDate, endDate, sharesEndDate } = noSharesContext;
+            
+            // 2. Register a holder
+            const { pk } = generateBLSKeyPair();
+            blockchainProviderService.setSigner(userSigner);
+            const noSharesParticipant = await userSigner.getAddress(); // Use the same userSigner for simplicity
+            await registryParticipantService.registerAsHolder(sessionId, pk.toHex());
+
+            // 3. Admin adds reward funding
+            blockchainProviderService.setSigner(deployerSigner);
+            const fundingAmount = ethers.parseEther("2.0");
+            await registryFundService.addRewardFunding(sessionId, fundingAmount);
+
+            // 4. Cast vote (needed for reward calc logic potentially)
+            let blockTimestamp = (await provider.getBlock('latest')).timestamp;
+            let timeToAdvance = startDate - blockTimestamp + 5;
+            if (timeToAdvance > 0) { await provider.send('evm_increaseTime', [timeToAdvance]); await provider.send('evm_mine', []); }
+            await voteSessionAdminService.updateSessionStatus(voteSessionAddress);
+            blockchainProviderService.setSigner(userSigner);
+            const mockVoteDataBytes = ethers.toUtf8Bytes("mock_vote_no_shares");
+            await voteSessionVotingService.castEncryptedVote(voteSessionAddress, mockVoteDataBytes, ethers.randomBytes(32), ethers.randomBytes(64), [], 1n);
+
+            // 5. Advance time past sharesEndDate & update status
+            blockTimestamp = (await provider.getBlock('latest')).timestamp;
+            timeToAdvance = sharesEndDate - blockTimestamp + 5; 
+            if (timeToAdvance > 0) { await provider.send('evm_increaseTime', [timeToAdvance]); await provider.send('evm_mine', []); }
+            await voteSessionAdminService.updateSessionStatus(voteSessionAddress);
+
+            // 6. Admin calculates rewards 
+            blockchainProviderService.setSigner(deployerSigner);
+            const isCalcPeriod = await voteSessionViewService.isRewardCalculationPeriodActive(voteSessionAddress);
+            if (!isCalcPeriod) throw new Error("Setup Error: Reward calculation period not active.");
+            await registryAdminService.calculateRewards(sessionId);
+
+            // 7. Attempt claim (should fail as shares were not submitted by this user)
+            blockchainProviderService.setSigner(userSigner); // participant claims
+            await expect(registryFundService.claimReward(sessionId))
+                .rejects
+                .toThrow(/Registry: No reward owed or calculation pending/i); // Or specific error for no shares
+        }, 90000);
         
-        it.todo('should prevent claiming reward if rewards have not been calculated by admin');
+        it('should prevent claiming reward if rewards have not been calculated by admin', async () => {
+             // Setup similar to the main beforeEach, but *skip* reward calculation
+            // 1. Deploy session
+            const noCalcContext = await deploySessionForFundTests({ title: "No Calc Claim Test" });
+            const { sessionId, voteSessionAddress, registryAddress, startDate, endDate, sharesEndDate } = noCalcContext;
+            
+            // 2. Register a holder
+            const { pk } = generateBLSKeyPair();
+            blockchainProviderService.setSigner(userSigner);
+            const noCalcParticipant = await userSigner.getAddress(); 
+            await registryParticipantService.registerAsHolder(sessionId, pk.toHex());
+
+            // 3. Admin adds reward funding
+            blockchainProviderService.setSigner(deployerSigner);
+            const fundingAmount = ethers.parseEther("2.0");
+            await registryFundService.addRewardFunding(sessionId, fundingAmount);
+
+            // 4. Cast vote 
+            let blockTimestamp = (await provider.getBlock('latest')).timestamp;
+            let timeToAdvance = startDate - blockTimestamp + 5;
+            if (timeToAdvance > 0) { await provider.send('evm_increaseTime', [timeToAdvance]); await provider.send('evm_mine', []); }
+            await voteSessionAdminService.updateSessionStatus(voteSessionAddress);
+            blockchainProviderService.setSigner(userSigner);
+            const mockVoteDataBytes = ethers.toUtf8Bytes("mock_vote_no_calc");
+            await voteSessionVotingService.castEncryptedVote(voteSessionAddress, mockVoteDataBytes, ethers.randomBytes(32), ethers.randomBytes(64), [], 1n);
+            
+            // 5. Advance time to Shares period & submit shares
+            blockTimestamp = (await provider.getBlock('latest')).timestamp;
+            timeToAdvance = endDate - blockTimestamp + 5; 
+            if (timeToAdvance > 0) { await provider.send('evm_increaseTime', [timeToAdvance]); await provider.send('evm_mine', []); }
+            await voteSessionAdminService.updateSessionStatus(voteSessionAddress);
+            blockchainProviderService.setSigner(userSigner);
+            await voteSessionVotingService.submitDecryptionShare(voteSessionAddress, 0, ethers.toUtf8Bytes("mock_share_no_calc"), 0);
+
+            // 6. Advance time past sharesEndDate & update status
+            blockTimestamp = (await provider.getBlock('latest')).timestamp;
+            timeToAdvance = sharesEndDate - blockTimestamp + 5; 
+            if (timeToAdvance > 0) { await provider.send('evm_increaseTime', [timeToAdvance]); await provider.send('evm_mine', []); }
+            await voteSessionAdminService.updateSessionStatus(voteSessionAddress);
+
+            // --- SKIP REWARD CALCULATION --- 
+
+            // 7. Attempt claim (should fail because rewardsOwed should be 0 or error if not calculated)
+            blockchainProviderService.setSigner(userSigner);
+            await expect(registryFundService.claimReward(sessionId))
+                .rejects
+                .toThrow(/Registry: No reward owed or calculation pending/i); // Contract requires amount > 0 or specific error for no calculation
+        }, 90000);
 
     });
 

@@ -61,8 +61,11 @@ describe('VoteSessionVotingService', () => {
     let testVotingContext;
     let participantAddress;
     let blsKeys;
+    let snapshotId; // Added for snapshot/revert
 
     beforeEach(async () => {
+        snapshotId = await provider.send('evm_snapshot', []); // Create a snapshot
+
         blockchainProviderService.setSigner(deployerSigner);
         // Deploy a new session for each test context. deploySessionForVotingTests sets a future start time.
         testVotingContext = await deploySessionForVotingTests();
@@ -121,7 +124,8 @@ describe('VoteSessionVotingService', () => {
 
     }, 30000); // Keep timeout
 
-    afterEach(() => {
+    afterEach(async () => { // Make afterEach async
+        await provider.send('evm_revert', [snapshotId]); // Revert to snapshot
         vi.restoreAllMocks();
     });
 
@@ -245,14 +249,17 @@ describe('VoteSessionVotingService', () => {
             }
             console.log(`DEBUG submitDecryptionShare: EVM time set to ${await provider.getBlock('latest').timestamp} for shares collection.`);
 
-            const share = ethers.toUtf8Bytes("mock_decryption_share");
-            const index = 0; // Placeholder index
+            const voteIndex  = 0; // index of the encrypted vote just cast
+            const shareIndex = 0; // first (or only) share for that vote
+            // Literal hex string for "mock_decryption_share"
+            const share      = "0x6d6f636b5f64656372797074696f6e5f7368617265"; 
 
             blockchainProviderService.setSigner(userSigner);
             const txReceipt = await voteSessionVotingService.submitDecryptionShare(
                 voteSessionAddress, 
-                index,
-                share
+                voteIndex,
+                share,
+                shareIndex
             );
 
             expect(txReceipt).toBeDefined();
@@ -266,8 +273,8 @@ describe('VoteSessionVotingService', () => {
             
             expect(shareSubmittedEvent).toBeDefined();
             expect(shareSubmittedEvent.args.sessionId).toBe(BigInt(sessionId));
-            expect(shareSubmittedEvent.args.submitter).toBe(participantAddress);
-            expect(shareSubmittedEvent.args.index).toBe(BigInt(index));
+            expect(shareSubmittedEvent.args.holder).toBe(participantAddress);
+            expect(shareSubmittedEvent.args.shareIndex).toBe(BigInt(shareIndex));
         }, 60000);
     });
 });

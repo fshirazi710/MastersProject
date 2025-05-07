@@ -85,7 +85,7 @@ The system uses a factory pattern with upgradeable contracts:
 *   `activeHolders` (private mapping(uint256 => EnumerableSet.AddressSet)): Set of registered holders per session.
 *   `voteSessionContracts` (public mapping(uint256 => address)): Maps session ID to the linked `VoteSession` contract address.
 *   `rewardsOwed` (public mapping(uint256 => mapping(address => uint256))): Calculated rewards owed to participants per session.
-*   `rewardClaimed` (public mapping(uint256 => mapping(address => bool))): Tracks if a participant has claimed their reward for a session.
+*   `hasClaimedReward` (public mapping(uint256 => mapping(address => bool))): Tracks if a participant has claimed their reward for a session.
 *   `depositClaimed` (public mapping(uint256 => mapping(address => bool))): Tracks if a holder has claimed their deposit for a session.
 
 ### Events
@@ -97,6 +97,7 @@ The system uses a factory pattern with upgradeable contracts:
 *   **`RewardsCalculated(uint256 indexed sessionId, address indexed calculator, uint256 totalRewardPoolCalculated)`** (Note: `totalRewardPoolCalculated` includes funding + forfeits)
 *   **`RewardClaimed(uint256 indexed sessionId, address indexed claimer, uint256 amount)`**
 *   **`DepositClaimed(uint256 indexed sessionId, address indexed claimer, uint256 amount)`**
+*   **`RewardFundingAdded(uint256 indexed sessionId, address indexed funder, uint256 amount)`** (New)
 *   **`Initialized(uint8 version)`** (Inherited from Initializable)
 *   **`OwnershipTransferred(address indexed previousOwner, address indexed newOwner)`** (Inherited from OwnableUpgradeable)
 
@@ -160,7 +161,7 @@ The system uses a factory pattern with upgradeable contracts:
     *   `totalRewardPool(sessionId)` returns `uint256`
     *   `voteSessionContracts(sessionId)` returns `address`
     *   `rewardsOwed(sessionId, participant)` returns `uint256`
-    *   `rewardClaimed(sessionId, participant)` returns `bool`
+    *   `hasClaimedReward(sessionId, participant)` returns `bool`
     *   `depositClaimed(sessionId, participant)` returns `bool`
 *   **`owner()` / `transferOwnership(...)`** (Inherited from OwnableUpgradeable)
 

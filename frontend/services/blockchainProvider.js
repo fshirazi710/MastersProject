@@ -421,7 +421,7 @@ class BlockchainProviderService {
           return ethers.parseEther(etherValue);
       } catch (e) {
           console.error("BlockchainProviderService: Invalid value for parseEther", etherValue, e);
-          return BigInt(0);
+          throw e;
       }
   }
 

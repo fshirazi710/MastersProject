@@ -25,8 +25,11 @@ export function encodeVoteToPoint(option) {
         const optionBytes = Buffer.from(option, 'utf8');
         // Use the standard hash-to-curve function for G1
         const point = bls12_381.G1.hashToCurve(optionBytes);
-        console.log(`[encodeVoteToPoint] Mapped "${option}" to G1 point: ${point.toHex()}`);
-        return point.toHex(); // noble-curves toHex() usually includes "0x"
+        const pointHex = point.toHex(); // noble-curves toHex() by default returns raw hex for points
+        console.log(`[encodeVoteToPoint] Mapped "${option}" to G1 point (raw hex): ${pointHex}`);
+        // Return raw hex as expected by noble-curves fromHex if it's a point.
+        // Other utils might expect "0x" for general hex, this one is specific to noble point hex.
+        return pointHex.startsWith('0x') ? pointHex.slice(2) : pointHex;
     } catch (e) {
         console.error(`Error hashing vote option "${option}" to curve:`, e);
         throw new Error(`Failed to encode vote option "${option}": ${e.message}`);
@@ -56,8 +59,9 @@ export function decodePointToVote(pointHex, possibleOptions) {
         // Pre-compute the encodings for efficiency if many points need decoding later,
         // but for a single call, direct comparison is fine.
         for (const option of possibleOptions) {
-            const encodedOptionHex = encodeVoteToPoint(option); // Reuse the encoding function
-            if (encodedOptionHex === pointHex) {
+            const encodedOptionRawHex = encodeVoteToPoint(option); // This returns raw hex
+            // Compare the input pointHex (which has "0x") with "0x" + raw encoded option
+            if (('0x' + encodedOptionRawHex) === pointHex) {
                 console.log(`[decodePointToVote] Decoded point ${pointHex} as: "${option}"`);
                 return option;
             }

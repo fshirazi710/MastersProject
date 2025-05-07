@@ -71,19 +71,31 @@ export function getKAndSecretShares(threshold, totalParticipants, fieldOrder = F
  * @throws {Error} If inputs are invalid or reconstruction fails.
  */
 export async function recomputeKey(participantShares, threshold, fieldOrder = FIELD_ORDER) {
-    console.log("[recomputeKey - Shamir's] Starting reconstruction...");
-    console.log("Input Participant Shares:", participantShares.map(s => ({index: s.index, value: s.value.toString() })));
-    console.log("Input Threshold:", threshold);
-
+    // Perform initial input validation first
     if (!Array.isArray(participantShares)) {
         throw new Error("Input participantShares must be an array.");
     }
     if (typeof threshold !== 'number' || threshold <= 0) {
         throw new Error("Threshold must be a positive number.");
     }
+    // This check might be slightly redundant if the next one catches it, but good for clarity
+    if (participantShares.length === 0 && threshold > 0) { // Can't reconstruct from no shares if threshold > 0
+        throw new Error("Input participantShares cannot be empty if threshold is positive.");
+    }
     if (participantShares.length < threshold) {
         throw new Error(`Insufficient shares provided (${participantShares.length}) to meet threshold (${threshold}) for reconstruction.`);
     }
+
+    // Now that basic array/threshold checks passed, we can log
+    console.log("[recomputeKey - Shamir's] Starting reconstruction...");
+    console.log("Input Participant Shares:", participantShares.map(s => {
+        // Basic check for share structure before logging to prevent further errors
+        if (typeof s !== 'object' || s === null || typeof s.index === 'undefined' || typeof s.value === 'undefined') {
+            return { index: 'invalid_share', value: 'invalid_share' }; // Avoid crashing map
+        }
+        return { index: s.index, value: String(s.value) }; // Convert value to string for logging
+    }));
+    console.log("Input Threshold:", threshold);
 
     // Ensure we use exactly 'threshold' distinct shares for reconstruction
     // Taking the first 'threshold' shares. Caller should ensure these are distinct and valid.

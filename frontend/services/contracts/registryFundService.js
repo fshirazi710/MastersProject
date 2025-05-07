@@ -36,6 +36,21 @@ class RegistryFundService {
     return registryAddress;
   }
 
+  /** return a ParticipantRegistry instance – signer if write:true, provider if read‑only */
+  _getContractInstance(address, write = false) {
+    return blockchainProviderService.getContractInstance(
+      address,
+      this.registryAbi,
+      write          // <- "true" means "I need a signer"
+    );
+  }
+
+  /** convenience wrapper used by every public method that needs the address */
+  async _getAddresses(sessionId) {
+    const registryAddress = await this._getRegistryAddress(sessionId);
+    return { registryAddress };
+  }
+
   /**
    * Adds reward funding to the registry contract for a specific session.
    * @async
@@ -50,7 +65,7 @@ class RegistryFundService {
     }
     try {
       const registryAddress = await this._getRegistryAddress(sessionId);
-      const registryContractSigner = blockchainProviderService.getContractInstance(registryAddress, this.registryAbi, true);
+      const registryContractSigner = this._getContractInstance(registryAddress, true);
       
       console.log('RegistryFundService: Adding reward funding (' + ethers.formatEther(amountInWei) + ' ETH) to session ' + sessionId + ' at registry ' + registryAddress + '...');
       const txReceipt = await blockchainProviderService.sendTransaction(
@@ -75,32 +90,19 @@ class RegistryFundService {
    * @throws {Error} If the query fails.
    */
   async getTotalRewardPool(sessionId) {
-    if (sessionId === undefined) {
-        throw new Error('RegistryFundService: Session ID is required to get total reward pool.');
+    if (!sessionId) {
+      throw new Error("RegistryFundService: Session ID is required to get total reward pool.");
     }
+    const { registryAddress } = await this._getAddresses(sessionId);
+    const registryContractReader = this._getContractInstance(registryAddress, false); // Read-only
+
     try {
-      const registryAddress = await this._getRegistryAddress(sessionId);
-      const registryContractReader = blockchainProviderService.getContractInstance(registryAddress, this.registryAbi, false);
-      
-      console.log('RegistryFundService: Fetching total reward pool for session ' + sessionId + ' from registry ' + registryAddress + '...');
-      // Assuming 'totalRewardPool(uint256 sessionId)' or 'totalRewardPool()' if global.
-      // Let's assume 'totalRewardPoolForSession(uint256 sessionId)' based on CONTRACT_API structure for other session-specific items.
-      // If totalRewardPool is global, then sessionId might not be needed for the contract call itself.
-      // Consulting CONTRACT_API.md for ParticipantRegistry: totalRewardPool() - it doesn't take sessionId.
-      // This implies totalRewardPool might be global for the registry, or the contract design needs clarification.
-      // For now, proceeding with the assumption that the service method should still accept sessionId for context,
-      // but the contract call might be totalRewardPool() if it's global across all sessions in that registry.
-      // However, if the registry is session-specific, then totalRewardPool() would be for that session.
-      
-      // Let's assume ParticipantRegistry is deployed PER SESSION (as implied by factoryService.getSessionAddresses)
-      // In that case, totalRewardPool() is inherently for that session's registry.
       const pool = await blockchainProviderService.readContract(
         registryContractReader,
-        'totalRewardPool', // As per CONTRACT_API.md
-        [] 
+        'totalRewardPool',
+        [sessionId] // <-- mapping getter needs the key
       );
-      console.log('RegistryFundService: Total reward pool for session ' + sessionId + ' (registry ' + registryAddress + '): ' + ethers.formatEther(pool) + ' ETH');
-      return pool;
+      return pool !== undefined ? pool.toString() : "0";
     } catch (error) {
       console.error('RegistryFundService: Error fetching total reward pool for session ' + sessionId + ':', error);
       throw error;
@@ -116,22 +118,19 @@ class RegistryFundService {
    * @throws {Error} If the query fails.
    */
   async getRewardsOwed(sessionId, participantAddress) {
-    if (sessionId === undefined || !participantAddress) {
-        throw new Error('RegistryFundService: Session ID and participant address are required to get rewards owed.');
+    if (!sessionId || !participantAddress) {
+      throw new Error("RegistryFundService: Session ID and participant address are required to get rewards owed.");
     }
+    const { registryAddress } = await this._getAddresses(sessionId);
+    const registryContractReader = this._getContractInstance(registryAddress, false); // Read-only
+
     try {
-      const registryAddress = await this._getRegistryAddress(sessionId);
-      const registryContractReader = blockchainProviderService.getContractInstance(registryAddress, this.registryAbi, false);
-      
-      console.log('RegistryFundService: Fetching rewards owed to ' + participantAddress + ' for session ' + sessionId + ' from registry ' + registryAddress + '...');
-      // From CONTRACT_API.md: rewardsOwed(address participant)
       const owed = await blockchainProviderService.readContract(
         registryContractReader,
         'rewardsOwed',
-        [participantAddress]
+        [sessionId, participantAddress] // <--
       );
-      console.log('RegistryFundService: Rewards owed to ' + participantAddress + ' for session ' + sessionId + ': ' + ethers.formatEther(owed) + ' ETH');
-      return owed;
+      return owed !== undefined ? owed.toString() : "0";
     } catch (error) {
       console.error('RegistryFundService: Error fetching rewards owed for session ' + sessionId + ', participant ' + participantAddress + ':', error);
       throw error;
@@ -152,7 +151,7 @@ class RegistryFundService {
     }
     try {
       const registryAddress = await this._getRegistryAddress(sessionId);
-      const registryContractSigner = blockchainProviderService.getContractInstance(registryAddress, this.registryAbi, true);
+      const registryContractSigner = this._getContractInstance(registryAddress, true);
       
       // const currentUserAddress = await blockchainProviderService.getSignerAddress(); // If needed for logs/checks
       console.log('RegistryFundService: Claiming reward for session ' + sessionId + ' from registry ' + registryAddress + '...');
@@ -179,24 +178,20 @@ class RegistryFundService {
    * @throws {Error} If the query fails.
    */
   async hasClaimedReward(sessionId, participantAddress) {
-    if (sessionId === undefined || !participantAddress) {
-        throw new Error('RegistryFundService: Session ID and participant address are required for hasClaimedReward.');
+    if (!sessionId || !participantAddress) {
+      throw new Error("RegistryFundService: Session ID and participant address are required to check if reward has been claimed.");
     }
+    const { registryAddress } = await this._getAddresses(sessionId);
+    const registryContractReader = this._getContractInstance(registryAddress, false); // Read-only instance
+
     try {
-      const registryAddress = await this._getRegistryAddress(sessionId);
-      const registryContractReader = blockchainProviderService.getContractInstance(registryAddress, this.registryAbi, false);
-      
-      console.log('RegistryFundService: Checking if ' + participantAddress + ' has claimed reward for session ' + sessionId + ' from ' + registryAddress + '...');
-      // From CONTRACT_API.md: hasClaimedReward(uint256 sessionId, address participant)
-      const claimed = await blockchainProviderService.readContract(
+      return await blockchainProviderService.readContract(
         registryContractReader,
-        'hasClaimedReward',
-        [sessionId, participantAddress]
+        'hasClaimedReward', // Correct contract method name
+        [sessionId, participantAddress] // Pass sessionId first for mapping
       );
-      console.log('RegistryFundService: ' + participantAddress + ' claimed reward status for session ' + sessionId + ': ' + claimed);
-      return claimed;
     } catch (error) {
-      console.error('RegistryFundService: Error checking hasClaimedReward for session ' + sessionId + ', participant ' + participantAddress + ':', error);
+      console.error(`RegistryFundService: Error in hasClaimedReward for session ${sessionId}, participant ${participantAddress}:`, error);
       throw error;
     }
   }

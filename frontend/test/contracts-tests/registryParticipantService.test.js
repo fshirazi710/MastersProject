@@ -414,6 +414,7 @@ describe('RegistryParticipantService', () => {
         let sessionStartDate, sessionEndDate, sessionSharesEndDate; // Store these for reference in tests
         let registryAddressForClaimTests; // Store registry address for direct calls
         let voteSessionAddressForClaimTests; // Store vote session address
+        let initialDepositForClaimTests; // To store the deposit amount for assertions
 
         beforeEach(async () => {
             const latestBlock = await provider.getBlock('latest');
@@ -435,6 +436,7 @@ describe('RegistryParticipantService', () => {
             registeredSessionId = claimTestContext.sessionId;
             registryAddressForClaimTests = claimTestContext.registryAddress; // Store for later use
             voteSessionAddressForClaimTests = claimTestContext.voteSessionAddress; // Capture vote session address
+            initialDepositForClaimTests = claimTestContext.initialDepositRequired; // Store for assertions
 
             // 2. Register the holder while registration is open
             const { pk } = generateBLSKeyPair();
@@ -443,24 +445,54 @@ describe('RegistryParticipantService', () => {
             participantAddress = await userSigner.getAddress();
             await registryParticipantService.registerAsHolder(registeredSessionId, blsPublicKeyHex);
 
-            // 3. Advance time to Shares Collection Period (after endDate)
-            const timeToAdvanceToSharesPeriod = sessionEndDate - initialNow + 60; // 60s buffer after voting ends
+            // 3. Advance time to VOTING period
+            const timeToAdvanceToVoting = sessionStartDate - initialNow + 10; // 10s buffer after start
+            if (timeToAdvanceToVoting > 0) {
+                await provider.send('evm_increaseTime', [timeToAdvanceToVoting]);
+                await provider.send('evm_mine', []);
+                console.log(`DEBUG DepositClaiming.beforeEach: Advanced time into voting period. New time: ${(await provider.getBlock('latest')).timestamp}`);
+            }
+
+            // 4. Cast a dummy vote so voteIndex 0 is valid
+            blockchainProviderService.setSigner(userSigner); // Ensure user is signer
+            try {
+                 await voteSessionVotingService.castEncryptedVote(
+                    voteSessionAddressForClaimTests,
+                    ethers.toUtf8Bytes("dummy_ciphertext"), // Placeholder ciphertext
+                    ethers.toUtf8Bytes("dummy_g1r"),      // Placeholder g1r
+                    ethers.toUtf8Bytes("dummy_g2r"),      // Placeholder g2r
+                    [],                              // Placeholder alpha
+                    BigInt(2)                       // Placeholder threshold matching deployment
+                );
+                 console.log(`DEBUG DepositClaiming.beforeEach: Dummy vote cast by ${participantAddress}`);
+            } catch (voteError) {
+                console.error(`DEBUG DepositClaiming.beforeEach: Failed to cast dummy vote`, voteError);
+                // If vote fails, share submission will also fail. Throw to halt setup.
+                throw new Error(`Setup failed: could not cast dummy vote. ${voteError.message}`);
+            }
+
+            // 5. Advance time to Shares Collection Period (after endDate)
+            const afterVoteNow = (await provider.getBlock("latest")).timestamp;
+            const timeToAdvanceToSharesPeriod = sessionEndDate - afterVoteNow + 10; // 10s buffer after voting ends
             if (timeToAdvanceToSharesPeriod > 0) {
                  await provider.send('evm_increaseTime', [timeToAdvanceToSharesPeriod]);
                  await provider.send('evm_mine', []);
+                 console.log(`DEBUG DepositClaiming.beforeEach: Advanced time into shares period. New time: ${(await provider.getBlock('latest')).timestamp}`);
             }
             
-            // 4. Simulate share submission for the participant by calling the appropriate service
+            // 6. Simulate share submission for the participant by calling the appropriate service
             blockchainProviderService.setSigner(userSigner); // userSigner is the holder
-            const mockVoteIndex = 0; // Assuming at least one vote could have been cast, or contract handles no votes
+            const mockVoteIndex = 0; // Vote index 0 should now be valid
             const mockShareData = ethers.toUtf8Bytes("mock_share_data_for_claim_test");
-            const mockShareIndex = 0; // Holder's share index
+            const mockShareIndex = 0; // Holder's share index (assuming they are first/only one registered in this specific context)
             try {
-                // First, cast a dummy vote if necessary for submitDecryptionShare to be valid contextually,
-                // or if submitDecryptionShare doesn't strictly depend on a prior vote by this user.
-                // VoteSession.submitDecryptionShare requires voteIndex. Let's assume a vote needs to exist.
-                // This part might need a placeholder castEncryptedVote if the contract links shares to specific votes.
-                // For now, let's assume submitDecryptionShare itself is the key to trigger recordShareSubmission.
+                // NOTE: We need the participant's index in the *registry* for the share submission *if*
+                // ParticipantRegistry.recordShareSubmission uses it directly. 
+                // However, VoteSession.submitDecryptionShare uses its own internal shareIndex mapping.
+                // Let's confirm voteSessionVotingService.submitDecryptionShare's signature and usage.
+                // It expects: (voteSessionAddress, voteIndex, share, shareIndex)
+                // Here, shareIndex refers to the index *within the share collection for that specific vote*, 
+                // often corresponding to the participant's order, but let's use 0 assuming it's the first share.
                 console.log(`DEBUG: Attempting to submit decryption share for ${participantAddress} in session ${registeredSessionId} via service...`);
                 await voteSessionVotingService.submitDecryptionShare(voteSessionAddressForClaimTests, mockVoteIndex, mockShareData, mockShareIndex);
                 console.log(`DEBUG: voteSessionVotingService.submitDecryptionShare called for ${participantAddress}`);
@@ -484,13 +516,41 @@ describe('RegistryParticipantService', () => {
             // Individual tests will advance past sessionSharesEndDate as needed FOR CLAIMING.
         }, 30000); // Increased timeout for this beforeEach hook
 
-        // TODO: The following tests are failing due to "Registry: Shares not submitted".
-        // This is because the beforeEach setup using voteSessionVotingService.submitDecryptionShare()
-        // is not correctly resulting in participant.hasSubmittedShares = true.
-        // This complex interaction will be more robustly tested and resolved when
-        // voteSessionVotingService.test.js is fully implemented. For now, marking as .todo.
+        it('should allow a registered holder to claim their deposit after shares collection period', async () => {
+            // 1. Advance time past shares collection end date
+            const latestBlock = await provider.getBlock('latest');
+            const currentTime = latestBlock.timestamp;
+            const timeToAdvancePastSharesEnd = sessionSharesEndDate - currentTime + 60; // 60s buffer
+            if (timeToAdvancePastSharesEnd > 0) {
+                await provider.send('evm_increaseTime', [timeToAdvancePastSharesEnd]);
+                await provider.send('evm_mine', []);
+                console.log(`DEBUG claimDeposit test: Advanced time past shares end. New time: ${(await provider.getBlock('latest')).timestamp}`);
+            } else {
+                 console.log(`DEBUG claimDeposit test: Time already past shares end. Current: ${currentTime}, Shares End: ${sessionSharesEndDate}`);
+            }
 
-        it.todo('should allow a registered holder to claim their deposit after shares collection period');
+            // 2. Set signer and call claimDeposit
+            blockchainProviderService.setSigner(userSigner);
+            const txReceipt = await registryParticipantService.claimDeposit(registeredSessionId);
+
+            // 3. Assert success
+            expect(txReceipt).toBeDefined();
+            expect(txReceipt.status).toBe(1);
+
+            // 4. Verify DepositClaimed event
+            const eventInterface = new ethers.Interface(ParticipantRegistryABI);
+            const depositClaimedEvent = txReceipt.logs
+                .map(log => { try { return eventInterface.parseLog(log); } catch (e) { return null; } })
+                .find(parsedLog => parsedLog && parsedLog.name === 'DepositClaimed');
+
+            expect(depositClaimedEvent).toBeDefined();
+            expect(depositClaimedEvent.args.sessionId).toBe(BigInt(registeredSessionId));
+            expect(depositClaimedEvent.args.claimer).toBe(participantAddress);
+            expect(depositClaimedEvent.args.amount).toBe(initialDepositForClaimTests);
+
+            const hasClaimed = await registryParticipantService.hasClaimedDeposit(registeredSessionId, participantAddress);
+            expect(hasClaimed).toBe(true);
+        }, 60000);
 
         it('should prevent claiming deposit if period is not open', async () => {
             blockchainProviderService.setSigner(userSigner);
@@ -501,7 +561,25 @@ describe('RegistryParticipantService', () => {
                             // e.g., /Deposit claim period not active/ or similar from service/contract
         }, 60000);
 
-        it.todo('should prevent claiming deposit twice by the same participant');
+        it('should prevent claiming deposit twice by the same participant', async () => {
+            // 1. Advance time past shares collection end date to enable claiming
+            const latestBlock = await provider.getBlock('latest');
+            const currentTime = latestBlock.timestamp;
+            const timeToAdvancePastSharesEnd = sessionSharesEndDate - currentTime + 60; // 60s buffer
+            if (timeToAdvancePastSharesEnd > 0) {
+                await provider.send('evm_increaseTime', [timeToAdvancePastSharesEnd]);
+                await provider.send('evm_mine', []);
+            }
+
+            // 2. Set signer and make the first successful claim
+            blockchainProviderService.setSigner(userSigner);
+            await registryParticipantService.claimDeposit(registeredSessionId);
+
+            // 3. Attempt to claim deposit again
+            await expect(registryParticipantService.claimDeposit(registeredSessionId))
+                .rejects
+                .toThrow(/Transaction failed: Registry: Deposit already claimed/i); // Or similar error indicating already claimed
+        }, 60000);
 
         it('hasClaimedDeposit should return false for a participant who has not claimed', async () => {
             blockchainProviderService.setSigner(userSigner);
@@ -509,6 +587,23 @@ describe('RegistryParticipantService', () => {
             expect(hasClaimed).toBe(false);
         });
 
-        it.todo('hasClaimedDeposit should return true for a participant who has claimed');
+        it('hasClaimedDeposit should return true for a participant who has claimed', async () => {
+            // 1. Advance time past shares collection end date to enable claiming
+            const latestBlock = await provider.getBlock('latest');
+            const currentTime = latestBlock.timestamp;
+            const timeToAdvancePastSharesEnd = sessionSharesEndDate - currentTime + 60; // 60s buffer
+            if (timeToAdvancePastSharesEnd > 0) {
+                await provider.send('evm_increaseTime', [timeToAdvancePastSharesEnd]);
+                await provider.send('evm_mine', []);
+            }
+
+            // 2. Set signer and claim deposit
+            blockchainProviderService.setSigner(userSigner);
+            await registryParticipantService.claimDeposit(registeredSessionId);
+
+            // 3. Check hasClaimedDeposit status
+            const hasClaimed = await registryParticipantService.hasClaimedDeposit(registeredSessionId, participantAddress);
+            expect(hasClaimed).toBe(true);
+        }, 60000);
     });
 }); 
