@@ -133,8 +133,8 @@ class VoteSessionVotingService {
     if (!voteSessionAddress || !ethers.isAddress(voteSessionAddress)) {
       throw new Error('VoteSessionVotingService: Invalid or missing VoteSession address for submitDecryptionValue.');
     }
-    if (!ethers.isBytes32(value)) { 
-      throw new Error('VoteSessionVotingService: Invalid decryption value provided. Expected a bytes32 hex string.');
+    if (!ethers.isHexString(value, 32)) {
+      throw new Error('Decryption value must be a 32-byte hex string.');
     }
     console.log('VoteSessionVotingService: Submitting decryption value for session ' + voteSessionAddress + '...');
     try {

@@ -61,8 +61,8 @@ class VoteSessionAdminService {
     if (!voteSessionAddress || !ethers.isAddress(voteSessionAddress)) {
       throw new Error('VoteSessionAdminService: Invalid or missing VoteSession address provided for setDecryptionParameters.');
     }
-    if (!Array.isArray(alphas) || alphas.some(alpha => !ethers.isBytes32(alpha))) {
-      throw new Error('VoteSessionAdminService: Invalid alphas provided. Expected an array of bytes32 strings.');
+    if (!Array.isArray(alphas) || alphas.some(alpha => !ethers.isHexString(alpha, 32))) {
+      throw new Error('VoteSessionAdminService: Invalid alphas provided. Expected an array of 32-byte hex strings.');
     }
     if (typeof threshold !== 'number' || threshold <= 0) {
       throw new Error('VoteSessionAdminService: Invalid threshold provided. Expected a positive number.');

@@ -221,8 +221,10 @@ Due to its large size (800+ lines), `voteSessionService.js` will be refactored i
     *   [X] **`getRequiredDeposit(voteSessionAddress)`** (Moved from `voteSessionService.js`)
     *   [X] **`isRewardCalculationPeriodActive(voteSessionAddress)`** (Moved from `voteSessionService.js`)
     *   [X] **`isDepositClaimPeriodActive(voteSessionAddress)`** (Moved from `voteSessionService.js`)
-    *   [X] **`getSessionDetails(voteSessionAddress)`** (Moved from `voteSessionService.js`)
-    *   [X] **`getSessionInfo(voteSessionAddress)`** (Moved from `voteSessionService.js`)
+    *   [~] **`getSessionDetails(voteSessionAddress)`** (Moved from `voteSessionService.js`)
+        *   (CONTRACT_API.md lists this, but VoteSession.sol source does NOT have getSessionDetails(). Service method needs refactor/removal. Test is currently commented out.)
+    *   [~] **`getSessionInfo(voteSessionAddress)`** (Moved from `voteSessionService.js`)
+        *   (CONTRACT_API.md signature is outdated. Service method calls contract.getSessionInfo() which returns 10-element tuple per VoteSession.sol source. Service parsing corrected.)
     *   [X] **`getStatus(voteSessionAddress)`** (Moved from `voteSessionService.js`)
     *   [X] **`getEncryptedVote(voteSessionAddress, voteIndex)`** (Moved from `voteSessionService.js`)
     *   [X] **`getNumberOfVotes(voteSessionAddress)`** (Moved from `voteSessionService.js`)
@@ -515,23 +517,25 @@ The following test files need to be created or refactored from existing ones. Ea
         *   [X] For period check tests (e.g., `should prevent casting vote if not voting period`), enhance error assertions to expect specific messages (e.g., `/Voting period is not active/i`) if the service throws them. (Done)
 *   [NR] **`voteSessionViewService.test.js`:**
     *   [ ] Setup: Deploy session, potentially perform actions like registration/voting to populate data.
-    *   [ ] Test all getter functions for accuracy:
-        *   [ ] `isRegistrationOpen`, `getRequiredDeposit`, `isRewardCalculationPeriodActive`, `isDepositClaimPeriodActive`.
-        *   [ ] `getSessionDetails`, `getSessionInfo`.
-        *   [ ] `getStatus`.
-        *   [ ] `getEncryptedVote`, `getNumberOfVotes`.
-        *   [ ] `getDecryptionShare`, `getNumberOfSubmittedShares`.
-        *   [ ] `getDecryptionParameters`, `getSubmittedValues`.
-        *   [ ] `getSessionOwner`, `getSessionId`, `getParticipantRegistryAddress`, `getTitle`, `getDescription`.
-    *   [ ] **Detailed Sub-Tasks & Review Notes:**
-        *   [ ] Refactor timestamp generation in `deploySessionForVoteViewTests` helper to use `provider.getBlock('latest').timestamp`.
-        *   [ ] Review and potentially remove redundant `blockchainProviderService.initialize(provider)` call in `beforeEach`.
-        *   [ ] Refine `isRegistrationOpen should be false after endDate` test:
-            *   Ensure time is advanced past `sessionParams.startDate` (which is `registrationEndDate`) not `sessionParams.endDate` to correctly test `isRegistrationOpen` becoming false.
-            *   Consider splitting period checks into distinct tests for each relevant function (`isVotingPeriodActive`, `isSharesCollectionPeriodActive`, etc.) with appropriate time advancements.
-        *   [ ] Correct `castEncryptedVote` parameters in the `beforeEach` for 'Vote and Share Data Getters': Ensure parameters passed align with what `voteSessionVotingService.castEncryptedVote` expects and can map to the contract signature (`_ciphertext`, `_g1r`, `_g2r`, `_alpha`, `_threshold`).
-        *   [ ] Correct `getEncryptedVote` assertion: Change `expect(vote).toBe(ethers.hexlify(mockVoteData))` to `expect(vote.ciphertext).toBe(ethers.hexlify(mockVoteData))` as the service method returns an object.
-        *   [ ] Implement placeholder `TODO` tests for `isRewardCalculationPeriodActive`, `isDepositClaimPeriodActive`, `getDecryptionShare`, `getNumberOfSubmittedShares`, `getDecryptionParameters`, and `getSubmittedValues` with appropriate time advancements and setup.
+    *   [X] Test all getter functions for accuracy:
+        *   [X] `isRegistrationOpen`, `getRequiredDeposit`, `isRewardCalculationPeriodActive`, `isDepositClaimPeriodActive`. (Tested)
+        *   [F] `getSessionDetails`, `getSessionInfo`. (CONTRACT_API.md outdated. `getSessionDetails` contract method missing, test commented out. `getSessionInfo` service/test updated based on actual contract tuple.)
+        *   [X] `getStatus`. (Tested)
+        *   [X] `getEncryptedVote`, `getNumberOfVotes`. (Tested)
+        *   [X] `getDecryptionShare`, `getNumberOfSubmittedShares`. (Tested)
+        *   [X] `getDecryptionParameters`, `getSubmittedValues`. (Tested)
+        *   [X] `getSessionOwner`, `getSessionId`, `getParticipantRegistryAddress`, `getTitle`, `getDescription`. (Tested)
+    *   [X] **Detailed Sub-Tasks & Review Notes:** (All addressed)
+        *   [X] Refactor timestamp generation in `deploySessionForVoteViewTests` helper to use `provider.getBlock('latest').timestamp`.
+        *   [X] Review and potentially remove redundant `blockchainProviderService.initialize(provider)` call in `beforeEach`.
+        *   [X] Refine `isRegistrationOpen should be false after endDate` test:
+            *   [X] Ensure time is advanced past `sessionParams.startDate` (which is `registrationEndDate`) not `sessionParams.endDate` to correctly test `isRegistrationOpen` becoming false. (Addressed)
+            *   [X] Consider splitting period checks into distinct tests for each relevant function (`isVotingPeriodActive`, `isSharesCollectionPeriodActive`, etc.) with appropriate time advancements. (Addressed by individual tests for period-dependent functions)
+        *   [X] Correct `castEncryptedVote` parameters in the `beforeEach` for 'Vote and Share Data Getters': Ensure parameters passed align with what `voteSessionVotingService.castEncryptedVote` expects and can map to the contract signature (`_ciphertext`, `_g1r`, `_g2r`, `_alpha`, `_threshold`). (Addressed)
+        *   [X] Correct `getEncryptedVote` assertion: Change `expect(vote).toBe(ethers.hexlify(mockVoteData))` to `expect(vote.ciphertext).toBe(ethers.hexlify(mockVoteData))` as the service method returns an object. (Addressed)
+        *   [X] Implement placeholder `TODO` tests for `isRewardCalculationPeriodActive`, `isDepositClaimPeriodActive`, `getDecryptionShare`, `getNumberOfSubmittedShares`, `getDecryptionParameters`, and `getSubmittedValues` with appropriate time advancements and setup. (All implemented)
+        *   [X] Verified: VoteSession.sol does NOT have a public getSessionDetails() method, despite CONTRACT_API.md listing it. Service method requires refactoring/removal.
+        *   [X] Corrected data parsing in voteSessionViewService.getSessionInfo based on the actual 10-element tuple returned by VoteSession.sol's getSessionInfo() method (CONTRACT_API.md signature was outdated). Test assertions updated accordingly.
 
 ### 6. Testing Utilities and E2E (`frontend/test/`)
 

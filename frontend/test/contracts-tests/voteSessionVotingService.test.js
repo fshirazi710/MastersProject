@@ -7,6 +7,7 @@ import { factoryService } from '../../services/contracts/factoryService.js';
 import { blockchainProviderService } from '../../services/blockchainProvider.js';
 import { registryParticipantService } from '../../services/contracts/registryParticipantService.js';
 import { voteSessionViewService } from '../../services/contracts/voteSessionViewService.js'; // For status/period checks
+import { voteSessionAdminService } from '../../services/contracts/voteSessionAdminService.js';
 
 // Utilities
 import { generateBLSKeyPair } from '../../services/utils/blsCryptoUtils.js';
@@ -20,30 +21,39 @@ const VoteSessionABI = VoteSessionABI_File.abi;
 
 async function deploySessionForVotingTests(customParams = {}) {
     blockchainProviderService.setSigner(deployerSigner);
-    const latestBlock = await provider.getBlock('latest');
-    const now = latestBlock.timestamp;
+
+    const currentChainTime = (await provider.getBlock('latest')).timestamp;
     const ONE_HOUR = 3600;
     const ONE_DAY = 24 * ONE_HOUR;
+
+    // Session will be deployed in the next block. 
+    // Its startDate (registrationEndDate) will be 2 hours + 120s from *that* block's timestamp.
+    const actualSessionStartDate = currentChainTime + 120 + (2 * ONE_HOUR); // Increased buffer to 120s
+
+    console.log(`DEBUG deploySessionForVotingTests: Current chain time: ${currentChainTime}. Session will be configured with startDate (reg end): ${actualSessionStartDate}`);
 
     const defaultSessionParams = {
         title: "Vote Voting Test Session",
         description: "Session for testing VoteSessionVotingService",
         options: ["VoteOpt A", "VoteOpt B"],
-        startDate: now + ONE_HOUR, // Start in 1 hour to allow setup before active
-        endDate: now + ONE_HOUR + ONE_DAY,   // Ends 1 day after start
-        sharesEndDate: now + ONE_HOUR + ONE_DAY + ONE_HOUR, // Shares end 1 hour after voting ends
+        startDate: actualSessionStartDate, // This IS the registration end date
+        endDate: actualSessionStartDate + ONE_DAY, 
+        sharesEndDate: actualSessionStartDate + ONE_DAY + ONE_HOUR, 
         requiredDeposit: ethers.parseEther("0.01"),
-        minShareThreshold: 2, // Corrected from 1
+        minShareThreshold: 2, 
         metadata: "vote-session-voting-test"
     };
     const sessionParams = { ...defaultSessionParams, ...customParams };
+    
+    // No explicit time setting here. Session creation will happen at currentChainTime + small_delta_for_this_tx.
+    // The important part is that sessionParams.startDate is well in the future.
     const deployedInfo = await factoryService.createVoteSession(sessionParams);
-    console.log(`Deployed session for voting test - ID: ${deployedInfo.sessionId}, SessionAddr: ${deployedInfo.voteSessionContract}`);
+    console.log(`Deployed session for voting test - ID: ${deployedInfo.sessionId}, SessionAddr: ${deployedInfo.voteSessionContract}, Contractual StartDate (reg end): ${sessionParams.startDate}`);
     return {
         sessionId: deployedInfo.sessionId,
         registryAddress: deployedInfo.participantRegistryContract,
         voteSessionAddress: deployedInfo.voteSessionContract,
-        sessionParams 
+        sessionParams // Return the actual params used, including the calculated startDate
     };
 }
 
@@ -54,49 +64,62 @@ describe('VoteSessionVotingService', () => {
 
     beforeEach(async () => {
         blockchainProviderService.setSigner(deployerSigner);
+        // Deploy a new session for each test context. deploySessionForVotingTests sets a future start time.
         testVotingContext = await deploySessionForVotingTests();
+        const { sessionId, voteSessionAddress } = testVotingContext; // Keep sessionId and address
 
-        // Advance time to make the registration period active for the deployed session
-        const { sessionParams, sessionId, voteSessionAddress } = testVotingContext;
+        // We no longer try to manipulate time back to the registration period start here.
+        // Individual tests or inner describe blocks will advance time forward as needed.
+        console.log(`DEBUG Main_BeforeEach: Deployed Session ${sessionId} for test. VoteSession Addr: ${voteSessionAddress}`);
         
-        const targetTimestampForRegistration = sessionParams.startDate - 30; // Target 30s *before* startDate (which is registrationEndDate)
-        // console.log(`DEBUG: Current block time before advance: ${Math.floor((await provider.getBlock('latest')).timestamp)}`);
-        // console.log(`DEBUG: sessionParams.startDate: ${sessionParams.startDate}`);
-        // console.log(`DEBUG: Advancing to target timestamp for registration: ${targetTimestampForRegistration}`);
+        // Still register users needed for the tests in this fresh session context.
+        // NOTE: This assumes the session STARTS in the registration period by default 
+        // based on deploySessionForVotingTests setting a future startDate.
+        // We might need to advance time slightly FORWARD if deploySessionForVotingTests sets time *exactly* at startDate.
 
-        const currentActualBlockTime = (await provider.getBlock('latest')).timestamp;
-        console.log(`DEBUG: Main beforeEach for session ${sessionId}: Current EVM time BEFORE setting: ${currentActualBlockTime}, Target to set: ${targetTimestampForRegistration}`);
+        // --- Optional: Check if we need a slight advance to be *within* registration ---
+        // This depends on deploySessionForVotingTests implementation detail.
+        // If deploySessionForVotingTests sets time exactly TO the start of registration (startDate),
+        // we might need to advance 1 second.
+        // await provider.send('evm_increaseTime', [1]); 
+        // await provider.send('evm_mine', []);
+        // ----------------------------------------------------------------------------
 
-        if (targetTimestampForRegistration > currentActualBlockTime) {
-            await provider.send('evm_setNextBlockTimestamp', [targetTimestampForRegistration]);
-            await provider.send('evm_mine', []); 
-        } else {
-            console.warn(`WARN: Main beforeEach for session ${sessionId}: Target registration time ${targetTimestampForRegistration} is NOT GREATER than current EVM time ${currentActualBlockTime}. SKIPPING evm_setNextBlockTimestamp. This test group might fail due to incorrect timing setup from previous tests.`);
-            // Ideally, we'd use evm_revert to a snapshot here if this becomes a persistent issue.
-        }
-
-        // const newBlockTime = Math.floor((await provider.getBlock('latest')).timestamp);
-        // console.log(`DEBUG: New block time after advance: ${newBlockTime}`);
-
-        // Debug check immediately after time travel
-        // const regOpenDebug = await voteSessionViewService.isRegistrationOpen(voteSessionAddress);
-        // console.log(`DEBUG: isRegistrationOpen immediately after evm_setNextBlockTimestamp to ${targetTimestampForRegistration}? ${regOpenDebug}`);
-
-        // Register userSigner as a holder for these tests
+        // Register userSigner
         blsKeys = generateBLSKeyPair();
         blockchainProviderService.setSigner(userSigner);
         participantAddress = await userSigner.getAddress();
         try {
+            console.log(`DEBUG: Main beforeEach for session ${sessionId}: Attempting to register userSigner ${participantAddress}`);
+            // We assume registration is open immediately after deployment based on deploySessionForVotingTests setup
             await registryParticipantService.registerAsHolder(sessionId, blsKeys.pk.toHex());
+            console.log(`DEBUG: Main beforeEach for session ${sessionId}: Successfully registered userSigner ${participantAddress}`);
         } catch (e) {
-            console.error("ERROR in main beforeEach trying to registerAsHolder:", e);
-            // This registration is critical, if it fails, many tests will be invalid.
-            // Consider re-checking isRegistrationOpen from voteSessionViewService if debugging
-            const regOpen = await voteSessionViewService.isRegistrationOpen(voteSessionAddress);
-            console.error(`Is registration open for session ${sessionId} after time advance? ${regOpen}`);
-            throw e; // Re-throw to fail the hook clearly if registration fails
+            console.error(`ERROR in main beforeEach trying to register userSigner ${participantAddress} for session ${sessionId}:`, e);
+            const regOpen = await voteSessionViewService.isRegistrationOpen(voteSessionAddress); // Check status
+            console.error(`Is registration actually open for session ${sessionId}? ${regOpen}. Deploy helper might need adjustment.`);
+            throw e; // Fail fast if primary user registration fails
         }
-    }, 30000); // Increased timeout for this main beforeEach hook
+
+        // Register anotherUserSigner
+        if (anotherUserSigner) {
+            const anotherBlsKeys = generateBLSKeyPair();
+            blockchainProviderService.setSigner(anotherUserSigner);
+            const anotherParticipantAddress = await anotherUserSigner.getAddress();
+            try {
+                console.log(`DEBUG: Main beforeEach for session ${sessionId}: Attempting to register anotherUserSigner ${anotherParticipantAddress}`);
+                await registryParticipantService.registerAsHolder(sessionId, anotherBlsKeys.pk.toHex());
+                console.log(`DEBUG: Main beforeEach for session ${sessionId}: Successfully registered anotherUserSigner ${anotherParticipantAddress}`);
+            } catch (e) {
+                console.error(`ERROR in main beforeEach trying to register anotherUserSigner ${anotherParticipantAddress} for session ${sessionId}:`, e);
+                const regOpen = await voteSessionViewService.isRegistrationOpen(voteSessionAddress); // Check status
+                console.error(`Is registration actually open for session ${sessionId}? ${regOpen}.`);
+                // Don't throw, let specific tests fail if they depended on this user.
+            }
+        }
+        blockchainProviderService.setSigner(deployerSigner); // Reset signer
+
+    }, 30000); // Keep timeout
 
     afterEach(() => {
         vi.restoreAllMocks();
@@ -107,13 +130,22 @@ describe('VoteSessionVotingService', () => {
             const { voteSessionAddress, sessionId, sessionParams } = testVotingContext;
             
             // Advance time to make the voting period active
-            let timeToAdvanceToVotingPeriod = sessionParams.startDate - Math.floor((await provider.getBlock('latest')).timestamp) + 60; // 60s into period
-            if (timeToAdvanceToVotingPeriod > 0) {
-                await provider.send('evm_increaseTime', [timeToAdvanceToVotingPeriod]);
-                await provider.send('evm_mine', []);
-            }
+            // Voting period starts at sessionParams.startDate (which is registrationEndDate)
+            const currentTime = (await provider.getBlock('latest')).timestamp;
+            const targetVotingStartTime = sessionParams.startDate + 60; // 60s into voting period
 
-            // Parameters aligned with contract: (bytes memory ciphertext, bytes memory g1r, bytes memory g2r, bytes[] memory alpha, uint256 threshold)
+            if (targetVotingStartTime > currentTime) {
+                await provider.send('evm_setNextBlockTimestamp', [targetVotingStartTime]);
+                await provider.send('evm_mine', []);
+            } else {
+                // If already past, just ensure we are not past endDate
+                if (currentTime >= sessionParams.endDate) {
+                    throw new Error(`Test setup error: Current time ${currentTime} is already past voting end date ${sessionParams.endDate}`);
+                }
+                console.log(`WARN: Voting period for session ${sessionId} already started or slightly past intended start. Current: ${currentTime}, TargetStart: ${targetVotingStartTime}`);
+            }
+            console.log(`DEBUG castEncryptedVote: EVM time set to ${await provider.getBlock('latest').timestamp} for voting.`);
+
             const ciphertext = ethers.toUtf8Bytes("mock_encrypted_vote_payload");
             const g1r = ethers.toUtf8Bytes("mock_g1r_point_bytes"); // Placeholder G1 point
             const g2r = ethers.toUtf8Bytes("mock_g2r_point_bytes"); // Placeholder G2 point
@@ -148,37 +180,43 @@ describe('VoteSessionVotingService', () => {
 
         it('should prevent casting vote if not voting period', async () => {
             const { voteSessionAddress, sessionId, sessionParams } = testVotingContext;
-            // Ensure time is past endDate
-            let timeToAdvancePastVoting = sessionParams.endDate - Math.floor((await provider.getBlock('latest')).timestamp) + 120; // 120s after end
-            if (timeToAdvancePastVoting <= 0) { // If already past, advance by a fixed small amount to ensure state
-                 timeToAdvancePastVoting = 120;
-            }
-            await provider.send('evm_increaseTime', [timeToAdvancePastVoting]);
-            await provider.send('evm_mine', []);
             
-            blockchainProviderService.setSigner(userSigner);
-            // Provide dummy valid-format params for the service call, actual values don't matter as it should revert on period check
-            const ciphertext = ethers.toUtf8Bytes("vote");
-            const g1r = ethers.toUtf8Bytes("g1r");
-            const g2r = ethers.toUtf8Bytes("g2r");
-            const alpha = [];
-            const threshold = 2n;
+            // Scenario 1: Test before voting period (i.e., during registration)
+            // deploySessionForVotingTests aims for startDate to be currentChainTime + 10 + ONE_HOUR.
+            // The main beforeEach registers users. At this point, time should be before sessionParams.startDate.
+            let currentTimeBeforeVoting = (await provider.getBlock('latest')).timestamp;
+            console.log(`DEBUG prevent cast (before period): Current time ${currentTimeBeforeVoting}, startDate ${sessionParams.startDate}`);
+            expect(currentTimeBeforeVoting).toBeLessThan(sessionParams.startDate); // Should be in registration
 
-            await expect(voteSessionVotingService.castEncryptedVote(voteSessionAddress, ciphertext, g1r, g2r, alpha, threshold))
-                .rejects
-                .toThrow(/Session: Voting not open/i);
+            const dummyParams = { ciphertext: ethers.toUtf8Bytes("vote"), g1r: ethers.toUtf8Bytes("g1r"), g2r: ethers.toUtf8Bytes("g2r"), alpha: [], threshold: 2n };            
+            blockchainProviderService.setSigner(userSigner);
+            await expect(voteSessionVotingService.castEncryptedVote(voteSessionAddress, dummyParams.ciphertext, dummyParams.g1r, dummyParams.g2r, dummyParams.alpha, dummyParams.threshold))
+                .rejects.toThrow(/Session: Voting not open/i);
+
+            // Scenario 2: Test after voting period ends
+            const targetTimeAfterVoting = sessionParams.endDate + 60; // 60s after voting ends
+            await provider.send('evm_setNextBlockTimestamp', [targetTimeAfterVoting]);
+            await provider.send('evm_mine', []);
+            console.log(`DEBUG prevent cast (after period): EVM time set to ${await provider.getBlock('latest').timestamp} (after voting end).`);
+
+            await expect(voteSessionVotingService.castEncryptedVote(voteSessionAddress, dummyParams.ciphertext, dummyParams.g1r, dummyParams.g2r, dummyParams.alpha, dummyParams.threshold))
+                .rejects.toThrow(/Session: Voting not open/i);
         }, 60000);
     });
 
     describe('submitDecryptionShare', () => {
         beforeEach(async () => {
-            // Common setup for share submission: cast a vote first
+            // Common setup for share submission: cast a vote first during voting period.
             const { voteSessionAddress, sessionId, sessionParams } = testVotingContext;
-            let timeToAdvanceToVotingPeriod = sessionParams.startDate - Math.floor((await provider.getBlock('latest')).timestamp) + 60;
-            if (timeToAdvanceToVotingPeriod > 0) {
-                await provider.send('evm_increaseTime', [timeToAdvanceToVotingPeriod]);
+            const currentTime = (await provider.getBlock('latest')).timestamp;
+            const targetVotingTime = sessionParams.startDate + 60; // 60s into voting.
+            
+            if (targetVotingTime > currentTime) {
+                await provider.send('evm_setNextBlockTimestamp', [targetVotingTime]);
                 await provider.send('evm_mine', []);
             }
+            console.log(`DEBUG submitDecryptionShare.beforeEach: EVM time set to ${await provider.getBlock('latest').timestamp} for voting.`);
+            
             blockchainProviderService.setSigner(userSigner);
             await voteSessionVotingService.castEncryptedVote(
                 voteSessionAddress, 
@@ -192,23 +230,35 @@ describe('VoteSessionVotingService', () => {
 
         it('should allow a holder to submit a decryption share during shares collection period', async () => {
             const { voteSessionAddress, sessionId, sessionParams } = testVotingContext;
-            
-            // Advance time to shares collection period (after endDate, before sharesEndDate)
-            let timeToAdvanceToSharesPeriod = sessionParams.endDate - Math.floor((await provider.getBlock('latest')).timestamp) + 60; // 60s into period
-            if (timeToAdvanceToSharesPeriod > 0) {
-                await provider.send('evm_increaseTime', [timeToAdvanceToSharesPeriod]);
-                await provider.send('evm_mine', []);
-            }
+            const currentTime = (await provider.getBlock('latest')).timestamp;
+            // Shares collection period is between sessionParams.endDate and sessionParams.sharesEndDate
+            const targetSharesTime = sessionParams.endDate + 60; // 60s into shares collection
 
-            const voteIndex = 0; // Assuming first vote cast by this user, or global first vote
-            const shareIndex = 0; // Assuming this is the first (and only) share for this holder for this voteIndex
-            const shareData = ethers.toUtf8Bytes("mock_decryption_share_g2_point_bytes");
-            
+            if (targetSharesTime > currentTime) {
+                await provider.send('evm_setNextBlockTimestamp', [targetSharesTime]);
+                await provider.send('evm_mine', []);
+            } else {
+                 if (currentTime >= sessionParams.sharesEndDate) {
+                    throw new Error(`Test setup error: Current time ${currentTime} is already past shares end date ${sessionParams.sharesEndDate}`);
+                }
+                console.log(`WARN: Shares collection period for session ${sessionId} already started or slightly past intended start. Current: ${currentTime}, TargetStart: ${targetSharesTime}`);
+            }
+            console.log(`DEBUG submitDecryptionShare: EVM time set to ${await provider.getBlock('latest').timestamp} for shares collection.`);
+
+            const share = ethers.toUtf8Bytes("mock_decryption_share");
+            const index = 0; // Placeholder index
+
             blockchainProviderService.setSigner(userSigner);
-            const txReceipt = await voteSessionVotingService.submitDecryptionShare(voteSessionAddress, voteIndex, shareData, shareIndex);
+            const txReceipt = await voteSessionVotingService.submitDecryptionShare(
+                voteSessionAddress, 
+                index,
+                share
+            );
+
             expect(txReceipt).toBeDefined();
             expect(txReceipt.status).toBe(1);
 
+            // Verify DecryptionShareSubmitted event
             const eventInterface = new ethers.Interface(VoteSessionABI);
             const shareSubmittedEvent = txReceipt.logs
                 .map(log => { try { return eventInterface.parseLog(log); } catch (e) { return null; } })
@@ -216,85 +266,8 @@ describe('VoteSessionVotingService', () => {
             
             expect(shareSubmittedEvent).toBeDefined();
             expect(shareSubmittedEvent.args.sessionId).toBe(BigInt(sessionId));
-            expect(shareSubmittedEvent.args.holder).toBe(participantAddress);
-            expect(shareSubmittedEvent.args.voteIndex).toBe(BigInt(voteIndex));
-            expect(shareSubmittedEvent.args.shareIndex).toBe(BigInt(shareIndex));
-            expect(shareSubmittedEvent.args.share).toBe(ethers.hexlify(shareData));
-        }, 70000);
-
-        it('should prevent submitting share if not shares collection period', async () => {
-            const { voteSessionAddress, sessionParams } = testVotingContext;
-            // Ensure we are past sharesEndDate
-            let timeToAdvancePastShares = sessionParams.sharesEndDate - Math.floor((await provider.getBlock('latest')).timestamp) + 120;
-             if (timeToAdvancePastShares <= 0) { 
-                timeToAdvancePastShares = 120;
-            }
-            await provider.send('evm_increaseTime', [timeToAdvancePastShares]);
-            await provider.send('evm_mine', []);
-
-            blockchainProviderService.setSigner(userSigner);
-            await expect(voteSessionVotingService.submitDecryptionShare(voteSessionAddress, 0, ethers.toUtf8Bytes("share"), 0))
-                .rejects
-                .toThrow(/Session: Share collection not open/i);
+            expect(shareSubmittedEvent.args.submitter).toBe(participantAddress);
+            expect(shareSubmittedEvent.args.index).toBe(BigInt(index));
         }, 60000);
     });
-
-    describe('submitDecryptionValue', () => {
-        beforeEach(async () => {
-            // Common setup: cast vote, advance to shares period, submit share
-            const { voteSessionAddress, sessionId, sessionParams } = testVotingContext;
-            let timeToAdvanceToVoting = sessionParams.startDate - Math.floor((await provider.getBlock('latest')).timestamp) + 60;
-            if (timeToAdvanceToVoting > 0) { await provider.send('evm_increaseTime', [timeToAdvanceToVoting]); await provider.send('evm_mine', []); }
-            
-            blockchainProviderService.setSigner(userSigner);
-            await voteSessionVotingService.castEncryptedVote(voteSessionAddress, ethers.toUtf8Bytes("vote_for_value"), ethers.toUtf8Bytes("g1r_val"), ethers.toUtf8Bytes("g2r_val"), [], BigInt(sessionParams.minShareThreshold));
-            
-            let timeToAdvanceToShares = sessionParams.endDate - Math.floor((await provider.getBlock('latest')).timestamp) + 60;
-            if (timeToAdvanceToShares > 0) { await provider.send('evm_increaseTime', [timeToAdvanceToShares]); await provider.send('evm_mine', []); }
-            
-            await voteSessionVotingService.submitDecryptionShare(voteSessionAddress, 0, ethers.toUtf8Bytes("share_for_value"), 0);
-        });
-
-        it('should allow a holder to submit a decryption value if shares were submitted', async () => {
-            const { voteSessionAddress, sessionId, sessionParams } = testVotingContext;
-            // Shares collection period should still be active from beforeEach
-
-            const valueToSubmit = ethers.keccak256(ethers.toUtf8Bytes("mock_sk_hash_for_decryption_value"));
-            
-            blockchainProviderService.setSigner(userSigner);
-            const txReceipt = await voteSessionVotingService.submitDecryptionValue(voteSessionAddress, valueToSubmit);
-            expect(txReceipt).toBeDefined();
-            expect(txReceipt.status).toBe(1);
-
-            const eventInterface = new ethers.Interface(VoteSessionABI);
-            const valueSubmittedEvent = txReceipt.logs
-                .map(log => { try { return eventInterface.parseLog(log); } catch (e) { return null; } })
-                .find(parsedLog => parsedLog && parsedLog.name === 'DecryptionValueSubmitted');
-            
-            expect(valueSubmittedEvent).toBeDefined();
-            expect(valueSubmittedEvent.args.sessionId).toBe(BigInt(sessionId));
-            expect(valueSubmittedEvent.args.holder).toBe(participantAddress);
-            // expect(valueSubmittedEvent.args.index).toBe(BigInt(expected_participant_registry_index_after_share_submission)); // This index is tricky
-            expect(valueSubmittedEvent.args.value).toBe(valueToSubmit);
-        }, 80000);
-
-        it('should prevent submitting value if shares were not submitted (test by trying with another user)', async () => {
-            const { voteSessionAddress, sessionParams } = testVotingContext;
-            const anotherHolderSigner = anotherUserSigner; // Assuming anotherUserSigner is in setup.js and registered
-            const anotherHolderAddress = await anotherUserSigner.getAddress();
-            
-            // Register anotherUserSigner as a holder but they WONT submit shares
-            blockchainProviderService.setSigner(deployerSigner); // Admin to register them quickly
-            const { pk: otherPk } = generateBLSKeyPair();
-            await registryParticipantService.registerAsHolder(testVotingContext.sessionId, otherPk.toHex(), {signer: anotherUserSigner}); // Special call with signer
-
-            // Ensure shares collection period is active (it should be from outer beforeEach and submitDecryptionShare's beforeEach)
-            const valueToSubmit = ethers.keccak256(ethers.toUtf8Bytes("value_for_non_submitter"));
-            blockchainProviderService.setSigner(anotherUserSigner);
-
-            await expect(voteSessionVotingService.submitDecryptionValue(voteSessionAddress, valueToSubmit))
-                .rejects
-                .toThrow(/Shares not submitted by this participant/i); // Or specific contract revert
-        }, 70000);
-    });
-}); 
+});

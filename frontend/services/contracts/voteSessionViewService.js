@@ -78,19 +78,20 @@ class VoteSessionViewService {
       const contractReader = this._getContractInstance(voteSessionAddress, false);
       const info = await blockchainProviderService.readContract(contractReader, 'getSessionInfo', []);
       if (info) {
+        // Contract returns: (title, description, startDate, endDate, sharesCollectionEndDate, options, metadata, requiredDeposit, minShareThreshold, currentStatus)
+        // Indices:           0       1            2          3        4                        5        6          7                8                    9
         const formattedInfo = {
-          id: (info.id || info[0])?.toString(),
-          status: this._SessionStatusEnum[Number(info.status || info[1])] || 'Unknown',
-          title: info.title || info[2],
-          description: info.description || info[3],
-          startDate: Number(info.startDate || info[4]),
-          endDate: Number(info.endDate || info[5]),
-          sharesEndDate: Number(info.sharesEndDate || info[6]),
-          options: info.options || info[7] || [],
-          metadata: info.metadata || info[8],
-          deposit: blockchainProviderService.formatEther(info.deposit || info[9]),
-          minShareThreshold: Number(info.minShareThreshold || info[10]),
-          participantRegistry: info.participantRegistry || info[11]
+          title: info.title || info[0],
+          description: info.description || info[1],
+          startDate: Number(info.startDate || info[2]),
+          endDate: Number(info.endDate || info[3]),
+          sharesEndDate: Number(info.sharesCollectionEndDate || info.sharesEndDate || info[4]), // contract uses sharesCollectionEndDate
+          options: info.options || info[5] || [],
+          metadata: info.metadata || info[6],
+          requiredDeposit: blockchainProviderService.formatEther(info.requiredDeposit || info.deposit || info[7]), // contract uses requiredDeposit
+          minShareThreshold: Number(info.minShareThreshold || info[8]),
+          status: this._SessionStatusEnum[Number(info.currentStatus || info.status || info[9])] || 'Unknown' // contract uses currentStatus
+          // sessionId (formerly id) is not part of this specific contract tuple, should be fetched by getSessionId() if needed separately.
         };
         console.log('VoteSessionViewService: Comprehensive session info for ' + voteSessionAddress + ':', formattedInfo);
         return formattedInfo;

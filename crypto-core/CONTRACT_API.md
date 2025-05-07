@@ -283,8 +283,7 @@ The system uses a factory pattern with upgradeable contracts:
     *   `isRewardCalculationPeriodActive() external view returns (bool)`: Checks if `block.timestamp >= sharesCollectionEndDate`.
     *   `isDepositClaimPeriodActive() external view returns (bool)`: Checks if `block.timestamp >= sharesCollectionEndDate`.
 *   **View Functions**
-    *   `getSessionDetails() external view returns (uint256 id, SessionStatus status, string memory _title, uint256 _startDate, uint256 _endDate, uint256 _sharesEndDate, uint256 deposit, uint256 threshold)`: Returns key session details.
-    *   `getSessionInfo() public view returns (uint256 id, IParticipantRegistry registryAddr, string memory _title, string memory _desc, uint256 _regEndDate, uint256 _startDate, uint256 _endDate, uint256 _sharesEndDate, string[] memory _options, string memory _meta, uint256 _reqDeposit, uint256 _minThreshold, SessionStatus _status)`: Returns detailed session parameters.
+    *   `getSessionInfo() external view returns (string memory _title, string memory _description, uint256 _startDate, uint256 _endDate, uint256 _sharesEndDate, string[] memory _options, string memory _meta, uint256 _reqDeposit, uint256 _minThreshold, SessionStatus _status)`: Returns core session parameters. (Note: Signature updated to match VoteSession.sol source. Returns 10 values: title, description, startDate, endDate, sharesCollectionEndDate, options, metadata, requiredDeposit, minShareThreshold, currentStatus)
     *   `getStatus() public view returns (SessionStatus)`: Returns the current calculated status based on time (calls internal logic similar to `updateSessionStatus` but doesn't change state).
     *   `getEncryptedVote(uint256 voteIndex) external view returns (EncryptedVote memory)`: Returns data for a specific vote.
     *   `getNumberOfVotes() external view returns (uint256)`: Returns the count of cast votes.

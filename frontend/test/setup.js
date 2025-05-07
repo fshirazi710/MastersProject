@@ -17,6 +17,7 @@ const DEPLOYED_FACTORY_ADDRESS = '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0';
 let provider;
 let deployerSigner; // The account that deployed the factory
 let userSigner; // Another account for testing user actions
+let anotherUserSigner; // A third account for specific test scenarios
 
 beforeAll(async () => {
   try {
@@ -26,6 +27,7 @@ beforeAll(async () => {
     // Get signers provided by Hardhat node
     deployerSigner = await provider.getSigner(0); 
     userSigner = await provider.getSigner(1); // Use account 1 as a test user
+    anotherUserSigner = await provider.getSigner(2); // Use account 2 as another test user
 
     // Remove console logs for setup
     // console.log(`Test Setup: Connected to Hardhat node at ${HARDHAT_RPC_URL}`);
@@ -54,7 +56,7 @@ beforeAll(async () => {
 // async function deploySessionFixture(sessionParams) { ... }
 
 // Export essentials
-export { provider, deployerSigner, userSigner, DEPLOYED_FACTORY_ADDRESS };
+export { provider, deployerSigner, userSigner, anotherUserSigner, DEPLOYED_FACTORY_ADDRESS };
 
 afterAll(() => {
   // console.log("Test Teardown: Completed."); // Remove log
