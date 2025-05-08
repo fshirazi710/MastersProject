@@ -52,6 +52,20 @@ export function lagrangeBasis(indexes, x) {
     if (!Array.isArray(indexes) || indexes.length === 0) {
         throw new Error("Indexes must be a non-empty array of BigInts.");
     }
+    if (new Set(indexes).size !== indexes.length) {
+        // Find a duplicate to include in the error message if desired, though a generic message is also fine.
+        // This is a simple way to find one:
+        const counts = {};
+        let duplicateVal = null;
+        for (const val of indexes) {
+            counts[val] = (counts[val] || 0) + 1;
+            if (counts[val] > 1) {
+                duplicateVal = val;
+                break;
+            }
+        }
+        throw new Error(`Duplicate index ${duplicateVal !== null ? duplicateVal : ''} encountered in Lagrange basis calculation.`);
+    }
     if (typeof x !== 'bigint') {
          throw new Error("Evaluation point x must be a BigInt.");
     }

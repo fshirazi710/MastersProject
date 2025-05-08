@@ -44,12 +44,13 @@ contract VoteSession is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrad
 
     // --- Enums ---
     enum SessionStatus {
-        Created,            // Initial state, registration NOT YET open
-        RegistrationOpen,   // Registration is active (before startDate)
-        VotingOpen,         // Voting is active (startDate to endDate)
-        SharesCollectionOpen, // Decryption shares can be submitted (endDate to sharesCollectionEndDate)
-        Completed,          // Voting and share collection finished
-        Aborted             // Session cancelled (optional)
+        Created,            // 0 Initial state, registration NOT YET open
+        RegistrationOpen,   // 1 Registration is active (before startDate)
+        VotingOpen,         // 2 Voting is active (startDate to endDate)
+        SharesCollectionOpen, // 3 Decryption shares can be submitted (endDate to sharesCollectionEndDate)
+        DecryptionOpen,     // 4 NEW: Shares collection ended, decryption values/proofs can be submitted/verified
+        Completed,          // 5 Voting, share collection, decryption finished
+        Aborted             // 6 Session cancelled (optional)
     }
 
     // --- Structs ---
@@ -228,7 +229,8 @@ contract VoteSession is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrad
              } else if (block.timestamp < sharesCollectionEndDate) {
                  currentStatus = SessionStatus.SharesCollectionOpen;
              } else {
-                 currentStatus = SessionStatus.Completed;
+                 // Transition to DecryptionOpen instead of Completed
+                 currentStatus = SessionStatus.DecryptionOpen;
              }
         } else if (currentStatus == SessionStatus.RegistrationOpen && block.timestamp >= startDate) {
             // --- BEGIN DYNAMIC THRESHOLD FINALIZATION LOGIC ---
@@ -277,18 +279,22 @@ contract VoteSession is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrad
             } else if (block.timestamp < sharesCollectionEndDate) {
                 currentStatus = SessionStatus.SharesCollectionOpen;
             } else {
-                 currentStatus = SessionStatus.Completed;
+                 // Should go to DecryptionOpen
+                 currentStatus = SessionStatus.DecryptionOpen;
             }
         } else if (currentStatus == SessionStatus.VotingOpen && block.timestamp >= endDate) {
             if (block.timestamp < sharesCollectionEndDate) {
                  currentStatus = SessionStatus.SharesCollectionOpen;
             } else {
-                currentStatus = SessionStatus.Completed;
+                // Should go to DecryptionOpen
+                currentStatus = SessionStatus.DecryptionOpen;
             }
         } else if (currentStatus == SessionStatus.SharesCollectionOpen && block.timestamp >= sharesCollectionEndDate) {
-            currentStatus = SessionStatus.Completed;
-             // Potentially trigger final actions here if needed
+            // Should go to DecryptionOpen
+            currentStatus = SessionStatus.DecryptionOpen;
         }
+        // Note: No automatic transition *from* DecryptionOpen or Completed/Aborted here.
+        // Transition to Completed happens only via triggerRewardCalculation.
 
         if (currentStatus != initialStatus) {
             emit SessionStatusChanged(sessionId, currentStatus);
@@ -432,15 +438,25 @@ contract VoteSession is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrad
      * Best called after voting ends and before claims start.
      */
     function triggerRewardCalculation() external onlyOwner nonReentrant {
-         updateSessionStatus(); // Ensure status reflects reality
-         // Require shares collection to be over
-         require(block.timestamp >= sharesCollectionEndDate, "Session: Shares collection not finished");
-         require(!rewardsCalculatedTriggered, "Session: Rewards already triggered");
+        // We now require that updateSessionStatus() must be called first to set status to DecryptionOpen (4)
+        // And then triggerRewardCalculation will transition it to Completed (5)
+        // Optional: Could call updateSessionStatus() here, but better to require caller coordination.
+        
+        // First guard against duplicate calls ...
+        require(!rewardsCalculatedTriggered, "Session: Rewards already calculated");
+        // ... then be sure we are in the right phase
+        require(currentStatus == SessionStatus.DecryptionOpen, "Session: Not DecryptionOpen");
 
-         participantRegistry.calculateRewards(sessionId);
-         rewardsCalculatedTriggered = true; // Mark that this contract triggered it
+        rewardsCalculatedTriggered = true;
+        // Call the registry to calculate rewards
+        participantRegistry.calculateRewards(sessionId);
 
-         emit RewardsCalculationTriggered(sessionId, msg.sender);
+        // Explicitly set status to Completed and emit event
+        // The require above ensures we are coming from DecryptionOpen
+        currentStatus = SessionStatus.Completed;
+        emit SessionStatusChanged(sessionId, currentStatus); 
+
+        emit RewardsCalculationTriggered(sessionId, msg.sender);
     }
 
     // --- View Functions for Data Retrieval ---

@@ -54,8 +54,9 @@ export function computePkRValue(pubkey, r) {
     if (typeof pubkey !== 'string') throw new Error("Public key must be a hex string.");
     if (typeof r !== 'bigint') throw new Error("Scalar r must be a BigInt.");
     try {
-        // fromHex handles optional '0x' prefix
-        const pkPoint = bls12_381.G1.ProjectivePoint.fromHex(pubkey); 
+        const rawPubKeyHex = pubkey.startsWith('0x') ? pubkey.slice(2) : pubkey;
+        // fromHex expects raw hex; '0x' prefix must be removed.
+        const pkPoint = bls12_381.G1.ProjectivePoint.fromHex(rawPubKeyHex); 
         return pkPoint.multiply(r);
     } catch (e) {
         console.error(`Failed to compute Pk*r for pubkey ${pubkey}:`, e);

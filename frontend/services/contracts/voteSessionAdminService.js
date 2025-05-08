@@ -64,8 +64,8 @@ class VoteSessionAdminService {
     if (!Array.isArray(alphas) || alphas.some(alpha => !ethers.isHexString(alpha, 32))) {
       throw new Error('VoteSessionAdminService: Invalid alphas provided. Expected an array of 32-byte hex strings.');
     }
-    if (typeof threshold !== 'number' || threshold <= 0) {
-      throw new Error('VoteSessionAdminService: Invalid threshold provided. Expected a positive number.');
+    if (!((typeof threshold === 'number' && threshold > 0) || (typeof threshold === 'bigint' && threshold > 0n))) {
+      throw new Error('VoteSessionAdminService: Invalid threshold provided. Expected a positive number or BigInt.');
     }
     console.log('VoteSessionAdminService: Setting decryption parameters for session ' + voteSessionAddress + ' with threshold ' + threshold + ' and ' + alphas.length + ' alphas.');
     try {

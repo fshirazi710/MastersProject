@@ -70,7 +70,7 @@ class RegistryAdminService {
       const txReceipt = await blockchainProviderService.sendTransaction(
         registryContractSigner,
         'setVoteSessionContract',
-        [voteSessionContractAddress] 
+        [sessionId, voteSessionContractAddress]
       );
       console.log('RegistryAdminService: Set VoteSession contract successful for session ' + sessionId + '. Tx: ' + txReceipt.hash);
       return txReceipt;

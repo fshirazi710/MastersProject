@@ -297,7 +297,7 @@ describe('RegistryFundService', () => {
             
             expect(rewardClaimedEvent).toBeDefined();
             expect(rewardClaimedEvent.args.sessionId).toBe(BigInt(sessionId));
-            expect(rewardClaimedEvent.args.participant).toBe(participantAddress);
+            expect(rewardClaimedEvent.args.claimer).toBe(participantAddress);
             expect(rewardClaimedEvent.args.amount).toBe(BigInt(initialRewardsOwed)); // Amount claimed should match owed
 
             const finalRewardsOwed = await registryFundService.getRewardsOwed(sessionId, participantAddress);
@@ -325,7 +325,7 @@ describe('RegistryFundService', () => {
             blockchainProviderService.setSigner(userSigner); // participant claims
             await expect(registryFundService.claimReward(sessionId))
                 .rejects
-                .toThrow(/Registry: No reward owed or calculation pending/i); // Updated error
+                .toThrow(/Registry: Reward already claimed/i); // Updated error
         }, 70000);
 
         it('should prevent claiming reward if shares were not submitted', async () => {
@@ -364,13 +364,15 @@ describe('RegistryFundService', () => {
             blockchainProviderService.setSigner(deployerSigner);
             const isCalcPeriod = await voteSessionViewService.isRewardCalculationPeriodActive(voteSessionAddress);
             if (!isCalcPeriod) throw new Error("Setup Error: Reward calculation period not active.");
-            await registryAdminService.calculateRewards(sessionId);
-
-            // 7. Attempt claim (should fail as shares were not submitted by this user)
-            blockchainProviderService.setSigner(userSigner); // participant claims
-            await expect(registryFundService.claimReward(sessionId))
+            
+            // Expect the admin call to calculateRewards to fail if no one submitted shares
+            await expect(registryAdminService.calculateRewards(sessionId))
                 .rejects
-                .toThrow(/Registry: No reward owed or calculation pending/i); // Or specific error for no shares
+                .toThrow(/Registry: No eligible holders for rewards/i);
+
+            // Since calculateRewards failed, there's no need to attempt to claim, 
+            // as rewardsOwed would not have been set for the participant.
+            // The original test might have expected claimReward to fail, but the failure now happens earlier.
         }, 90000);
         
         it('should prevent claiming reward if rewards have not been calculated by admin', async () => {

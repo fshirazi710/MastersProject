@@ -180,7 +180,7 @@ The system uses a factory pattern with upgradeable contracts:
 
 ### Enums (Internal)
 
-*   `SessionStatus`: Defines the different lifecycle states (`Created`, `RegistrationOpen`, `VotingOpen`, `SharesCollectionOpen`, `Completed`, `Aborted`).
+*   `SessionStatus`: Defines the different lifecycle states (`Created`, `RegistrationOpen`, `VotingOpen`, `SharesCollectionOpen`, `DecryptionOpen`, `Completed`, `Aborted`).
 
 ### State Variables
 
@@ -245,7 +245,7 @@ The system uses a factory pattern with upgradeable contracts:
     *   **Requirements:** `onlyOwner`. Can only be called once. Parameters must be valid (>0).
 *   **`updateSessionStatus()`**
     *   `updateSessionStatus() public`
-    *   Advances the `currentStatus` based on `block.timestamp` and the configured session dates (`startDate`, `endDate`, `sharesCollectionEndDate`). Callable by anyone. Should be called before status-dependent actions.
+    *   Advances the `currentStatus` based on `block.timestamp` and the configured session dates (`startDate`, `endDate`, `sharesCollectionEndDate`). Callable by anyone. Should be called before status-dependent actions. Transitions through `Created` -> `RegistrationOpen` -> `VotingOpen` -> `SharesCollectionOpen` -> `DecryptionOpen`.
     *   **Dynamic Threshold Finalization (Integrated):** This logic is attempted *once* within `updateSessionStatus`. It occurs when the function is called and determines that `block.timestamp >= startDate` while the `currentStatus` is `RegistrationOpen` (i.e., the session is due to transition to `VotingOpen`), provided `dynamicThresholdFinalized` is `false`.
         1.  The function retrieves `numberOfActiveHolders` from the linked `ParticipantRegistry`.
         2.  **Viability Check:** It checks if `numberOfActiveHolders >= minShareThreshold` (the value set during `initialize`).
@@ -276,8 +276,8 @@ The system uses a factory pattern with upgradeable contracts:
 *   **`triggerRewardCalculation()`**
     *   `triggerRewardCalculation() external onlyOwner nonReentrant`
     *   Allows the owner of the `VoteSession` contract to trigger rewards calculation on the linked `ParticipantRegistry` contract.
-    *   **Requirements:** `onlyOwner`. Status must be `Completed` (i.e., `block.timestamp >= sharesCollectionEndDate`). `rewardsCalculatedTriggered` flag (within `VoteSession`) must be `false`.
-    *   Calls `participantRegistry.calculateRewards(sessionId)`. Sets `rewardsCalculatedTriggered = true`. Emits `RewardsCalculationTriggered`.
+    *   **Requirements:** `onlyOwner`. The `rewardsCalculatedTriggered` flag (within `VoteSession`) must be `false` (this is checked first). Then, the status must be `DecryptionOpen`.
+    *   Calls `participantRegistry.calculateRewards(sessionId)`. Sets `rewardsCalculatedTriggered = true`. Sets `currentStatus = SessionStatus.Completed`. Emits `RewardsCalculationTriggered` and `SessionStatusChanged`.
 *   **Interface Functions (Called *by* Registry)**
     *   `isRegistrationOpen() external view returns (bool)`: Checks if `block.timestamp < registrationEndDate`.
     *   `getRequiredDeposit() external view returns (uint256)`: Returns `requiredDeposit`.
