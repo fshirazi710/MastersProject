@@ -1,6 +1,7 @@
 @use '../variables' as *;
 @use '../components/cards' as *;
 @use '../components/forms' as *;
+@use '../mixins' as *;
 
 .create-vote {
   max-width: $desktop;
@@ -9,6 +10,137 @@
 
   h1 {
     margin-bottom: $spacing-lg;
+    color: $text-color;
+  }
+}
+
+.create-vote-container {
+  @include page-container;
+  max-width: 800px;
+  margin: $spacing-xl auto;
+  padding: $spacing-lg;
+}
+
+.page-title {
+  text-align: center;
+  margin-bottom: $spacing-lg;
+  color: $text-color-headings;
+  font-size: 2rem;
+}
+
+.wallet-connect-notice {
+  @include notice-box($warning-color-light, $warning-color-dark, $warning-color);
+  text-align: center;
+  margin-bottom: $spacing-lg;
+
+  .btn-primary {
+    margin-top: $spacing-md;
+  }
+}
+
+.vote-form {
+  @include form-layout;
+}
+
+.error-banner {
+  @include notice-box($danger-color-light, $danger-color-dark, $danger-color);
+  margin-bottom: $spacing-lg;
+  text-align: center;
+}
+
+.form-section {
+  margin-bottom: $spacing-xl;
+  border-top: 1px solid $border-color;
+  padding-top: $spacing-lg;
+
+  .section-title {
+    font-size: 1.25rem;
+    color: $text-color-subheadings;
+    margin-bottom: $spacing-md;
+    font-weight: 600;
+  }
+}
+
+.date-row {
+  gap: $spacing-md;
+}
+
+.info-notice {
+  @include notice-box($info-color-light, $info-color-dark, $info-color);
+  margin-bottom: $spacing-md;
+  font-size: 0.9em;
+
+  .info-icon {
+    color: $info-color-dark;
+  }
+}
+
+.radio-group {
+  display: flex;
+  gap: $spacing-lg;
+  margin-bottom: $spacing-md;
+  align-items: center;
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+    cursor: pointer;
+    font-weight: 400;
+    input[type="radio"] {
+      margin-right: $spacing-xs;
+      accent-color: $primary-color;
+    }
+  }
+}
+
+.option-input-group {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+  margin-bottom: $spacing-sm;
+
+  .form-input {
+    flex-grow: 1;
+  }
+}
+
+.btn-remove-option,
+.btn-add-option {
+}
+
+.btn-remove-option {
+  @include button-variant($danger-color, white);
+}
+
+.btn-add-option {
+  @include button-variant($secondary-color, white);
+  margin-top: $spacing-sm;
+}
+
+.form-actions {
+  margin-top: $spacing-xl;
+  text-align: center;
+  .btn-submit {
+    padding: $spacing-md $spacing-xl;
+    font-size: 1.1rem;
+  }
+}
+
+.wallet-status {
+  margin-bottom: $spacing-lg;
+}
+
+.wallet-info {
+  margin-bottom: $spacing-lg;
+  padding: $spacing-md;
+  background: $surface-color;
+  border-radius: $border-radius;
+  border: 1px solid $border-color;
+  @include card-shadow;
+
+  p {
+    margin: $spacing-sm 0;
     color: $text-color;
   }
 }
@@ -25,49 +157,66 @@
     display: block;
     margin-bottom: $spacing-sm;
     font-weight: 500;
+    color: $text-color;
   }
 }
 
 .form-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: $spacing-md;
-}
-
-.info-notice {
   display: flex;
-  align-items: center;
-  gap: $spacing-md;
-  background: $background-color;
-  padding: $spacing-md;
-  border-radius: 4px;
-  margin: $spacing-md 0;
-
-  p {
-    margin: 0;
-    color: $text-secondary;
-    font-size: 0.9rem;
+  flex-wrap: wrap;
+  gap: $spacing-lg;
+  > .form-group {
+    flex: 1 1 calc(50% - #{$spacing-lg / 2});
+    min-width: 250px;
+    margin-bottom: 0;
+    &:last-child {
+    }
+  }
+  @include mobile {
+    flex-direction: column;
+    gap: 0;
+    > .form-group {
+      flex-basis: 100%;
+      margin-bottom: $spacing-lg;
+    }
   }
 }
 
-.option-row {
-  display: flex;
-  gap: $spacing-md;
-  margin-bottom: $spacing-sm;
-  align-items: center;
+.form-input,
+textarea.form-input {
+  width: 100%;
+  padding: $spacing-sm $spacing-md;
+  border: 1px solid $border-color;
+  border-radius: $border-radius;
+  font-family: $font-family;
+  font-size: 1rem;
+  line-height: 1.5;
+  background-color: white;
+  transition: border-color $transition-speed ease-in-out, box-shadow $transition-speed ease-in-out;
 
-  .form-input {
-    flex: 1;
+  &:focus {
+    border-color: $primary-color;
+    outline: 0;
+    box-shadow: 0 0 0 0.2rem rgba($primary-color, 0.25);
   }
+}
+
+textarea.form-input {
+  min-height: 100px;
 }
 
 .helper-text {
-  font-size: 0.875rem;
+  font-size: 0.875em;
   color: $text-secondary;
-  margin-top: 0.25rem;
+  margin-top: $spacing-sm;
 }
 
-h3 {
-  margin-bottom: $spacing-md;
-  color: $text-color;
+.error-message {
+  color: $danger-color-dark;
+  font-size: 0.875em;
+  margin-top: $spacing-sm;
+  font-weight: 500;
+}
+
+.option-row {
 }

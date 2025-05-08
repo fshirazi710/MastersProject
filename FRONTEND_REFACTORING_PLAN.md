@@ -15,6 +15,11 @@ This document outlines the plan for refactoring the frontend of the MastersProje
 ## Completed Tasks
 
 - [ ] (No tasks completed yet)
+- [x] **Update `frontend/services/api.js`:**
+    - [x] Review and update all functions in `frontend/services/api.js` (e.g., `authApi`, `voteSessionApi`, `encryptedVoteApi`, `holderApi`, `shareApi`).
+    - [x] Ensure all endpoints, request methods (GET/POST), path parameters, query parameters, and request/response bodies align precisely with the `Backend API Endpoint Documentation.md`.
+    - [x] Verify that data transformations (if any) before sending requests or after receiving responses are correct.
+    - [x] Standardize error handling for API calls within this service.
 
 ## In Progress Tasks
 
@@ -51,42 +56,48 @@ This document outlines the plan for refactoring the frontend of the MastersProje
 
 ---
 **1. `create-vote-session.vue` (19KB, 562 lines)**
-    - [ ] **Purpose:** Allows users to create new vote sessions.
-    - [ ] **Refactoring Tasks:**
-        - [ ] **Form Handling:**
-            - [ ] Review and refactor form input validation (dates, title, description, options, deposit, threshold).
-            - [ ] Ensure all parameters for `factoryService.createVoteSession` are correctly gathered and validated.
-        - [ ] **Service Integration:**
-            - [ ] Use `factoryService.createVoteSession` for submitting the form data.
-            - [ ] Ensure `startDate`, `endDate`, `sharesEndDate` are correctly converted to Unix timestamps.
-            *   [ ] Ensure `requiredDeposit` is converted to Wei (or ETH string as per service) and `minShareThreshold` is a number/string.
-        - [ ] **User Feedback:**
-            - [ ] Display clear loading indicators during session creation.
-            - [ ] Show success/error notifications based on the result from `factoryService`.
-            - [ ] Redirect or provide clear next steps upon successful creation (e.g., to the newly created session's page or `all-vote-sessions.vue`).
-        - [ ] **Component Logic:**
-            - [ ] Simplify component logic, move any complex data transformation to helper functions or directly within the service call preparation.
-        - [ ] **Styling:**
-            - [ ] Ensure styling aligns with `_create-vote.scss` and global styles.
+    - [x] **Purpose:** Allows users to create new vote sessions. (Marking as Complete)
+    - [x] **Refactoring Tasks:**
+        - [x] **Form Handling:**
+            - [x] Review and refactor form input validation (dates, title, description, options, deposit, threshold).
+            - [x] Ensure all parameters for `factoryService.createVoteSession` are correctly gathered and validated.
+            - [x] Implement reactive error state for individual fields (`formErrors`).
+            - [x] Display validation errors inline next to respective form fields.
+            - [x] Add real-time validation on input blur.
+        - [x] **Service Integration:**
+            - [x] Use `factoryService.createVoteSession` for submitting the form data.
+            - [x] Ensure `startDate`, `endDate`, `sharesEndDate` are correctly converted to Unix timestamps.
+            - [x] Ensure `requiredDeposit` is converted to Wei (BigInt) and `minShareThreshold` is a number/string.
+            - [x] Ensure metadata (for options or slider) is correctly constructed and stringified.
+            - [x] Decision: Funding of reward pool to be handled on the `session/[id].vue` page post-creation, not in this form. This is now a task for `session/[id].vue`.
+        - [x] **Styling:**
+            - [x] Create `frontend/assets/styles/pages/_create-vote.scss`.
+            - [x] Move styles from `create-vote-session.vue` to `_create-vote.scss`.
+            - [x] Refactor SCSS in `_create-vote.scss` to use global variables (`_variables.scss`) and mixins (`_mixins.scss`).
+            - [x] Import `_create-vote.scss` in `create-vote-session.vue`.
 
 ---
 **2. `all-vote-sessions.vue` (10KB, 317 lines)**
-    - [ ] **Purpose:** Displays a list of all available vote sessions.
-    - [ ] **Refactoring Tasks:**
-        - [ ] **Data Fetching:**
-            - [ ] Use `voteSessionApi.getAllVoteSessions()` (from the updated `frontend/services/api.js` which wraps `/api/vote-sessions/all`).
-            - [ ] If direct contract interaction is preferred for some summary data, use `factoryService.getDeployedSessionCount()` and iterate with `factoryService.getVoteSessionAddressByIndex()` followed by calls to `voteSessionViewService.getSessionInfo()` for each. *Backend API is likely more efficient here.*
-        - [ ] **Display Logic:**
-            - [ ] Refactor how session data is displayed (card view, table view).
-            - [ ] Ensure all relevant information from `SessionApiResponseItem` is shown (ID, title, status, dates, addresses).
-            - [ ] Implement pagination or infinite scrolling if the number of sessions can be large.
-        - [ ] **Navigation:**
-            - [ ] Ensure clicking on a session navigates to its detailed view (e.g., `/session/{vote_session_id}`).
-        - [ ] **Error Handling & Loading:**
-            - [ ] Display loading state while fetching sessions.
-            - [ ] Show appropriate messages if no sessions are found or if an error occurs during fetching.
-        - [ ] **Styling:**
-            - [ ] Review and align styling with global styles and potentially a shared "list" or "card" style.
+    - [x] **Purpose:** Displays a list of all available vote sessions. (Marking as Complete)
+    - [x] **Refactoring Tasks:** 
+        - [x] **Data Fetching:**
+            - [x] Use `voteSessionApi.getAllVoteSessions()` (from the updated `frontend/services/api.js` which wraps `/api/vote-sessions/all`).
+            - [x] ~~If direct contract interaction is preferred for some summary data, use `factoryService.getDeployedSessionCount()` and iterate with `factoryService.getVoteSessionAddressByIndex()` followed by calls to `voteSessionViewService.getSessionInfo()` for each. *Backend API is likely more efficient here.*~~ (Decided to use API)
+            - [x] Removed N+1 calls for `participantCount` and `secretHolderCount`.
+            - [x] Ensured data transformation aligns with `SessionApiResponseItem` fields.
+            - [x] **Note:** `participantCount` and `secretHolderCount` have been removed from the summary card display as they are not available in the `/api/vote-sessions/all` endpoint response. These details are more suitable for the individual session view (`pages/session/[id].vue`).
+            - [x] **Action Required:** The `relevantStatuses` array in the component needs to be populated with actual status strings and labels from the backend API for correct section display and filtering. (Marked as done based on user accepting previous changes)
+        - [x] **Display Logic:**
+            - [x] Refactored how session data is displayed (card view, sections by status).
+            - [x] Ensure all relevant information from `SessionApiResponseItem` is shown (ID, title, status, dates, addresses).
+            - [x] Implement pagination or infinite scrolling if the number of sessions can be large. (Client-side pagination implemented)
+        - [x] **Navigation:**
+            - [x] Ensure clicking on a session navigates to its detailed view (e.g., `/session/{session.id}`). (Button text changed to "View Details")
+        - [x] **Error Handling & Loading:**
+            - [x] Display loading state while fetching sessions.
+            - [x] Show appropriate messages if no sessions are found or if an error occurs during fetching.
+        - [x] **Styling:**
+            - [x] Review and align styling with global styles and potentially a shared "list" or "card" style. (Applied variables/mixins)
 
 ---
 **3. `index.vue` (2.4KB, 75 lines) - Homepage**
@@ -174,6 +185,36 @@ This document outlines the plan for refactoring the frontend of the MastersProje
             - [ ] Robust error handling for API and service calls.
         - [ ] **Styling:**
             - [ ] Align with `_vote-details.scss` and global styles.
+        - [ ] **Implement Reward Funding UI/Logic:**
+            - [ ] Add a section/button visible only to the session owner (check ownership via `voteSessionViewService.getSessionOwner`).
+            - [ ] Include an input field for the ETH amount to add as rewards.
+            - [ ] On submission, call `registryFundService.addRewardFunding(sessionId, amountInWei)` after converting input ETH to Wei.
+            - [ ] Provide loading state and success/error feedback (use notification system).
+        - [ ] **Implement Secret Holder Key Management:**
+            - [ ] **Key Generation/Import (during Holder Registration - likely in `RegisterToVote.vue` context):**
+                - [ ] Implement UI for user to choose between generating a new BLS key pair or importing an existing private key.
+                - [ ] If generating: Use `blsCryptoUtils.generateBLSKeyPair()`.
+                - [ ] If importing: Validate the format of the imported private key string.
+            - [ ] **Secure Private Key Storage (Client-Side):**
+                - [ ] Prompt user for a strong password specifically for key encryption.
+                - [ ] Encrypt the BLS private key using the password (e.g., via `aesUtils.encryptWithPassword`).
+                - [ ] Offer secure storage options:
+                    - [ ] Store encrypted key payload in browser Local Storage, clearly associated with the session/user.
+                    - [ ] Allow user to download the encrypted key payload as a file (e.g., `session-{id}-secret-key.json`).
+            - [ ] **Key Retrieval/Usage (during Share Submission - likely in `SubmitSecretShare.vue` context):**
+                - [ ] Determine if encrypted key is in Local Storage or needs file upload.
+                - [ ] Prompt user for their password.
+                - [ ] Decrypt the private key in memory using the password (e.g., via `aesUtils.decryptWithPassword`).
+                - [ ] Use the in-memory private key *only* for calculating shares (`blsCryptoUtils.calculateDecryptionShareForSubmission`).
+                - [ ] Clear the decrypted private key from memory immediately after use.
+            - [ ] **Key Management UI (on session page for registered holders):**
+                - [ ] Display indication that the user is a registered holder.
+                - [ ] Provide UI options (e.g., a 'Manage Key' section/button) to:
+                    - [ ] Re-download/backup the encrypted key file.
+                    - [ ] Remove the encrypted key from Local Storage.
+                    - [ ] (Optional) Import/replace key from an encrypted backup file.
+            - [ ] **User Feedback & Security Notes:**
+                - [ ] Provide clear instructions and warnings about password importance and backup responsibility.
 
 ### III. Component-Specific Refactoring (`frontend/components/vote`)
 
@@ -477,15 +518,3 @@ The refactoring will be carried out iteratively, focusing on one page or major c
     -   **Depends on:** -
     -   **Status:** To be refactored.
 -   `frontend/assets/styles/_mixins.scss`
-    -   **Purpose:** Reusable SCSS mixins.
-    -   **Provides:** Common style patterns.
-    -   **Depends on:** (Potentially `_variables.scss`).
-    -   **Status:** To be refactored.
--   `frontend/assets/styles/pages/*.scss` (e.g., `_vote-details.scss`, `_login.scss`, etc.)
-    -   **Purpose:** Page-specific styles.
-    -   **Provides:** Styling for individual pages.
-    -   **Depends on:** (Potentially `_variables.scss`, `_mixins.scss`).
-    -   **Status:** To be refactored.
-
----
-*(This plan will be updated as tasks are completed and new details emerge.)* 

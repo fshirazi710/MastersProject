@@ -46,7 +46,9 @@
 </template>
 
 <script setup>
-import { store } from '../authentication.js'; // Import the store
+import { ref, onMounted } from 'vue';
+import { store } from '../composables/authentication.js'; // Import the store
+import { useRouter } from '#app/composables/router';
 
 // Import navigateTo from Nuxt
 const { navigateTo } = useRouter()

@@ -28,7 +28,7 @@
 <script setup>
 import { onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import {store} from '../authentication.js'
+import {store} from '../composables/authentication.js'
 
 const router = useRouter();
 

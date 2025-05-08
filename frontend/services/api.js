@@ -26,19 +26,16 @@ apiClient.interceptors.request.use(
 
 // API service for authentication
 export const authApi = {
-  // Register a new user
+  // Register a new user (Assuming this is a separate auth system as it's not in Backend API Doc for core voting)
   register: (userData) => {
     return apiClient.post('/api/auth/register', userData);
   },
 
-  // Login user
+  // Login user (Assuming this is a separate auth system)
   login: (credentials) => {
-    // Create URLSearchParams for proper form encoding
     const formData = new URLSearchParams();
-    formData.append('username', credentials.email);
+    formData.append('username', credentials.email); // Assuming 'email' maps to 'username'
     formData.append('password', credentials.password);
-
-    // Send as form data with appropriate content type
     return apiClient.post('/api/auth/login', formData.toString(), {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -47,96 +44,119 @@ export const authApi = {
   },
 };
 
-// Rename: electionApi -> voteSessionApi
 export const voteSessionApi = {
-  // Rename: createElection -> createVoteSession, update endpoint
-  createVoteSession: (voteSessionData) => {
-    return apiClient.post('/api/vote-sessions/create', voteSessionData);
-  },
+  // NOTE: createVoteSession via API is not in Backend API Doc. Session creation is via factory contract.
+  // createVoteSession: (voteSessionData) => {
+  //   return apiClient.post('/api/vote-sessions/create', voteSessionData);
+  // },
 
-  // Rename: getAllElections -> getAllVoteSessions, update endpoint
   getAllVoteSessions: () => {
+    // Matches Backend API: GET /api/vote-sessions/all
     return apiClient.get('/api/vote-sessions/all');
   },
 
-  // Rename: getElectionById -> getVoteSessionById, update endpoint and param
   getVoteSessionById: (voteSessionId) => {
+    // Matches Backend API: GET /api/vote-sessions/session/{vote_session_id}
     return apiClient.get(`/api/vote-sessions/session/${voteSessionId}`);
   },
 
-  // Rename: getElectionMetadata -> getVoteSessionMetadata, update endpoint and param
+  getVoteSessionStatus: (voteSessionId) => {
+    // Added: Matches Backend API: GET /api/vote-sessions/session/{vote_session_id}/status
+    return apiClient.get(`/api/vote-sessions/session/${voteSessionId}/status`);
+  },
+
   getVoteSessionMetadata: (voteSessionId) => {
+    // Matches Backend API: GET /api/vote-sessions/session/{vote_session_id}/metadata
     return apiClient.get(`/api/vote-sessions/session/${voteSessionId}/metadata`);
   }
 };
 
-// API service for votes (individual encrypted votes within a session)
-// Rename voteApi -> encryptedVoteApi
 export const encryptedVoteApi = {
-  // Rename submitVote -> submitEncryptedVote, update endpoint
-  submitEncryptedVote: (voteSessionId, voteData) => {
-    return apiClient.post(`/api/encrypted-votes/submit/${voteSessionId}`, voteData);
-  },
+  // NOTE: submitEncryptedVote via API is not in Backend API Doc. Votes are cast via VoteSession contract.
+  // submitEncryptedVote: (voteSessionId, voteData) => {
+  //   return apiClient.post(`/api/encrypted-votes/submit/${voteSessionId}`, voteData);
+  // },
 
-  // Rename getVoteInformation -> getEncryptedVoteInfo, update endpoint
   getEncryptedVoteInfo: (voteSessionId) => {
-    return apiClient.post(`/api/encrypted-votes/info/${voteSessionId}`);
+    // Matches Backend API: POST /api/encrypted-votes/info/{vote_session_id}
+    // Backend API Doc specifies an empty request body for this POST request.
+    return apiClient.post(`/api/encrypted-votes/info/${voteSessionId}`, {});
   },
 
-  // Keep validatePublicKey as is - CORRECT PATH NOW
-  validatePublicKey: (data) => {
-    // Corrected path from /api/votes/ to /api/encrypted-votes/
-    return apiClient.post(`/api/encrypted-votes/validate-public-key`, data); 
+  validatePublicKey: (publicKeyData) => {
+    // Matches Backend API: POST /api/encrypted-votes/validate-public-key
+    // Expects: { "public_key": "0x..." }
+    return apiClient.post('/api/encrypted-votes/validate-public-key', publicKeyData);
   },
+
+  checkVoteEligibility: (voteSessionId, voterAddressData) => {
+    // Added: Matches Backend API: POST /api/encrypted-votes/eligibility/{vote_session_id}
+    // Expects: { "voter_address": "0x..." }
+    return apiClient.post(`/api/encrypted-votes/eligibility/${voteSessionId}`, voterAddressData);
+  }
 };
 
-// API service for holders (participants acting as secret holders for a session)
-export const holderApi = {
-  // Rename param: election_id -> voteSessionId, update endpoint
-  getAllHolders: (voteSessionId) => {
-    return apiClient.get(`/api/holders/all/${voteSessionId}`);
+// Renamed from holderApi to participantApi to align with Backend API Doc
+export const participantApi = {
+  getAllParticipantsForSession: (voteSessionId) => {
+    // Updated: Matches Backend API: GET /api/sessions/{vote_session_id}/participants/
+    return apiClient.get(`/api/sessions/${voteSessionId}/participants/`);
   },
 
-  // Rename param: election_id -> voteSessionId, update endpoint
-  getHolderCount: (voteSessionId) => {
-    return apiClient.get(`/api/holders/count/${voteSessionId}`);
+  getParticipantDetails: (voteSessionId, participantAddress) => {
+    // Added: Matches Backend API: GET /api/sessions/{vote_session_id}/participants/{participant_address}
+    return apiClient.get(`/api/sessions/${voteSessionId}/participants/${participantAddress}`);
   },
 
-  // Rename param: election_id -> voteSessionId, update endpoint
-  joinAsHolder: (voteSessionId, data) => {
-    return apiClient.post(`/api/holders/join/${voteSessionId}`, data);
-  },
+  // NOTE: getHolderCount is not a direct endpoint in Backend API Doc. Count is part of SessionDetailApiResponse.
+  // getHolderCount: (voteSessionId) => {
+  //   return apiClient.get(`/api/holders/count/${voteSessionId}`); // Old path
+  // },
+
+  // NOTE: joinAsHolder via API is not in Backend API Doc. Joining is via ParticipantRegistry contract.
+  // joinAsHolder: (voteSessionId, data) => {
+  //   return apiClient.post(`/api/holders/join/${voteSessionId}`, data); // Old path
+  // },
 };
 
-// API service for shares (secret shares related to a session)
 export const shareApi = {
-  // Rename param: electionId -> voteSessionId, update endpoint
-  submitShare: (voteSessionId, data) => {
-    return apiClient.post(`/api/shares/submit-share/${voteSessionId}`, data)
+  submitShare: (voteSessionId, shareListData) => {
+    // Matches Backend API: POST /api/shares/submit-share/{vote_session_id}
+    // Expects ShareListSubmitRequest: { public_key, shares: [{vote_id, share}], signature }
+    return apiClient.post(`/api/shares/submit-share/${voteSessionId}`, shareListData);
   },
 
-  // Rename param: electionId -> voteSessionId, update endpoint
-  decryptionStatus: (voteSessionId) => {
-    return apiClient.get(`/api/shares/decryption-status/${voteSessionId}`)
-  },
-
-  // Keep verifyShare as is (refers to individual vote_id)
-  verifyShare: (voteId, holderAddress, share) => {
-    return apiClient.post('/api/shares/verify', { vote_id: voteId, holder_address: holderAddress, share });
-  },
-
-  // Rename param: voteId -> voteSessionId, update endpoint
   getShares: (voteSessionId) => {
+    // Matches Backend API: GET /api/shares/get-shares/{vote_session_id}
     return apiClient.get(`/api/shares/get-shares/${voteSessionId}`);
   },
+
+  // NOTE: decryptionStatus is not an endpoint in Backend API Doc.
+  // decryptionStatus: (voteSessionId) => {
+  //   return apiClient.get(`/api/shares/decryption-status/${voteSessionId}`);
+  // },
+
+  // NOTE: verifyShare for individual share is not a direct endpoint in Backend API Doc.
+  // The POST /submit-share handles verification of a list.
+  // verifyShare: (voteId, holderAddress, share) => {
+  //   return apiClient.post('/api/shares/verify', { vote_id: voteId, holder_address: holderAddress, share });
+  // },
 };
 
-// Ensure all necessary APIs are exported
+// Admin API (Added based on Backend API Doc)
+export const adminApi = {
+  triggerCacheRefresh: () => {
+    // Matches Backend API: POST /api/admin/cache/refresh
+    // Requires admin auth (handled by interceptor if token is 'admin token')
+    return apiClient.post('/api/admin/cache/refresh', {});
+  }
+};
+
 export default {
   auth: authApi,
-  // Rename vote -> encryptedVote
+  voteSession: voteSessionApi,
   encryptedVote: encryptedVoteApi,
-  holder: holderApi,
+  participant: participantApi, // Renamed from holder
   share: shareApi,
-  voteSession: voteSessionApi, 
+  admin: adminApi, // Added
 };
