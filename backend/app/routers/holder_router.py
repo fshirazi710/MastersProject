@@ -1,17 +1,27 @@
 """
-Holder router for managing secret holders in the system.
+Holder router for managing secret holders (participants) in the system.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from app.core.dependencies import get_blockchain_service
-from app.helpers.vote_session_helper import get_vote_session_status
+from typing import List # Import List
+# Import Motor DB type and dependency
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from app.db.mongodb_utils import get_mongo_db
+
+from app.core.dependencies import get_blockchain_service # Keep for Wei->Eth conversion
+# Remove obsolete import
+# from app.helpers.vote_session_helper import get_vote_session_status # Might be obsolete
 # Import error handling utility
 from app.core.error_handling import handle_blockchain_error
+# Update schema imports - remove HolderCountResponse, HolderJoinRequest if not used
 from app.schemas import (
     StandardResponse,
-    TransactionResponse,
-    HolderCountResponse,
-    HolderJoinRequest,
+    # TransactionResponse, # No longer needed?
+    # HolderCountResponse, # REMOVE THIS
+    # HolderJoinRequest, # REMOVE THIS TOO
 )
+# Import new Participant schemas
+from app.schemas.participant import ParticipantListItem, ParticipantDetail, ParticipantCacheModel
+
 from app.services.blockchain import BlockchainService
 
 import logging
@@ -19,148 +29,86 @@ import logging
 # Configure logging
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/holders", tags=["Holders"])
+# Update prefix to reflect participant focus?
+router = APIRouter(prefix="/sessions/{vote_session_id}/participants", tags=["Participants"])
 
 
-@router.get("/all/{vote_session_id}")
-async def get_all_holders(vote_session_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    """Retrieve all registered holder addresses for a specific vote session from the ParticipantRegistry."""
-    try:
-        # 1. Get registry address
-        _, registry_addr = await blockchain_service.get_session_addresses(vote_session_id)
-        if not registry_addr:
-            raise ValueError(f"Could not find registry address for session ID {vote_session_id}")
-
-        # 2. Get registry contract instance
-        registry_contract = blockchain_service.get_registry_contract(registry_addr)
-
-        # 3. Call getActiveHolders
-        holders = await blockchain_service.call_contract_function(registry_contract, "getActiveHolders")
-
-        # Return response using StandardResponse
-        return StandardResponse(
-            success=True,
-            message=f"Successfully retrieved all active holders for session {vote_session_id}",
-            data=holders
-        )
-    except HTTPException as http_exc:
-        raise http_exc
-    except Exception as e:
-        logger.error(f"Error getting all holders for session {vote_session_id}: {str(e)}")
-        error_detail = handle_blockchain_error(e)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve list of all active holders for session {vote_session_id}: {error_detail}")
-
-
-@router.get("/count/{vote_session_id}", response_model=StandardResponse[HolderCountResponse])
-async def get_holder_count(vote_session_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
-    """Retrieve the total number of registered holders for a specific vote session from the ParticipantRegistry."""
-    try:
-        # 1. Get registry address
-        _, registry_addr = await blockchain_service.get_session_addresses(vote_session_id)
-        if not registry_addr:
-            raise ValueError(f"Could not find registry address for session ID {vote_session_id}")
-
-        # 2. Get registry contract instance
-        registry_contract = blockchain_service.get_registry_contract(registry_addr)
-        
-        # 3. Call getNumberOfActiveHolders
-        count = await blockchain_service.call_contract_function(registry_contract, "getNumberOfActiveHolders", vote_session_id)
-        
-        # Return response
-        return StandardResponse(
-            success=True,
-            message=f"Successfully retrieved active holder count for session {vote_session_id}",
-            data=HolderCountResponse(count=count)
-        )
-    except HTTPException as http_exc:
-        raise http_exc
-    except Exception as e:
-        logger.error(f"Error getting holder count for session {vote_session_id}: {str(e)}")
-        error_detail = handle_blockchain_error(e)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve number of active holders for session {vote_session_id}: {error_detail}")
-
-
-# Updated endpoint: Checks eligibility, does not submit transaction
-@router.post("/join/{vote_session_id}", response_model=StandardResponse)
-async def join_vote_session(
-    vote_session_id: int,
-    data: HolderJoinRequest,
-    blockchain_service: BlockchainService = Depends(get_blockchain_service)
+# --- Endpoint to get all participants for a session --- 
+@router.get("/", response_model=StandardResponse[List[ParticipantListItem]])
+async def get_session_participants(
+    vote_session_id: int, 
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db)
 ):
-    """
-    Checks eligibility for a user to join a vote session as a holder.
-    Uses the new ParticipantRegistry and VoteSession contracts.
-    The actual joining (contract call with deposit) is done by the frontend.
-    """
+    """Retrieve a list of all participants (holders and potentially voters) for a specific vote session from the cache."""
     try:
-        user_address = blockchain_service.w3.to_checksum_address(data.user_address)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid user address format provided.")
-
-    logger.info(f"Checking eligibility for user {user_address} to join session {vote_session_id} as holder.")
-
-    try:
-        # 1. Check if session exists and is in 'RegistrationOpen' phase
-        session_details = await blockchain_service.get_session_details(vote_session_id)
-        if not session_details:
-             # Handle case where session doesn't exist (get_session_details might raise or return None)
-             logger.warning(f"Attempt to join non-existent session {vote_session_id} by {user_address}")
-             raise HTTPException(status_code=404, detail=f"Vote session {vote_session_id} not found.")
-
-        session_status = session_details.get('status')
-        if session_status != "RegistrationOpen":
-            logger.warning(f"Attempt to join session {vote_session_id} by {user_address} failed: Session status is {session_status}, not 'RegistrationOpen'.")
-            raise HTTPException(status_code=400, detail=f"Vote session is not in the registration phase (status: {session_status}).")
-
-        # 2. Check if user is already registered for this session
-        is_already_registered = await blockchain_service.is_participant_registered(vote_session_id, user_address)
-        if is_already_registered:
-            logger.warning(f"User {user_address} attempted to join session {vote_session_id} but is already registered.")
-            raise HTTPException(status_code=409, detail="User is already registered for this vote session.")
-
-        # 3. Eligibility confirmed - Return success
-        logger.info(f"User {user_address} is eligible to join session {vote_session_id}. Frontend should proceed with transaction.")
+        participants_cursor = db.session_participants.find({"session_id": vote_session_id})
+        participants_list = []
+        async for participant_doc in participants_cursor:
+            # Map MongoDB doc to ParticipantListItem Pydantic model
+            # Using aliases defined in the schema
+            try:
+                 api_item = ParticipantListItem.model_validate(participant_doc)
+                 participants_list.append(api_item)
+            except Exception as validation_error:
+                 logger.warning(f"Skipping participant doc due to validation error: {validation_error}. Doc: {participant_doc.get('_id')}")
+                 continue
+                 
+        logger.info(f"Retrieved {len(participants_list)} participants for session {vote_session_id} from cache.")
         return StandardResponse(
             success=True,
-            message="User is eligible to join the vote session as a holder."
+            message=f"Successfully retrieved {len(participants_list)} participants for session {vote_session_id}",
+            data=participants_list
         )
-
-    except HTTPException as http_exc:
-        raise http_exc # Re-raise specific HTTP exceptions
     except Exception as e:
-        error_detail = handle_blockchain_error(e)
-        logger.exception(f"Unexpected error during eligibility check for user {user_address} joining session {vote_session_id}: {error_detail}")
-        raise HTTPException(status_code=500, detail=f"Internal server error during eligibility check: {error_detail}")
+        logger.error(f"Error getting participants for session {vote_session_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve participants for session {vote_session_id}: {str(e)}")
 
-# --- New Endpoint for Participant Details ---
 
-@router.get("/details/{vote_session_id}/{participant_address}", response_model=StandardResponse[dict])
-async def get_holder_details(
+# --- Endpoint to get detailed info for a specific participant --- 
+# This replaces the old /details/{...}/{...} endpoint
+@router.get("/{participant_address}", response_model=StandardResponse[ParticipantDetail])
+async def get_participant_detail(
     vote_session_id: int,
     participant_address: str,
-    blockchain_service: BlockchainService = Depends(get_blockchain_service)
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
+    blockchain_service: BlockchainService = Depends(get_blockchain_service) # For Wei->Eth
 ):
-    """Retrieve detailed information for a specific participant in a vote session from the ParticipantRegistry."""
+    """Retrieve detailed information for a specific participant in a vote session from the cache."""
     try:
         checksum_address = blockchain_service.w3.to_checksum_address(participant_address)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid participant address format provided.")
         
-    logger.info(f"Fetching details for participant {checksum_address} in session {vote_session_id}.")
+    logger.info(f"Fetching details for participant {checksum_address} in session {vote_session_id} from cache.")
     
     try:
-        details = await blockchain_service.get_participant_details(vote_session_id, checksum_address)
+        participant_doc = await db.session_participants.find_one({
+            "session_id": vote_session_id, 
+            "participant_address": checksum_address
+        })
         
-        if not details or not details.get('isRegistered'): # Check if participant exists/is registered
-            logger.warning(f"Participant {checksum_address} not found or not registered in session {vote_session_id}.")
-            raise HTTPException(status_code=404, detail=f"Participant {checksum_address} not found or not registered in session {vote_session_id}.")
+        if not participant_doc:
+            logger.warning(f"Participant {checksum_address} not found in cache for session {vote_session_id}.")
+            raise HTTPException(status_code=404, detail=f"Participant {checksum_address} not found in session {vote_session_id} cache.")
 
-        # Convert amounts back to Ether string for frontend display
-        details["depositAmount"] = str(blockchain_service.w3.from_wei(details.get("depositAmount", 0), 'ether'))
-        # Note: rewardAmount might not be set until after calculation. Handle potential KeyError or None.
-        reward_wei = details.get("rewardAmount") # Access safely
-        details["rewardAmount"] = str(blockchain_service.w3.from_wei(reward_wei, 'ether')) if reward_wei is not None else "0.0" # Default to "0.0" if not set
-
+        # Convert deposit Wei to Eth string for response
+        deposit_eth = "0.0"
+        if wei_str := participant_doc.get('deposit_amount_wei'):
+             try:
+                 deposit_eth = str(blockchain_service.w3.from_wei(int(wei_str), 'ether'))
+             except ValueError:
+                 logger.warning(f"Could not convert deposit_amount_wei '{wei_str}' to Eth for participant {checksum_address}")
+        
+        # Add the converted value for the response model 
+        participant_doc['deposit_amount_eth'] = deposit_eth 
+        
+        # Map MongoDB doc to ParticipantDetail Pydantic model
+        try:
+            details = ParticipantDetail.model_validate(participant_doc)
+        except Exception as validation_error:
+            logger.error(f"Pydantic validation failed for participant detail: {validation_error}. Doc: {participant_doc}")
+            raise HTTPException(status_code=500, detail="Failed to process participant data.")
+            
         return StandardResponse(
             success=True,
             message=f"Successfully retrieved details for participant {checksum_address} in session {vote_session_id}",
@@ -170,6 +118,33 @@ async def get_holder_details(
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        error_detail = handle_blockchain_error(e)
+        error_detail = handle_blockchain_error(e) # Keep blockchain error handler?
         logger.error(f"Error getting details for participant {checksum_address} in session {vote_session_id}: {error_detail}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve participant details: {error_detail}")
+
+
+# --- Keep old endpoints for now? Review necessity --- 
+
+# @router.get("/all/{vote_session_id}") # Old endpoint - replaced by GET /
+# async def get_all_holders(vote_session_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+    # ... (Implementation fetched only addresses from blockchain) ... 
+
+# @router.get("/count/{vote_session_id}", response_model=StandardResponse[HolderCountResponse]) # Old endpoint - count can be derived from GET /
+# async def get_holder_count(vote_session_id: int, blockchain_service: BlockchainService = Depends(get_blockchain_service)):
+    # ... (Implementation fetched count from blockchain) ...
+
+# @router.post("/join/{vote_session_id}", response_model=StandardResponse) # Keep eligibility check?
+# async def join_vote_session(
+#     vote_session_id: int,
+#     data: HolderJoinRequest,
+#     blockchain_service: BlockchainService = Depends(get_blockchain_service)
+# ):
+    # ... (Implementation checks blockchain state) ... 
+
+# @router.get("/details/{vote_session_id}/{participant_address}", response_model=StandardResponse[dict]) # Old endpoint - replaced by GET /{participant_address}
+# async def get_holder_details(
+#     vote_session_id: int,
+#     participant_address: str,
+#     blockchain_service: BlockchainService = Depends(get_blockchain_service)
+# ):
+    # ... (Implementation fetched from blockchain) ...

@@ -73,16 +73,16 @@ class BlockchainService:
         self.factory_contract = self.w3.eth.contract(address=self.factory_address, abi=self.factory_abi)
 
         # Initialize account from private key for sending transactions
-        try:
-            self.account = self.w3.eth.account.from_key(settings.PRIVATE_KEY)
-            self.w3.eth.default_account = self.account.address # Optional: set default account
-            logger.info(f"Loaded and set default account: {self.account.address}")
-        except AttributeError:
-            logger.error("PRIVATE_KEY not found in settings.")
-            raise AttributeError("Missing PRIVATE_KEY in configuration.")
-        except Exception as e:
-            logger.error(f"Error initializing account from PRIVATE_KEY: {e}")
-            raise
+        # try:
+        #     self.account = self.w3.eth.account.from_key(settings.PRIVATE_KEY)
+        #     self.w3.eth.default_account = self.account.address # Optional: set default account
+        #     logger.info(f"Loaded and set default account: {self.account.address}")
+        # except AttributeError:
+        #     logger.error("PRIVATE_KEY not found in settings.")
+        #     raise AttributeError("Missing PRIVATE_KEY in configuration.")
+        # except Exception as e:
+        #     logger.error(f"Error initializing account from PRIVATE_KEY: {e}")
+        #     raise
 
     def get_session_contract(self, session_address: str):
         """Get a contract instance for a specific VoteSession."""
@@ -124,167 +124,167 @@ class BlockchainService:
             # Consider more specific exception handling (e.g., ContractLogicError)
             raise # Re-raise the exception after logging
 
-    async def send_transaction(self, contract, function_name, *args, value=0):
-        """
-        Builds, signs, and sends a transaction for a contract function.
-
-        Args:
-            contract: The web3 contract instance.
-            function_name: Name of the contract function to call.
-            *args: Arguments to pass to the function.
-            value: Amount of Ether to send with the transaction (in Wei).
-
-        Returns:
-            Transaction receipt upon successful sending.
-        
-        Raises:
-            Exception: If any part of the transaction process fails.
-        """
-        try:
-            logger.info(f"Preparing transaction for {function_name} on {contract.address} with args {args}")
-            # Get the function from the contract
-            func = getattr(contract.functions, function_name)
-            contract_func = func(*args)
-
-            # Estimate gas
-            # Note: Gas estimation might fail for complex transactions or if the node doesn't support it well.
-            # Consider adding a fallback or manual gas limit.
-            try:
-                estimated_gas = contract_func.estimate_gas({'from': self.account.address, 'value': value})
-                logger.debug(f"Estimated gas: {estimated_gas}")
-            except Exception as gas_error:
-                logger.warning(f"Gas estimation failed for {function_name}: {gas_error}. Using default gas limit.")
-                # Provide a sensible default or get from config if estimation fails
-                estimated_gas = 500000 # Example default, adjust as needed
-
-            # Build the transaction
-            tx_params = {
-                'from': self.account.address,
-                'nonce': self.w3.eth.get_transaction_count(self.account.address),
-                'gas': estimated_gas,
-                'gasPrice': self.w3.eth.gas_price, # Or use EIP-1559 fields: maxFeePerGas, maxPriorityFeePerGas
-                'value': value
-            }
-            transaction = contract_func.build_transaction(tx_params)
-            logger.debug(f"Built transaction: {transaction}")
-
-            # Sign the transaction
-            signed_tx = self.w3.eth.account.sign_transaction(transaction, self.account.key)
-            logger.debug("Transaction signed.")
-
-            # Send the transaction
-            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            logger.info(f"Transaction sent for {function_name}. Tx Hash: {tx_hash.hex()}")
-            
-            # Optional: Wait for transaction receipt (can add a timeout)
-            try:
-                # Use run_in_executor for the blocking wait_for_transaction_receipt
-                loop = asyncio.get_event_loop()
-                tx_receipt = await loop.run_in_executor(
-                    None, 
-                    lambda: self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120) # e.g., 120 seconds
-                ) 
-                logger.info(f"Transaction {tx_hash.hex()} confirmed. Receipt: {tx_receipt}")
-                # Check tx_receipt.status (1 for success, 0 for failure)
-                if tx_receipt.status == 0:
-                    logger.error(f"Transaction {tx_hash.hex()} failed. Receipt: {tx_receipt}")
-                    # You might want a more specific exception type here
-                    raise Exception(f"Transaction {tx_hash.hex()} failed on-chain.")
-                # Return the full receipt on success
-                return tx_receipt 
-            except asyncio.TimeoutError:
-                # If timeout occurs, the transaction might still succeed later.
-                # Depending on requirements, you could: 
-                # 1. Raise a timeout error.
-                # 2. Return the hash and let the caller handle polling/checking later.
-                # 3. Continue polling for longer (not shown here).
-                # For now, let's raise a specific timeout error.
-                logger.warning(f"Timeout waiting for transaction receipt for {tx_hash.hex()}.")
-                raise TimeoutError(f"Timeout waiting for confirmation of transaction {tx_hash.hex()}.")
-
-        except Exception as e:
-            logger.error(f"Error sending transaction for {function_name} on {contract.address}: {e}")
-            # Consider more specific exception handling (e.g., ValueError for bad args)
-            raise
+    # async def send_transaction(self, contract, function_name, *args, value=0):
+    #     """
+    #     Builds, signs, and sends a transaction for a contract function.
+    # 
+    #     Args:
+    #         contract: The web3 contract instance.
+    #         function_name: Name of the contract function to call.
+    #         *args: Arguments to pass to the function.
+    #         value: Amount of Ether to send with the transaction (in Wei).
+    # 
+    #     Returns:
+    #         Transaction receipt upon successful sending.
+    #     
+    #     Raises:
+    #         Exception: If any part of the transaction process fails.
+    #     """
+    #     try:
+    #         logger.info(f"Preparing transaction for {function_name} on {contract.address} with args {args}")
+    #         # Get the function from the contract
+    #         func = getattr(contract.functions, function_name)
+    #         contract_func = func(*args)
+    # 
+    #         # Estimate gas
+    #         # Note: Gas estimation might fail for complex transactions or if the node doesn't support it well.
+    #         # Consider adding a fallback or manual gas limit.
+    #         try:
+    #             estimated_gas = contract_func.estimate_gas({'from': self.account.address, 'value': value})
+    #             logger.debug(f"Estimated gas: {estimated_gas}")
+    #         except Exception as gas_error:
+    #             logger.warning(f"Gas estimation failed for {function_name}: {gas_error}. Using default gas limit.")
+    #             # Provide a sensible default or get from config if estimation fails
+    #             estimated_gas = 500000 # Example default, adjust as needed
+    # 
+    #         # Build the transaction
+    #         tx_params = {
+    #             'from': self.account.address,
+    #             'nonce': self.w3.eth.get_transaction_count(self.account.address),
+    #             'gas': estimated_gas,
+    #             'gasPrice': self.w3.eth.gas_price, # Or use EIP-1559 fields: maxFeePerGas, maxPriorityFeePerGas
+    #             'value': value
+    #         }
+    #         transaction = contract_func.build_transaction(tx_params)
+    #         logger.debug(f"Built transaction: {transaction}")
+    # 
+    #         # Sign the transaction
+    #         signed_tx = self.w3.eth.account.sign_transaction(transaction, self.account.key)
+    #         logger.debug("Transaction signed.")
+    # 
+    #         # Send the transaction
+    #         tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+    #         logger.info(f"Transaction sent for {function_name}. Tx Hash: {tx_hash.hex()}")
+    #         
+    #         # Optional: Wait for transaction receipt (can add a timeout)
+    #         try:
+    #             # Use run_in_executor for the blocking wait_for_transaction_receipt
+    #             loop = asyncio.get_event_loop()
+    #             tx_receipt = await loop.run_in_executor(
+    #                 None, 
+    #                 lambda: self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120) # e.g., 120 seconds
+    #             ) 
+    #             logger.info(f"Transaction {tx_hash.hex()} confirmed. Receipt: {tx_receipt}")
+    #             # Check tx_receipt.status (1 for success, 0 for failure)
+    #             if tx_receipt.status == 0:
+    #                 logger.error(f"Transaction {tx_hash.hex()} failed. Receipt: {tx_receipt}")
+    #                 # You might want a more specific exception type here
+    #                 raise Exception(f"Transaction {tx_hash.hex()} failed on-chain.")
+    #             # Return the full receipt on success
+    #             return tx_receipt 
+    #         except asyncio.TimeoutError:
+    #             # If timeout occurs, the transaction might still succeed later.
+    #             # Depending on requirements, you could: 
+    #             # 1. Raise a timeout error.
+    #             # 2. Return the hash and let the caller handle polling/checking later.
+    #             # 3. Continue polling for longer (not shown here).
+    #             # For now, let's raise a specific timeout error.
+    #             logger.warning(f"Timeout waiting for transaction receipt for {tx_hash.hex()}.")
+    #             raise TimeoutError(f"Timeout waiting for confirmation of transaction {tx_hash.hex()}.")
+    # 
+    #     except Exception as e:
+    #         logger.error(f"Error sending transaction for {function_name} on {contract.address}: {e}")
+    #         # Consider more specific exception handling (e.g., ValueError for bad args)
+    #         raise
 
     # --- Factory Interactions ---
 
-    async def create_vote_session(
-        self,
-        title: str,
-        description: str,
-        start_date: int,
-        end_date: int,
-        shares_end_date: int,
-        options: list[str],
-        metadata: str,
-        required_deposit: int, # Expecting Wei
-        min_share_threshold: int
-    ) -> dict:
-        """Creates a new VoteSession and ParticipantRegistry pair via the factory.
-        Waits for the transaction receipt and parses the SessionPairDeployed event.
-        
-        Returns:
-            A dictionary containing sessionId, voteSessionContract, and participantRegistryContract.
-        
-        Raises:
-            Exception: If transaction fails, times out, or event parsing fails.
-        """
-        try:
-            # Call send_transaction, which now waits for the receipt
-            tx_receipt = await self.send_transaction(
-                self.factory_contract,
-                "createSessionPair",
-                title,
-                description,
-                start_date,
-                end_date,
-                shares_end_date,
-                options,
-                metadata,
-                required_deposit,
-                min_share_threshold
-            )
-
-            # Transaction succeeded if we got here (send_transaction checks status)
-            logger.info(f"Transaction successful. Processing receipt for event SessionPairDeployed...")
-            
-            # Process logs to find the SessionPairDeployed event
-            # The factory contract instance (self.factory_contract) has an 'events' attribute
-            # that can be used to decode logs.
-            try:
-                # This processes all logs in the receipt and decodes the ones matching the event ABI
-                processed_logs = self.factory_contract.events.SessionPairDeployed().process_receipt(tx_receipt)
-                
-                if not processed_logs:
-                    logger.error("SessionPairDeployed event not found in transaction logs.")
-                    raise ValueError("SessionPairDeployed event not found after successful transaction.")
-                    
-                # Assuming only one such event is emitted per transaction
-                event_args = processed_logs[0]['args'] 
-                session_id = event_args.sessionId
-                session_addr = event_args.voteSessionContract
-                registry_addr = event_args.participantRegistryContract
-                
-                logger.info(f"Successfully deployed session pair: ID={session_id}, Session={session_addr}, Registry={registry_addr}")
-                
-                return {
-                    "sessionId": session_id,
-                    "voteSessionContract": session_addr,
-                    "participantRegistryContract": registry_addr
-                }
-                
-            except Exception as e: # Catch potential errors during log processing
-                logger.error(f"Error processing SessionPairDeployed event logs: {e}")
-                raise ValueError(f"Failed to parse SessionPairDeployed event: {e}")
-
-        except TimeoutError as e:
-             logger.error(f"Timeout waiting for session creation transaction: {e}")
-             raise # Re-raise the timeout error
-        except Exception as e:
-            # This catches failures from send_transaction (on-chain failure or other errors)
-            logger.error(f"Failed to create vote session: {e}")
-            raise # Re-raise other exceptions
+    # async def create_vote_session(
+    #     self,
+    #     title: str,
+    #     description: str,
+    #     start_date: int,
+    #     end_date: int,
+    #     shares_end_date: int,
+    #     options: list[str],
+    #     metadata: str,
+    #     required_deposit: int, # Expecting Wei
+    #     min_share_threshold: int
+    # ) -> dict:
+    #     """Creates a new VoteSession and ParticipantRegistry pair via the factory.
+    #     Waits for the transaction receipt and parses the SessionPairDeployed event.
+    #     
+    #     Returns:
+    #         A dictionary containing sessionId, voteSessionContract, and participantRegistryContract.
+    #     
+    #     Raises:
+    #         Exception: If transaction fails, times out, or event parsing fails.
+    #     """
+    #     try:
+    #         # Call send_transaction, which now waits for the receipt
+    #         tx_receipt = await self.send_transaction(
+    #             self.factory_contract,
+    #             "createSessionPair",
+    #             title,
+    #             description,
+    #             start_date,
+    #             end_date,
+    #             shares_end_date,
+    #             options,
+    #             metadata,
+    #             required_deposit,
+    #             min_share_threshold
+    #         )
+    # 
+    #         # Transaction succeeded if we got here (send_transaction checks status)
+    #         logger.info(f"Transaction successful. Processing receipt for event SessionPairDeployed...")
+    #         
+    #         # Process logs to find the SessionPairDeployed event
+    #         # The factory contract instance (self.factory_contract) has an 'events' attribute
+    #         # that can be used to decode logs.
+    #         try:
+    #             # This processes all logs in the receipt and decodes the ones matching the event ABI
+    #             processed_logs = self.factory_contract.events.SessionPairDeployed().process_receipt(tx_receipt)
+    #             
+    #             if not processed_logs:
+    #                 logger.error("SessionPairDeployed event not found in transaction logs.")
+    #                 raise ValueError("SessionPairDeployed event not found after successful transaction.")
+    #                 
+    #             # Assuming only one such event is emitted per transaction
+    #             event_args = processed_logs[0]['args'] 
+    #             session_id = event_args.sessionId
+    #             session_addr = event_args.voteSessionContract
+    #             registry_addr = event_args.participantRegistryContract
+    #             
+    #             logger.info(f"Successfully deployed session pair: ID={session_id}, Session={session_addr}, Registry={registry_addr}")
+    #             
+    #             return {
+    #                 "sessionId": session_id,
+    #                 "voteSessionContract": session_addr,
+    #                 "participantRegistryContract": registry_addr
+    #             }
+    #             
+    #         except Exception as e: # Catch potential errors during log processing
+    #             logger.error(f"Error processing SessionPairDeployed event logs: {e}")
+    #             raise ValueError(f"Failed to parse SessionPairDeployed event: {e}")
+    # 
+    #     except TimeoutError as e:
+    #          logger.error(f"Timeout waiting for session creation transaction: {e}")
+    #          raise # Re-raise the timeout error
+    #     except Exception as e:
+    #         # This catches failures from send_transaction (on-chain failure or other errors)
+    #         logger.error(f"Failed to create vote session: {e}")
+    #         raise # Re-raise other exceptions
 
     async def get_session_count(self) -> int:
         """Gets the total number of deployed session pairs from the factory."""

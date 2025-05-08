@@ -2,107 +2,91 @@
 API schemas package.
 This package contains Pydantic models for API requests and responses.
 """
+# Add necessary imports for base schemas
+from pydantic import BaseModel
+from typing import Generic, TypeVar, Optional, List # Add List
+
+# --- Base Schemas Definition --- 
+DataType = TypeVar('DataType')
+
+# Fix Pydantic warning: Inherit from BaseModel first
+class StandardResponse(BaseModel, Generic[DataType]):
+    """Standard API response format."""
+    success: bool = True
+    message: Optional[str] = None
+    data: Optional[DataType] = None
+
+class ErrorDetail(BaseModel):
+    """Detail structure for error responses."""
+    message: str
+    type: Optional[str] = None
+# --- End Base Schemas --- 
+
 # Auth schemas
 from app.schemas.auth import (
     # Import only schemas defined in auth.py
     RegisterRequest,
-    LoginRequest,
+    # LoginRequest, # Remove if LoginRequest is not defined/used
     UserResponse,
     TokenResponse,
     TokenData,
 )
 
-# Vote Session schemas (renamed from election)
+# Vote Session schemas
 from app.schemas.vote_session import (
-    # Removed ElectionCreateRequest, ExtendedElectionCreateRequest, ElectionMetadata
     SliderConfig, 
-    VoteSessionCreateRequest,
-    ExtendedVoteSessionCreateRequest,
     VoteSessionMetadata,
 )
 
-# Encrypted Vote schemas (renamed from vote, but potentially empty/deleted)
-# Remove import block if encrypted_vote.py was deleted or is empty
-# from app.schemas.encrypted_vote import (
-#     VoteSubmitRequest, # Removed
-#     VoteResponse, # Removed
-#     PublicKeyRequest, # Removed
-#     KeyRequest # Removed
-# )
-
-# Holder schemas
-from app.schemas.holder import (
-    # Removed JoinHolderStringRequest
-    HolderResponse, # Keep for now, used by unrefactored endpoints
-    HolderStatusResponse, # Keep for now
-    HolderListResponse, # Keep for now
-    HolderCountResponse, # Used by refactored endpoint
-    RequiredDepositResponse, # Keep for now
-    HolderJoinRequest, # Used by refactored endpoint
+# Participant schemas (from participant.py, assuming holder.py was deleted)
+from app.schemas.participant import (
+    ParticipantCacheModel, 
+    ParticipantListItem,
+    ParticipantDetail,
 )
 
-# Share schemas
+# Encrypted Vote schemas
+from app.schemas.encrypted_vote import (
+    PublicKeyValidateRequest, # Used by validate-public-key
+)
+
+# Share schemas - Update imports
 from app.schemas.share import (
-    # Removed ShareSubmitRequest
     ShareListSubmitRequest, # Used by refactored endpoint
-    ShareVerificationRequest, # Used by existing endpoint
-    ShareVerificationResponse, # Used by existing endpoint
-    ShareStatusResponse, # Keep for now, used by unrefactored endpoint
-    SubmittedSharesResponse, # Keep for now, used by unrefactored endpoint
     ShareItem # Used by ShareListSubmitRequest
 )
 
-# Response schemas
-from app.schemas.responses import (
-    StandardResponse,
-    # ErrorResponse, # Assuming unused?
-    TransactionResponse,
-    # PaginatedResponse, # Assuming unused?
-)
-
-# Secret Holder schemas
-from app.schemas.secret_holder import SecretHolderResponse
-
+# Import models if necessary (e.g., User if used in auth response directly)
+from app.models.user_model import User
 
 __all__ = [
+    # Base
     "StandardResponse",
-    "TransactionResponse",
+    "ErrorDetail",
     
     # Vote Session
     "SliderConfig",
-    "VoteSessionCreateRequest",
-    "ExtendedVoteSessionCreateRequest",
     "VoteSessionMetadata",
     
-    # Encrypted Vote (Remove if file/schemas deleted)
-    # "VoteSubmitRequest",
-    # "PublicKeyRequest",
-    # "KeyRequest",
-    # "VoteResponse",
-    
-    # Share
-    "ShareItem", # Add ShareItem used by ShareListSubmitRequest
+    # Share - Update exports
+    "ShareItem",
     "ShareListSubmitRequest",
-    "ShareVerificationRequest",
-    "ShareVerificationResponse",
-    "ShareStatusResponse", # Keep for now
-    "SubmittedSharesResponse", # Keep for now
     
-    # Holder
-    "HolderJoinRequest",
-    "HolderCountResponse",
-    "HolderResponse", # Keep for now
-    "HolderStatusResponse", # Keep for now
-    "HolderListResponse", # Keep for now
-    "RequiredDepositResponse", # Keep for now
+    # Participant - Add exports
+    "ParticipantCacheModel",
+    "ParticipantListItem",
+    "ParticipantDetail",
+
+    # Encrypted Vote - Add exports
+    "PublicKeyValidateRequest",
     
-    # Secret Holder
-    "SecretHolderResponse",
-    
-    # Auth (Update __all__ based on actual imports)
+    # Auth
     "RegisterRequest",
-    "LoginRequest",
+    # "LoginRequest", # Remove if not defined/used
     "UserResponse",
     "TokenResponse",
     "TokenData",
+
+    # Models (if exposed)
+    "User",
 ] 

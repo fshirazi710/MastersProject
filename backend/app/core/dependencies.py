@@ -2,11 +2,12 @@
 Centralized dependencies for FastAPI routes.
 This module provides dependency injection functions for services used across the application.
 """
-from fastapi import Depends
+from fastapi import Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorClient
+from sqlalchemy.orm import Session
 
 from app.services.blockchain import BlockchainService
-from app.core.mongodb import get_mongodb
+from app.db.mongodb_utils import get_mongo_db
 import logging
 
 logger = logging.getLogger(__name__)
@@ -34,15 +35,24 @@ def get_blockchain_service() -> BlockchainService:
         try:
             _blockchain_service = BlockchainService()
             logger.info("BlockchainService initialized successfully")
+        except ConnectionError as e:
+            logger.error(f"Failed to initialize BlockchainService: Connection error: {e}")
+            raise HTTPException(status_code=503, detail=f"Blockchain service unavailable: {e}")
+        except ImportError as e:
+            logger.error(f"Failed to initialize BlockchainService: Configuration error: {e}")
+            raise HTTPException(status_code=500, detail=f"Blockchain service configuration error: {e}")
+        except AttributeError as e:
+            logger.error(f"Failed to initialize BlockchainService: Missing config: {e}")
+            raise HTTPException(status_code=500, detail=f"Blockchain service configuration error: {e}")
         except Exception as e:
             logger.error(f"Failed to initialize BlockchainService: {e}")
-            raise
+            raise HTTPException(status_code=500, detail=f"Failed to initialize blockchain service: {e}")
     return _blockchain_service
 
 async def get_db() -> AsyncIOMotorClient:
     """
     Dependency for getting a database connection.
-    Simply wraps the get_mongodb function for consistency.
+    Simply wraps the get_mongo_db function for consistency.
     
     Used for storing:
     - User information
@@ -50,5 +60,5 @@ async def get_db() -> AsyncIOMotorClient:
     - Share submissions
     - Reward distribution records
     """
-    db = await get_mongodb()
+    db = await get_mongo_db()
     return db 

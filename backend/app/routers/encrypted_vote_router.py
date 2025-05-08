@@ -6,15 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
 from fastapi.responses import JSONResponse
 
-from app.core.dependencies import get_blockchain_service, get_db
+from app.core.dependencies import get_blockchain_service
 from app.core.error_handling import handle_blockchain_error, handle_validation_error
-from app.core.config import (
-    WALLET_ADDRESS,
-    PRIVATE_KEY,
-)
 from app.schemas import (
     StandardResponse,
-    TransactionResponse,
 )
 from app.schemas.encrypted_vote import PublicKeyValidateRequest
 
