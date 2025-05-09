@@ -82,6 +82,15 @@ class CacheService:
             except Exception as at_err:
                  logger.warning(f"Could not fetch actual threshold for session {session_id}, using initial: {at_err}")
 
+            # Fetch total reward pool
+            reward_pool_wei_str = "0"
+            if registry_addr_factory: # Ensure we have the registry address
+                try:
+                    reward_pool_wei_str = await self.blockchain_service.get_total_reward_pool(session_id, registry_addr_factory)
+                    logger.debug(f"Fetched total reward pool for session {session_id}: {reward_pool_wei_str} Wei")
+                except Exception as rwp_err:
+                    logger.warning(f"Could not fetch total reward pool for session {session_id}: {rwp_err}")
+            
             # 2. Prepare cache document data
             cache_data = {
                 "session_id": session_id,
@@ -98,6 +107,7 @@ class CacheService:
                 "min_share_threshold": params.get('minShareThreshold'),
                 "actual_min_share_threshold": actual_threshold,
                 "current_status_str": status_str,
+                "reward_pool_wei": reward_pool_wei_str,
                 "decryption_threshold": decryption_params_tuple[0] if decryption_params_tuple else None, 
                 "alphas": [a.hex() for a in decryption_params_tuple[1]] if decryption_params_tuple and decryption_params_tuple[1] else None,
                 "last_synced_ts": int(datetime.now(timezone.utc).timestamp()) # Use current UTC timestamp

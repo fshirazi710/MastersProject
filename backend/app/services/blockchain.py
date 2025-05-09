@@ -5,6 +5,7 @@ import logging
 import json
 import os
 import asyncio
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -512,3 +513,21 @@ class BlockchainService:
             
     # --- Delete old functions --- 
     # Removing is_holder_active and has_holder_submitted_share as they are replaced
+
+    async def get_total_reward_pool(self, session_id: int, registry_address: str) -> str:
+        """Fetches the total reward pool for a session from its ParticipantRegistry contract."""
+        if not self.w3.is_address(registry_address):
+            logger.error(f"Invalid registry_address provided to get_total_reward_pool: {registry_address}")
+            return "0" # Return 0 as string for Wei
+        try:
+            registry_contract = self.get_registry_contract(registry_address)
+            if not registry_contract:
+                logger.error(f"Could not get registry contract instance for {registry_address} in get_total_reward_pool")
+                return "0"
+            
+            # The totalRewardPool function in ParticipantRegistry.sol takes session_id as an argument
+            total_wei = await self.call_contract_function(registry_contract, "totalRewardPool", session_id)
+            return str(total_wei) if total_wei is not None else "0"
+        except Exception as e:
+            logger.error(f"Error fetching total reward pool for session {session_id} from registry {registry_address}: {e}", exc_info=True)
+            return "0" # Return 0 as string for Wei on error

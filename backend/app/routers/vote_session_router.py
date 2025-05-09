@@ -319,9 +319,13 @@ async def get_vote_session_information(
             except ValueError:
                 logger.warning(f"Could not convert required_deposit_wei '{wei_str}' to Eth for session {vote_session_id}")
         
-        # TODO: Add reward_pool calculation/retrieval if needed for detail response
-        # For now, assume it's not directly cached or needed, return None or 0.0
-        reward_pool_eth = "0.0" 
+        reward_pool_eth = "0.0"
+        if wei_str := session_doc.get('reward_pool_wei'): # Get reward_pool_wei from cache
+            try:
+                # Convert Wei to Eth string
+                reward_pool_eth = str(blockchain_service.w3.from_wei(int(wei_str), 'ether'))
+            except ValueError:
+                logger.warning(f"Could not convert reward_pool_wei '{wei_str}' to Eth for session {vote_session_id}")
 
         # Parse sliderConfig if it exists
         slider_config_parsed = None
@@ -351,7 +355,7 @@ async def get_vote_session_information(
             # --- Fields below are placeholders - need actual data source (e.g., separate counts collection or enrich here) ---
             participant_count=session_doc.get('participant_count'), # Placeholder - need count from participants collection
             secret_holder_count=session_doc.get('secret_holder_count'), # Placeholder
-            reward_pool=reward_pool_eth, # Placeholder - needs calculation
+            reward_pool=reward_pool_eth, # Use the converted value
             released_keys=session_doc.get('released_keys'), # Placeholder - need count
             displayHint=session_doc.get('displayHint'), # Assuming this might be cached directly
             sliderConfig=slider_config_parsed # Assuming this might be cached directly
