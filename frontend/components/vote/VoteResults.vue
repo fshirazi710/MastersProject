@@ -32,6 +32,7 @@
     <HolderStatusAndClaim 
       :voteId="props.voteId"
       :sessionStatus="votingStatusText"
+      :voteSessionAddress="props.voteSessionAddress"
     /> 
 
   </div>
@@ -39,7 +40,10 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
-import { voteSessionService } from '~/services/contracts/ethersService.js';
+// Remove old service import
+// import { voteSessionService } from '~/services/contracts/ethersService.js';
+// Add new service import
+import { voteSessionViewService } from '@/services/contracts/voteSessionViewService.js';
 // --- Import Chart.js components --- 
 // import { Bar } from 'vue-chartjs'
 // import { 
@@ -69,6 +73,10 @@ const props = defineProps({
   },
   voteId: {
     type: [String, Number],
+    required: true
+  },
+  voteSessionAddress: {
+    type: String,
     required: true
   },
   releasedKeys: {
@@ -145,8 +153,8 @@ const checkStatusAndTriggerDecryption = async () => {
   }
 
   try {
-      console.log(`VoteResults: Checking status for session ${sessionId}...`);
-      const sessionInfo = await voteSessionService.getSessionInfo(sessionId);
+      console.log(`VoteResults: Checking status for session ${props.voteId} using address ${props.voteSessionAddress}...`);
+      const sessionInfo = await voteSessionViewService.getSessionInfo(props.voteSessionAddress);
       const submittedSharesCount = props.releasedKeys;
       internalReleasedKeys.value = submittedSharesCount;
       

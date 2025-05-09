@@ -68,10 +68,10 @@ contract VoteSessionFactory is Ownable {
         string memory _metadata,
         uint256 _requiredDeposit,
         uint256 _minShareThreshold
-    ) external onlyOwner returns (address voteSessionProxyAddress_, address registryProxyAddress_) {
+    ) external returns (address voteSessionProxyAddress_, address registryProxyAddress_) {
 
         uint256 currentSessionId = nextSessionId;
-        address deployer = owner(); // Factory owner will own the new contracts
+        address deployer = msg.sender; // The caller (session creator) will own the new contracts
 
         // 1. Deploy Clones (Proxies)
         registryProxyAddress_ = Clones.clone(registryImplementation);
@@ -103,6 +103,9 @@ contract VoteSessionFactory is Ownable {
 
         // 5. Emit event with PROXY addresses
         emit SessionPairDeployed(currentSessionId, voteSessionProxyAddress_, registryProxyAddress_, deployer);
+
+        // Automatically update the status of the newly created VoteSession
+        VoteSession(voteSessionProxyAddress_).updateSessionStatus();
 
         // Return proxy addresses
         // return (voteSessionProxyAddress_, registryProxyAddress_); // Return values are named

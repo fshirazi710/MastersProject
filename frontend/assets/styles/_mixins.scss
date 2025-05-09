@@ -31,4 +31,22 @@
 // Common visual patterns
 @mixin card-shadow {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+@mixin page-container {
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: $spacing-md; // Ensure $spacing-md is defined in _variables.scss
+  padding-right: $spacing-md; // Ensure $spacing-md is defined in _variables.scss
+}
+
+@mixin notice-box($bg-color, $text-color, $border-color) {
+  padding: $spacing-md;
+  margin-bottom: $spacing-lg; // Default margin, can be overridden
+  border: 1px solid $border-color;
+  background-color: $bg-color;
+  color: $text-color;
+  border-radius: $border-radius; // Use existing global border-radius
+  // text-align: center; // Common style, but can be set in the class using the mixin if needed
 } 

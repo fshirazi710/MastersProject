@@ -105,7 +105,7 @@ const itemsPerPage = ref(9) // Show 9 items per page, good for a 3-column grid
 // Define relevant statuses for display and filtering
 // Aligned with Backend API documentation examples: "Pending", "VotingOpen", "VotingClosed", "Tallying", "Complete"
 const relevantStatuses = [
-  { value: 'pending', label: 'Pending / Registration' },
+  { value: 'registrationopen', label: 'Pending / Registration' },
   { value: 'votingopen', label: 'Voting Open' },
   { value: 'votingclosed', label: 'Voting Closed' },
   { value: 'tallying', label: 'Tallying Results' },
@@ -124,7 +124,10 @@ const getSessions = async () => {
     const response = await voteSessionApi.getAllVoteSessions()
     // Assuming response.data is the StandardResponse object: { success, message, data: SessionApiResponseItem[] }
     if (response.data && response.data.success) {
-      sessions.value = response.data.data.map(session => ({
+      const rawSessions = response.data.data; // Log raw API data
+      console.log("Raw sessions from API:", JSON.parse(JSON.stringify(rawSessions)));
+
+      sessions.value = rawSessions.map(session => ({
         id: session.id,
         title: session.title || `Vote Session ${session.id}`,
         // description: session.description, // Only include if present in SessionApiResponseItem
@@ -135,6 +138,7 @@ const getSessions = async () => {
         participantRegistryAddress: session.participant_registry_address,
         // participantCount and secretHolderCount are not available in SessionApiResponseItem
       }))
+      console.log("Mapped sessions.value:", JSON.parse(JSON.stringify(sessions.value))); // Log the processed sessions
     } else {
       throw new Error(response.data.message || 'Failed to fetch sessions due to backend error.')
     }
@@ -174,13 +178,23 @@ const filteredSessions = computed(() => {
 
 // Group sessions by their status for easier rendering in sections
 const sessionsByStatus = computed(() => {
+  console.log("Updating sessionsByStatus. Current filteredSessions:", JSON.parse(JSON.stringify(filteredSessions.value)));
+  console.log("Relevant statuses for grouping:", JSON.parse(JSON.stringify(relevantStatuses)));
   const grouped = {}
   relevantStatuses.forEach(statusInfo => {
-    grouped[statusInfo.value] = filteredSessions.value.filter(s => s.status && s.status.toLowerCase() === statusInfo.value.toLowerCase())
+    grouped[statusInfo.value] = filteredSessions.value.filter(s => {
+      const matches = s.status && s.status.toLowerCase() === statusInfo.value.toLowerCase();
+      // Log individual session matching for a specific status if needed for deep dive
+      // if (statusInfo.value === 'pending') { // Example: Log specifically for 'pending'
+      //   console.log(`Session ${s.id} (status: ${s.status}) match for 'pending': ${matches}`);
+      // }
+      return matches;
+    });
   })
   // If filterStatus is 'all', this will contain all sessions grouped.
   // If a specific filter is selected, only that group will be effectively non-empty if we also filter sections in template.
   // The template logic v-if="filterStatus === 'all' || filterStatus === displayStatus.value" handles section visibility.
+  console.log("Grouped sessions (sessionsByStatus):", JSON.parse(JSON.stringify(grouped)));
   return grouped
 })
 

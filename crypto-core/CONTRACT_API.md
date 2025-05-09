@@ -33,7 +33,7 @@ The system uses a factory pattern with upgradeable contracts:
     *   Emitted when `createSessionPair` successfully deploys and initializes a new pair of proxy contracts.
     *   `voteSessionContract`: The *proxy* address of the new `VoteSession` contract.
     *   `participantRegistryContract`: The *proxy* address of the new `ParticipantRegistry` contract.
-    *   `owner`: The address set as the owner for both new proxy contracts (factory owner).
+    *   `owner`: The address set as the owner for both new proxy contracts (the `msg.sender` of the `createSessionPair` call).
 *   **`OwnershipTransferred(address indexed previousOwner, address indexed newOwner)`** (Inherited from Ownable)
     *   Emitted when factory ownership is transferred.
 
@@ -43,13 +43,14 @@ The system uses a factory pattern with upgradeable contracts:
     *   `constructor(address initialOwner, address _registryImplementation, address _voteSessionImplementation)`
     *   Sets the initial owner of the factory and stores the implementation addresses for the contracts to be cloned.
 *   **`createSessionPair(...)`**
-    *   `createSessionPair(string memory _title, string memory _description, uint256 _startDate, uint256 _endDate, uint256 _sharesEndDate, string[] memory _options, string memory _metadata, uint256 _requiredDeposit, uint256 _minShareThreshold) external onlyOwner returns (address voteSessionProxyAddress_, address registryProxyAddress_)`
+    *   `createSessionPair(string memory _title, string memory _description, uint256 _startDate, uint256 _endDate, uint256 _sharesEndDate, string[] memory _options, string memory _metadata, uint256 _requiredDeposit, uint256 _minShareThreshold) external returns (address voteSessionProxyAddress_, address registryProxyAddress_)`
     *   Deploys clones (proxies) of `ParticipantRegistry` and `VoteSession` using the stored implementation addresses.
-    *   Initializes both clones via their respective `initialize` functions, setting the factory owner as the owner of the new contracts and passing the registry proxy address to the vote session initializer.
+    *   Initializes both clones via their respective `initialize` functions, setting the `msg.sender` (caller of this function) as the owner of the new contracts and passing the registry proxy address to the vote session initializer.
+    *   Calls `updateSessionStatus()` on the newly created `VoteSession` proxy to transition it from `Created` to the appropriate initial state (e.g., `RegistrationOpen` or `VotingOpen`) based on the provided dates and current time.
     *   Assigns the next available `sessionId`.
     *   Stores the proxy addresses in the tracking mappings/array.
     *   Emits the `SessionPairDeployed` event.
-    *   **Requirements:** `onlyOwner`. Parameters define the properties of the new `VoteSession`.
+    *   **Requirements:** Can be called by any account. The caller (`msg.sender`) will pay gas fees and become the owner of the deployed proxy contracts. Parameters define the properties of the new `VoteSession`.
     *   **Returns:** The proxy addresses of the newly deployed `VoteSession` and `ParticipantRegistry`.
 *   **`getDeployedSessionCount()`**
     *   `getDeployedSessionCount() external view returns (uint256)`
@@ -319,14 +320,19 @@ The system uses a factory pattern with upgradeable contracts:
 
 ## Interaction Flow Example (Updated)
 
-1.  **Deployment:** Admin deploys implementation contracts (`ParticipantRegistry`, `VoteSession`) and then `VoteSessionFactory`, providing implementation addresses.
-2.  **Session Creation:** Admin calls `factory.createSessionPair(...)` -> Factory deploys `VoteSession` and `ParticipantRegistry` proxies, calls their respective `initialize` functions, emits `SessionPairDeployed` event with proxy addresses and `sessionId`.
-3.  **Linking:** Admin calls `registryProxy.setVoteSessionContract(sessionId, voteSessionProxyAddress)` using data from the event.
-4.  **Decryption Params:** Admin calls `voteSessionProxy.setDecryptionParameters(...)`.
-5.  **Funding (Optional):** Admin calls `registryProxy.addRewardFunding(sessionId)` with ETH.
+1.  **Deployment:** Admin deploys implementation contracts (`ParticipantRegistry`, `VoteSession`) and then `VoteSessionFactory`, providing implementation addresses. The admin becomes the owner of `VoteSessionFactory`.
+2.  **Session Creation (by any user):** A user (session creator) calls `factory.createSessionPair(...)` with desired session parameters.
+    *   Factory deploys `VoteSession` and `ParticipantRegistry` proxies.
+    *   Factory calls `initialize` on both proxies, setting the **session creator (`msg.sender`)** as the owner of these new proxy contracts.
+    *   Factory emits `SessionPairDeployed` event with proxy addresses, `sessionId`, and the session creator as `owner`.
+3.  **Linking (by session creator):** The session creator calls `registryProxy.setVoteSessionContract(sessionId, voteSessionProxyAddress)` using data from the event. This links their specific registry instance to their vote session instance.
+4.  **Decryption Params (by session creator):** The session creator calls `voteSessionProxy.setDecryptionParameters(...)` for their session.
+5.  **Funding (by session creator or others if allowed):** The session creator calls `registryProxy.addRewardFunding(sessionId)` with ETH for their session. (Note: `addRewardFunding` is `onlyOwner` on the registry, so only the session creator can do this unless the registry's ownership is transferred or a public funding function is added).
 6.  **Registration:** Users call `registryProxy.joinAsHolder(...)` (with deposit) or `registryProxy.registerAsVoter(...)` for the specific `sessionId`.
 7.  **Voting:** Registered users call `voteSessionProxy.castEncryptedVote(...)`.
 8.  **Share Submission:** Holders call `voteSessionProxy.submitDecryptionShare(...)` -> `VoteSession` calls `registryProxy.recordShareSubmission(...)`.
 9.  **Decryption Value Submission:** Holders call `voteSessionProxy.submitDecryptionValue(...)` after `sharesCollectionEndDate`. Threshold events are emitted.
-10. **Reward Trigger:** After `sharesCollectionEndDate`, anyone *can* call `voteSessionProxy.triggerRewardCalculation()` (sets flag), but the actual calculation requires an external call (e.g., by Admin/Keeper) to `registryProxy.calculateRewards(sessionId)`.
+10. **Reward Trigger (by session creator):** After `sharesCollectionEndDate`, the session creator calls `voteSessionProxy.triggerRewardCalculation()`.
+    *   `VoteSession` calls `registryProxy.calculateRewards(sessionId)`.
+    *   `VoteSession` status becomes `Completed`.
 11. **Claims:** Eligible holders call `registryProxy.claimReward(sessionId)` and/or `registryProxy.claimDeposit(sessionId)` after calculation and when the claim period is active.

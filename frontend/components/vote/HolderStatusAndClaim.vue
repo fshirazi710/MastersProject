@@ -50,7 +50,13 @@
 
 <script setup>
 import { ref, onMounted, watch } from 'vue';
-import { ethersBaseService, registryService } from '~/services/contracts/ethersService.js';
+import { ethers } from 'ethers';
+
+// Add new service imports (assuming @ alias, adjust if needed)
+import { blockchainProviderService } from '@/services/blockchainProvider.js';
+import { registryParticipantService } from '@/services/contracts/registryParticipantService.js';
+import { registryFundService } from '@/services/contracts/registryFundService.js';
+import { voteSessionViewService } from '@/services/contracts/voteSessionViewService.js';
 
 const props = defineProps({
   voteId: {
@@ -60,6 +66,10 @@ const props = defineProps({
   sessionStatus: { // Pass overall session status from parent if needed for eligibility checks
       type: String, 
       default: 'unknown' 
+  },
+  voteSessionAddress: { // Added prop for checking claim period
+    type: String,
+    required: true
   }
 });
 
@@ -71,16 +81,26 @@ const isCheckingHolderStatus = ref(false);
 const currentAccount = ref(null);
 const isClaimingDeposit = ref(false);
 const claimError = ref(null); // Specific error ref for claiming
+const hasClaimedDeposit = ref(false);
+const hasClaimedReward = ref(false);
+const claimableRewardAmount = ref('0 ETH');
+const isDepositClaimActive = ref(false);
 
 onMounted(() => {
   // Initial check when component mounts
+  currentAccount.value = blockchainProviderService.getAccount();
   checkHolderStatus();
-  // Watch for account changes provided by ethersBaseService
-  ethersBaseService.onAccountChanged(checkHolderStatus); 
+  // Watch for account changes - This might need a global state manager (e.g., Pinia)
+  // For now, actions will re-check the account if needed.
+  // blockchainProviderService.onAccountChanged(account => { 
+  //   currentAccount.value = account;
+  //   checkHolderStatus(); 
+  // });
 });
 
 // Re-check if the voteId changes (though unlikely in this component's lifecycle)
 watch(() => props.voteId, () => {
+    currentAccount.value = blockchainProviderService.getAccount(); // Ensure account is fresh
     checkHolderStatus();
 });
 
@@ -88,7 +108,7 @@ watch(() => props.voteId, () => {
 
 
 const checkHolderStatus = async () => {
-  currentAccount.value = ethersBaseService.getAccount();
+  currentAccount.value = blockchainProviderService.getAccount(); // Ensure account is fresh before check
   if (!currentAccount.value) {
     console.log("HolderStatus: Wallet not connected, cannot check holder status.");
     isHolder.value = false;
@@ -109,13 +129,14 @@ const checkHolderStatus = async () => {
   claimError.value = null; // Clear previous errors
   try {
     console.log(`HolderStatus: Checking status for ${currentAccount.value} in session ${sessionId}...`);
-    const details = await registryService.getParticipantDetails(sessionId, currentAccount.value);
+    const details = await registryParticipantService.getParticipantInfo(sessionId, currentAccount.value);
 
     if (details) {
-        isHolder.value = details.isRegistered;
+        isHolder.value = details.isRegistered && details.isHolder; // Ensure they are specifically a holder
         didHolderSubmitShare.value = details.hasSubmittedShares;
-        holderDeposit.value = details.depositAmount; // Already formatted ETH string
-        console.log(`HolderStatus: Active=${isHolder.value}, SubmittedShare=${didHolderSubmitShare.value}, Deposit=${holderDeposit.value}`);
+        // Deposit amount from service is already in Ether string format
+        holderDeposit.value = details.depositAmount ? details.depositAmount + ' ETH' : '0 ETH';
+        console.log(`HolderStatus: ActiveHolder=${isHolder.value}, SubmittedShare=${didHolderSubmitShare.value}, Deposit=${holderDeposit.value}`);
     } else {
          isHolder.value = false;
          didHolderSubmitShare.value = false;
@@ -138,29 +159,73 @@ const checkHolderStatus = async () => {
 };
 
 const fetchRewardStatus = async (sessionId) => {
-  // TODO: Implement fetching actual reward/claim status from the registry contract
-  // This might involve checking if rewards have been calculated/distributed
-  // and if the specific user has already claimed.
-  console.warn(`HolderStatus: fetchRewardStatus needs implementation for session ${sessionId}.`);
-  // Placeholder: Check if deposit is zero, maybe implies claimed? Needs better logic.
-  if (isHolder.value && holderDeposit.value === '0 ETH') {
-      return 'Claimed / Zero Deposit';
+  if (!currentAccount.value || !props.voteSessionAddress) {
+    rewardDistributionStatus.value = 'Cannot check status (wallet/session address missing).';
+    return;
   }
-  // Placeholder: Check session status from props if needed
-  if (props.sessionStatus === 'complete') { 
-      // This is a simplification, the contract holds the real state.
-      return 'Distribution Pending/Complete (Check Contract)'; 
+  try {
+    isDepositClaimActive.value = await voteSessionViewService.isDepositClaimPeriodActive(props.voteSessionAddress);
+    
+    if (!isHolder.value) {
+        rewardDistributionStatus.value = 'Not applicable (not a holder).';
+        return;
+    }
+
+    hasClaimedDeposit.value = await registryParticipantService.hasClaimedDeposit(sessionId, currentAccount.value);
+    hasClaimedReward.value = await registryFundService.hasClaimedReward(sessionId, currentAccount.value);
+
+    if (hasClaimedDeposit.value && hasClaimedReward.value) {
+        rewardDistributionStatus.value = 'All Claims Processed';
+        holderDeposit.value = '0 ETH'; // Reflect claimed deposit
+        claimableRewardAmount.value = '0 ETH';
+    } else if (hasClaimedDeposit.value) {
+        rewardDistributionStatus.value = 'Deposit Claimed';
+        holderDeposit.value = '0 ETH';
+    } else if (hasClaimedReward.value) {
+        rewardDistributionStatus.value = 'Reward Claimed';
+        claimableRewardAmount.value = '0 ETH';
+    }
+
+    if (!hasClaimedReward.value) {
+        const owedWei = await registryFundService.getRewardsOwed(sessionId, currentAccount.value);
+        claimableRewardAmount.value = owedWei ? ethers.formatEther(owedWei) + ' ETH' : '0 ETH';
+    }
+
+    if (isDepositClaimActive.value) {
+        if (!hasClaimedDeposit.value && holderDeposit.value !== '0 ETH') {
+            rewardDistributionStatus.value = 'Deposit/Reward Claim Open';
+        } else if (!hasClaimedReward.value && claimableRewardAmount.value !== '0 ETH') {
+            rewardDistributionStatus.value = 'Reward Claim Open';
+        } else if (hasClaimedDeposit.value && hasClaimedReward.value) {
+            rewardDistributionStatus.value = 'All Claims Processed';
+        } else {
+            rewardDistributionStatus.value = 'Claim Period Open (No further claims or already processed)';
+        }
+    } else {
+        if (hasClaimedDeposit.value && hasClaimedReward.value) {
+            rewardDistributionStatus.value = 'All Claims Processed';
+        } else {
+            rewardDistributionStatus.value = 'Claim Period Not Yet Active';
+        }
+    }
+
+  } catch (err) {
+    console.error("HolderStatus: Error fetching reward/claim status:", err);
+    rewardDistributionStatus.value = 'Error fetching claim status.';
+    claimableRewardAmount.value = '0 ETH';
   }
-  return 'Unknown/Pending'; 
 };
 
 const claimDepositHandler = async () => {
-  if (!currentAccount.value || !isHolder.value) {
-    claimError.value = "Cannot claim: Wallet not connected or not registered.";
+  currentAccount.value = blockchainProviderService.getAccount(); // Ensure account is fresh
+  if (!currentAccount.value) {
+    claimError.value = "Wallet not connected.";
     return;
   }
-  // TODO: Add more sophisticated eligibility checks based on sessionStatus and contract state
-  // For example, can only claim after shares phase or completion.
+  if (!isHolder.value) {
+    claimError.value = "Not registered as a holder for this session.";
+    return;
+  }
 
   const sessionId = Number(props.voteId);
   if (isNaN(sessionId)) {
@@ -168,32 +233,63 @@ const claimDepositHandler = async () => {
       return;
   }
 
+  // Refresh status before attempting claim for latest eligibility
+  await checkHolderStatus(); // This will also call fetchRewardStatus
+
+  if (!isDepositClaimActive.value) {
+    claimError.value = "Claim period is not active.";
+    return;
+  }
+
   isClaimingDeposit.value = true;
   claimError.value = null;
+  let depositClaimedSuccessfully = false;
+  let rewardClaimedSuccessfully = false;
+
   try {
-    console.log(`HolderStatus: Attempting to claim deposit/reward for session ${sessionId} by ${currentAccount.value}`);
-    
-    // Call the service function
-    const txReceipt = await registryService.claimDepositOrReward(sessionId);
+    console.log(`HolderStatus: Attempting to claim for session ${sessionId} by ${currentAccount.value}`);
 
-    console.log("HolderStatus: Claim transaction successful:", txReceipt);
-    alert("Claim transaction sent successfully! Waiting for confirmation...");
+    // Claim Deposit if eligible and not already claimed
+    if (!hasClaimedDeposit.value && holderDeposit.value !== '0 ETH') { // Check original deposit amount too
+      console.log("Attempting to claim deposit...");
+      const depositTx = await registryParticipantService.claimDeposit(sessionId);
+      // await depositTx.wait(); // Assuming service returns tx object with wait()
+      console.log("Deposit claim transaction successful:", depositTx.transactionHash);
+      depositClaimedSuccessfully = true;
+    } else {
+      console.log("Deposit already claimed or not applicable.");
+      depositClaimedSuccessfully = true; // Consider it successful if already claimed or zero
+    }
 
-    // Re-check status after successful transaction submission
+    // Claim Reward if eligible and not already claimed
+    if (!hasClaimedReward.value && claimableRewardAmount.value !== '0 ETH') {
+      console.log("Attempting to claim reward...");
+      const rewardTx = await registryFundService.claimReward(sessionId);
+      // await rewardTx.wait(); // Assuming service returns tx object with wait()
+      console.log("Reward claim transaction successful:", rewardTx.transactionHash);
+      rewardClaimedSuccessfully = true;
+    } else {
+      console.log("Reward already claimed or not applicable.");
+      rewardClaimedSuccessfully = true; // Consider it successful if already claimed or zero
+    }
+
+    if (depositClaimedSuccessfully && rewardClaimedSuccessfully) {
+        alert("Claim transaction(s) sent successfully! Waiting for confirmation.");
+    } else if (depositClaimedSuccessfully) {
+        alert("Deposit claim transaction sent successfully! Waiting for confirmation.");
+    } else if (rewardClaimedSuccessfully) {
+        alert("Reward claim transaction sent successfully! Waiting for confirmation.");
+    } else {
+        claimError.value = "No claims were applicable or initiated.";
+    }
+
+    // Re-check status after successful transaction submission to update UI
     await checkHolderStatus(); 
 
   } catch (err) {
     console.error("HolderStatus: Failed to claim deposit/reward:", err);
-    // Provide more specific feedback if possible
-    if (err.message && (err.message.toLowerCase().includes('claim already processed') || err.message.toLowerCase().includes('already claimed'))) {
-        claimError.value = "You have already claimed for this session.";
-        // Refresh status to reflect the 'already claimed' state accurately
-        await checkHolderStatus(); 
-    } else if (err.message && err.message.toLowerCase().includes('claim not allowed yet')) {
-         claimError.value = "Claiming is not yet allowed for this session phase.";
-    } else {
-       claimError.value = `Failed to claim: ${err.message || 'Please try again.'}`;
-    }
+    claimError.value = `Failed to claim: ${err.message || 'Please try again.'}`;
+    // Specific error messages can be refined here based on contract errors
   } finally {
     isClaimingDeposit.value = false;
   }

@@ -1,6 +1,8 @@
+@use 'sass:math';
 @use '../variables' as *;
 @use '../components/cards' as *;
 @use '../components/forms' as *;
+@use '../components/buttons' as *;
 @use '../mixins' as *;
 
 .create-vote {
@@ -166,7 +168,7 @@
   flex-wrap: wrap;
   gap: $spacing-lg;
   > .form-group {
-    flex: 1 1 calc(50% - #{$spacing-lg / 2});
+    flex: 1 1 calc(50% - #{math.div($spacing-lg, 2)});
     min-width: 250px;
     margin-bottom: 0;
     &:last-child {

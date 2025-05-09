@@ -216,22 +216,17 @@ contract VoteSession is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrad
     function updateSessionStatus() public {
         SessionStatus initialStatus = currentStatus;
 
-        if (currentStatus == SessionStatus.Created && block.timestamp >= registrationEndDate) {
-             // Should transition from Created to RegistrationOpen *before* registrationEndDate
-             // Let's assume Created means "not yet open for registration"
-             // And RegistrationOpen means "before startDate"
-             // TODO: Review this logic - perhaps registration should open immediately upon creation or via owner action?
-             // For now, assume registration starts implicitly when deployment allows interaction before startDate
-             if (block.timestamp < startDate) {
-                 currentStatus = SessionStatus.RegistrationOpen;
-             } else if (block.timestamp < endDate) {
-                 currentStatus = SessionStatus.VotingOpen;
-             } else if (block.timestamp < sharesCollectionEndDate) {
-                 currentStatus = SessionStatus.SharesCollectionOpen;
-             } else {
-                 // Transition to DecryptionOpen instead of Completed
-                 currentStatus = SessionStatus.DecryptionOpen;
-             }
+        if (currentStatus == SessionStatus.Created) {
+            // If current status is Created, determine the correct state based on time
+            if (block.timestamp < startDate) { // startDate is also registrationEndDate
+                currentStatus = SessionStatus.RegistrationOpen;
+            } else if (block.timestamp < endDate) { // startDate <= block.timestamp < endDate
+                currentStatus = SessionStatus.VotingOpen;
+            } else if (block.timestamp < sharesCollectionEndDate) { // endDate <= block.timestamp < sharesCollectionEndDate
+                currentStatus = SessionStatus.SharesCollectionOpen;
+            } else { // sharesCollectionEndDate <= block.timestamp
+                currentStatus = SessionStatus.DecryptionOpen;
+            }
         } else if (currentStatus == SessionStatus.RegistrationOpen && block.timestamp >= startDate) {
             // --- BEGIN DYNAMIC THRESHOLD FINALIZATION LOGIC ---
             if (!dynamicThresholdFinalized) {

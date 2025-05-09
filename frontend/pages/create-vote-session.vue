@@ -122,11 +122,11 @@
               v-model="voteSessionData.required_deposit"
               required
               min="0.001"
-              step="0.001"
+              step="any" 
               class="form-input"
               @blur="validateField('required_deposit')"
             >
-            <p class="helper-text">Security deposit required from each holder</p>
+            <p class="helper-text">Security deposit required from each holder (min 0.001 ETH)</p>
             <p v-if="formErrors.required_deposit" class="error-message">{{ formErrors.required_deposit }}</p>
           </div>
           
@@ -310,9 +310,9 @@ const toTimestamp = (dateTimeString) => {
 async function checkWalletConnection() {
   if (blockchainProviderService.isConnected()) {
     walletAddress.value = blockchainProviderService.getAccount();
-    const balanceWei = await blockchainProviderService.getBalance(); 
-    if (balanceWei) {
-      walletBalance.value = parseFloat(ethers.formatEther(balanceWei)).toFixed(4);
+    const balanceFromService = await blockchainProviderService.getBalance(); 
+    if (balanceFromService) {
+      walletBalance.value = parseFloat(balanceFromService).toFixed(4);
     }
     chainId.value = blockchainProviderService.getChainId();
     walletConnected.value = true;

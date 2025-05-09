@@ -1,5 +1,11 @@
 # Frontend Refactoring Plan
 
+Backend API Documentation:
+backend\Backend API Endpoint Documentation.md
+
+Smart contract Documentation:
+crypto-core\CONTRACT_API.md
+
 This document outlines the plan for refactoring the frontend of the MastersProject, focusing on aligning pages and components with the new `frontend/services` architecture, improving code quality, and ensuring UI/UX consistency.
 
 ## Overall Goals & Principles
@@ -158,38 +164,45 @@ This document outlines the plan for refactoring the frontend of the MastersProje
 ---
 **7. `frontend/pages/session/[id].vue` (Assumed file for session details, needs creation or check if `create-vote-session.vue` doubles for view/edit)**
     - [ ] **Purpose:** Display detailed information and actions for a specific vote session. This is a crucial page.
-    - [ ] **Refactoring Tasks (assuming this page is the main interaction hub for a session):**
-        - [ ] **Data Fetching:**
-            - [ ] On load, get `sessionId` from route params.
-            - [ ] Fetch session details using `voteSessionApi.getVoteSessionById(sessionId)` (from `frontend/services/api.js`).
-            - [ ] Fetch session status using an appropriate function from `frontend/services/api.js` that calls `/api/vote-sessions/session/{vote_session_id}/status`.
-            - [ ] Fetch participant list for the session using an appropriate function from `frontend/services/api.js` that calls `/api/sessions/{vote_session_id}/participants/`.
-            - [ ] Fetch current user's participation status using `registryParticipantService.getParticipantInfo(sessionId, currentUserAddress)`.
+    - [/] **Refactoring Tasks (assuming this page is the main interaction hub for a session):** (Marking as In Progress)
+        - [x] **Data Fetching:**
+            - [x] On load, get `sessionId` from route params.
+            - [x] Fetch session details using `voteSessionApi.getVoteSessionById(sessionId)` (from `frontend/services/api.js`).
+            - [x] Fetch contract addresses (`voteSessionAddress`, `participantRegistryAddress`) using `factoryService.getSessionAddresses(sessionId)`.
+            - [ ] Fetch session status using an appropriate function from `frontend/services/api.js` that calls `/api/vote-sessions/session/{vote_session_id}/status`. (Current implementation uses status from `getVoteSessionById`)
+            - [ ] Fetch participant list for the session using an appropriate function from `frontend/services/api.js` that calls `/api/sessions/{vote_session_id}/participants/`. (Not yet implemented in current view of file)
+            - [x] Fetch current user's participation status, submitted decryption value status, and claim status using `blockchainProviderService.getAccount()`, `registryParticipantService.getParticipantInfo(sessionId, currentUserAddress)`.
+            - [x] Fetch claimable amounts using `registryParticipantService.getParticipantInfo()` (for deposit) and `registryFundService.getRewardsOwed()` (for reward).
         - [ ] **Displaying Session Information:**
-            - [ ] Display title, description, dates, status, options, deposit, threshold, participant count, etc.
-            - [ ] Dynamically show/hide sections based on session status and user's role/actions.
-        - [ ] **Conditional Rendering of Components:**
-            - [ ] Based on session status (`voteSessionViewService.getStatus` or API status) and user's status (`registryParticipantService.getParticipantInfo`), conditionally render components like:
-                - `RegisterToVote.vue` (if registration open and user not registered)
-                - `CastYourVote.vue` (if voting open, user registered, and not voted)
-                - `SubmitSecretShare.vue` (if shares collection open, user is holder and hasn't submitted)
-                - `HolderStatusAndClaim.vue` (for holders to see status and claim rewards/deposits)
-                - `VoteResults.vue` or `ResultsDisplay.vue` (if tallying complete/session complete)
-                - `DecryptionFailed.vue` / `ResultsPending.vue` as appropriate.
+            - [ ] Display title, description, dates, status, options, deposit, threshold, participant count, etc. (Partially done, needs review for completeness from all sources).
+            - [ ] Dynamically show/hide sections based on session status and user's role/actions. (Basic structure exists, needs robust review).
+        - [x] **Conditional Rendering of Components (Props Updated):**
+            - [x] Based on session status and user's status, conditionally render components.
+            - [x] Props (`vote.id` as `voteSessionId` or `voteId`, and `voteSessionAddress`) passed to `RegisterToVote.vue`, `CastYourVote.vue`, `SubmitSecretShare.vue`, `VoteResults.vue`.
+            - [x] Child components conditionally rendered with `v-if="vote"` to ensure data is present.
         - [ ] **State Management:**
-            - [ ] Manage the current session's data, status, and user-specific data within the page's local state or a dedicated Pinia store if complex.
+            - [ ] Manage the current session's data, status, and user-specific data within the page's local state. (Current approach, review if Pinia store needed for complexity).
         - [ ] **Component Structure Review:**
-            - [ ] Review the organization of components within `frontend/components/vote/` that are utilized by this page. Ensure logical structure, clear props, and maintainability. Consider if any components should be further broken down or if their responsibilities are well-defined.
+            - [ ] Review the organization of components within `frontend/components/vote/` that are utilized by this page.
+        - [x] **Service Integration for Actions:**
+            - [x] `submitMyDecryptionValue` uses `blockchainProviderService` and `voteSessionVotingService`.
+            - [x] `submitClaim` uses `blockchainProviderService`, `registryParticipantService`, and `registryFundService`.
         - [ ] **Error Handling & Loading:**
-            - [ ] Comprehensive loading states for all data fetching.
-            - [ ] Robust error handling for API and service calls.
+            - [ ] Comprehensive loading states for all data fetching. (Basic structure exists).
+            - [ ] Robust error handling for API and service calls. (Basic structure exists).
         - [ ] **Styling:**
             - [ ] Align with `_vote-details.scss` and global styles.
-        - [ ] **Implement Reward Funding UI/Logic:**
-            - [ ] Add a section/button visible only to the session owner (check ownership via `voteSessionViewService.getSessionOwner`).
-            - [ ] Include an input field for the ETH amount to add as rewards.
-            - [ ] On submission, call `registryFundService.addRewardFunding(sessionId, amountInWei)` after converting input ETH to Wei.
-            - [ ] Provide loading state and success/error feedback (use notification system).
+        - [x] **Reward Funding UI Logic:** (Updating this task)
+            - [x] Add a section/button visible only to the session owner.
+            - [x] Include an input field for the ETH amount to add as rewards.
+            - [x] On submission, call `registryFundService.addRewardFunding`.
+            - [x] Visibility refined based on wallet connection, ownership, and active session status. (Complete)
+        - [ ] **Implement Secret Holder Key Management (Partially addressed by `submitMyDecryptionValue` logic, full cycle TBD):**
+            - [ ] **Key Generation/Import (during Holder Registration - likely in `RegisterToVote.vue` context).**
+            - [ ] **Secure Private Key Storage (Client-Side).**
+            - [ ] **Key Retrieval/Usage (during Share Submission - in `SubmitSecretShare.vue`; Decryption Value - in `[id].vue`).**
+            - [ ] **Key Management UI.**
+            - [ ] **User Feedback & Security Notes.**
         - [ ] **Implement Secret Holder Key Management:**
             - [ ] **Key Generation/Import (during Holder Registration - likely in `RegisterToVote.vue` context):**
                 - [ ] Implement UI for user to choose between generating a new BLS key pair or importing an existing private key.
@@ -215,6 +228,13 @@ This document outlines the plan for refactoring the frontend of the MastersProje
                     - [ ] (Optional) Import/replace key from an encrypted backup file.
             - [ ] **User Feedback & Security Notes:**
                 - [ ] Provide clear instructions and warnings about password importance and backup responsibility.
+        - [x] **Internal Refactoring for Maintainability:** (Marking as In Progress, most major parts done)
+            - [x] Extract data fetching logic into a composable (`useVoteSessionData.js`). (Complete)
+            - [x] Extract timer logic (`formatDateTime`, `updateTimerState`, `startTimerUpdates`) into a composable (`useSessionTimer.js`). (Complete)
+            - [ ] Evaluate if action handlers (`submitMyDecryptionValue`, `submitClaim`, `fundRewardPool`) can be moved to composables or a more focused script section. (Pending)
+        - [x] **Vue Warnings Resolved:** (NEW TASK - Complete)
+            - [x] `handleRegistrationSuccess` is defined and used correctly.
+            - [x] `isCheckingStatus` in `RegisterToVote.vue` is defined and used correctly.
 
 ### III. Component-Specific Refactoring (`frontend/components/vote`)
 
@@ -228,119 +248,133 @@ This document outlines the plan for refactoring the frontend of the MastersProje
 ---
 **1. `RegisterToVote.vue` (13KB, 360 lines)**
     - [ ] **Purpose:** Allows users to register as a holder or voter for a session.
-    - [ ] **Refactoring Tasks:**
-        - [ ] **Props:** `sessionId`.
-        - [ ] **Service Integration:**
-            - [ ] Check if registration is open: `voteSessionViewService.isRegistrationOpen(voteSessionAddress)`. (Requires resolving `voteSessionAddress` via `factoryService.getSessionAddresses(sessionId)` or passed as prop).
-            - [ ] Get required deposit: `voteSessionViewService.getRequiredDeposit(voteSessionAddress)`.
-            - [ ] Register as holder: `registryParticipantService.registerAsHolder(sessionId, blsPublicKeyHex)`. This implies the component needs to handle BLS key input/generation or retrieval.
-                - The BLS Public Key (`blsPublicKeyHex`) likely needs to be generated client-side or fetched if previously stored/associated with the user. `cryptographyUtils.js` or similar might be involved if generation is needed.
-            - [ ] Register as voter: `registryParticipantService.registerAsVoter(sessionId)`.
-        - [ ] **Input Handling:** BLS Public Key input if registering as a holder.
-        - [ ] **User Feedback:** Clear messages for success/failure, loading states.
-        - [ ] **Styling:** Review and ensure consistency.
+    - [/] **Refactoring Tasks:** (Marking as In Progress)
+        - [x] **Props:** `voteSessionId` (numeric), `voteSessionAddress` (string) - (Added).
+        - [x] **Service Integration:**
+            - [ ] Check if registration is open: `voteSessionViewService.isRegistrationOpen(voteSessionAddress)`. (TODO - currently relies on parent).
+            - [ ] Get required deposit: `voteSessionViewService.getRequiredDeposit(voteSessionAddress)`. (TODO - currently uses prop, service call could be internal).
+            - [x] Register as holder: `registryParticipantService.registerAsHolder(voteSessionId, blsPublicKeyHex)` (Implemented, uses full PK hex).
+            - [x] Register as voter: `registryParticipantService.registerAsVoter(sessionId)` (Implemented with button and handler in `RegisterToVote.vue`).
+        - [x] **Secret Holder Key Management (Holder Registration Flow):**
+            - [x] **UI for Key Choice:** Implemented (Radio buttons for Generate/Import, textarea for import).
+                - [x] Allow generation of new BLS key pair. (Selected by default)
+                - [x] Allow import of existing BLS private key (hex string). (UI exists, logic in `registerAndDeposit`)
+            - [x] **Password Input:** UI for password and confirmation exists.
+            - [x] **Key Generation:** Uses `blsCryptoUtils.generateBLSKeyPair()`.
+            - [x] **Imported Key Validation:** Basic hex format and range validation implemented.
+            - [x] **Encryption:** Uses `aesUtils.encryptWithPassword(privateKeyHex, password)` to get `encryptedSkHex` (uses generated or imported private key).
+            - [x] **Storage:** Stores `encryptedSkHex` in Local Storage (e.g.,`vote_${sessionId}_encrypted_sk_hex`).
+            - [x] **Offer Key Download:** Provides a button to download the `encryptedSkHex` as a `.txt` file.
+            - [x] **Public Key for Registration:** Uses `pk.toHex()` for `registerAsHolder` call (derived from generated or imported private key).
+        - [ ] **User Feedback:** Clear messages for success/failure, loading states. (Basic exists, can be enhanced for import flow).
+        - [ ] **Styling:** Review.
+        - [ ] **Add UI in `RegisterToVote.vue` to clearly present voter-only registration path distinct from holder path from the start (after wallet connection). (NEW SUB-TASK for UI/UX improvement)
 
 ---
 **2. `CastYourVote.vue` (14KB, 390 lines)**
     - [ ] **Purpose:** Allows registered participants to cast their encrypted vote.
-    - [ ] **Refactoring Tasks:**
-        - [ ] **Props:** `sessionId`, `voteSessionAddress`, `options` (list of vote options).
-        - [ ] **Service Integration:**
-            - [ ] Check if voting is open: `voteSessionViewService.getStatus(voteSessionAddress)` should be `VotingOpen` (after `voteSessionAdminService.updateSessionStatus` if status is dynamic).
-            - [ ] Check if user has already voted: `voteSessionViewService.hasVoted(voteSessionAddress, currentUserAddress)`.
-            - [ ] Get active holder BLS keys: `registryParticipantService.getHolderBlsKeys(sessionId)` (needed for `encryptVoteData`).
-            - [ ] Get `actualMinShareThreshold` from `voteSessionViewService.getActualMinShareThreshold(voteSessionAddress)` or `minShareThreshold` from `voteSessionViewService.getSessionInfo(voteSessionAddress)` to use as `voteEncryptionThreshold`.
-            - [ ] **Vote Encryption:**
-                - User selects an option.
-                - [ ] **AES Key Management:** Finalize and implement the strategy for managing the ephemeral `aesKey` passed to `voteCryptoUtils.encryptVoteData`. Consider secure local/session storage or user-managed input, prioritizing security and UX.
-                - Generate/retrieve an AES key for this vote. `shamirUtils.getKAndSecretShares` might be used if the AES key itself needs to be sharded, or `aesUtils.importBigIntAsCryptoKey` if `k` is directly used to derive an AES key. The `FRONTEND_SERVICES_DOCUMENTATION.md` mentions `encryptVoteData` in `cryptographyUtils.js` (and `voteCryptoUtils.js`) which takes an `aesKey`. This key needs a defined origin/management strategy.
-                - Use `voteCryptoUtils.encryptVoteData(selectedOption, aesKey, activeHolderBlsPublicKeys, voteEncryptionThreshold)` to prepare vote parameters.
-            - [ ] Cast vote: `voteSessionVotingService.castEncryptedVote(voteSessionAddress, ciphertext, g1r, g2r, alpha, threshold)`.
-        - [ ] **User Feedback:** Loading, success/error messages.
-        - [ ] **Styling:** Review and ensure consistency.
+    - [/] **Refactoring Tasks:** (Marking as In Progress)
+        - [x] **Props:** `voteId` (numeric), `voteSessionAddress` (string), `options`, `status`, `isRegistered`, `displayHint`, `sliderConfig`, `existingThreshold` (all seem to be covered or added).
+        - [x] **Service Integration (Core Path Implemented):**
+            - [ ] Check if voting is open: `voteSessionViewService.getStatus(voteSessionAddress)` should be `VotingOpen`. (TODO, relies on `status` prop. Requires `voteSessionViewService` to be implemented and used here if status needs to be fetched by this component directly).
+            - [x] Check if user has already voted: Calls `voteSessionViewService.hasVoted(voteSessionAddress, currentUserAddress)` in `onMounted`. (NOTE: `voteSessionViewService.hasVoted` is now implemented in the service, calling the contract's public `hasVoted(address)` getter).
+            - [x] Get active holder BLS keys: `registryParticipantService.getHolderBlsKeys(sessionId)` (Implemented).
+            - [x] Get `voteEncryptionThreshold`: Uses `props.existingThreshold` (Implemented).
+            - [x] **Vote Encryption:**
+                - [x] User selects an option (UI handles this).
+                - [x] **AES Key Management:** Uses `randomBytes()` and `crypto.subtle.importKey()` to create an ephemeral AES key. (Old note about `generateAesKey` removed).
+                - [x] Use `voteCryptoUtils.encryptVoteData(selectedOption, aesKey, activeHolderBlsPublicKeys, voteEncryptionThreshold)` (Implemented).
+            - [x] Cast vote: `voteSessionVotingService.castEncryptedVote(voteSessionAddress, ciphertext, g1r, g2r, alpha, threshold)` (Implemented).
+        - [ ] **User Feedback:** Loading, success/error messages exist, can be reviewed/enhanced.
+        - [ ] **Styling:** Review.
+        - [ ] **Nullifier/ZK Proof:** Current implementation uses placeholders. (Future Task).
 
 ---
 **3. `SubmitSecretShare.vue` (14KB, 359 lines)**
     - [ ] **Purpose:** Allows holders to submit their decryption shares.
-    - [ ] **Refactoring Tasks:**
-        - [ ] **Props:** `sessionId`, `voteSessionAddress`.
-        - [ ] **Service Integration:**
-            - [ ] Check if shares collection is open: `voteSessionViewService.getStatus(voteSessionAddress)` should be `SharesCollectionOpen`.
-            - [ ] Get user's participant info: `registryParticipantService.getParticipantInfo(sessionId, currentUserAddress)` to confirm they are a holder and haven't submitted shares.
-            - [ ] **Share Calculation:**
-                - The component needs to iterate through all encrypted votes for the session. Fetch votes via `encryptedVoteApi.getEncryptedVoteInfo(sessionId)` (from `frontend/services/api.js`).
-                - For each vote (`vote_index`, `g1r`), the holder needs their BLS private key. This is a critical security concern. The private key might be derived from a password + stored encrypted payload using `cryptographyUtils.calculateDecryptionValue` (which uses `aesUtils.decryptWithPassword`).
-                - Calculate share: `blsCryptoUtils.calculateDecryptionShareForSubmission(blsPrivateKey, g1r_hex_from_vote)`.
-            - [ ] Get participant index: `registryParticipantService.getParticipantIndex(sessionId, currentUserAddress)`. This is `_shareIndex` for `submitDecryptionShare`.
-            - [ ] **Submit Shares (Two-Step Process):**
-                - [ ] **1. Verification via Backend API:** For the list of calculated shares, construct the `ShareListSubmitRequest` payload (including signature). Call `shareApi.submitShare(sessionId, payload)` (from `frontend/services/api.js`) to verify the shares with the backend.
-                - [ ] **2. Contract Interaction via Frontend Service:** If backend verification is successful, proceed to call `voteSessionVotingService.submitDecryptionShare(voteSessionAddress, voteIndex, shareData, shareIndex)` for each share to submit it to the smart contract. (This may require iterating if the service handles one share at a time).
-        - [ ] **User Feedback:** Progress, success/error messages.
-        - [ ] **BLS Private Key Handling:** Securely manage/derive the user's BLS private key.
-        - [ ] **Styling:** Review.
+    - [/] **Refactoring Tasks:** (Marking as In Progress)
+        - [x] **Props:** `voteId` (renamed from `sessionId` in plan for clarity with component prop), `voteSessionAddress` (added).
+        - [x] **Service Integration (Partially Complete):**
+            - [ ] Check if shares collection is open: `voteSessionViewService.getStatus(voteSessionAddress)` should be `SharesCollectionOpen`. (Needs to be added to component logic, e.g., in `onMounted` or before submission).
+            - [x] Get user's participant info: `registryParticipantService.getParticipantInfo(sessionId, currentUserAddress)` to confirm they are a holder (Done in `checkSubmissionStatus`).
+            - [x] **Share Calculation (Logic Implemented):**
+                - [x] Iterate through all encrypted votes: Fetches number of votes via `voteSessionViewService.getNumberOfVotes` and loops.
+                - [x] Fetch `g1r` for each vote: Uses `voteSessionViewService.getEncryptedVote`.
+                - [x] Holder's BLS private key is decrypted using password and `aesUtils`/`cryptographyUtils`.
+                - [x] Calculate share: Uses `blsCryptoUtils.calculateDecryptionShareForSubmission`.
+            - [x] Get participant index: `registryParticipantService.getParticipantIndex(sessionId, currentUserAddress)` (Done before submitting shares to contract).
+            - [ ] **Submit Shares (Two-Step Process - On-chain part implemented, API part pending):**
+                - [ ] **1. Verification via Backend API (TODO):** Call `shareApi.submitShare(sessionId, payload)` (from `frontend/services/api.js`). (Currently placeholder in component).
+                - [x] **2. Contract Interaction via Frontend Service (Implemented):** Calls `voteSessionVotingService.submitDecryptionShare(voteSessionAddress, voteIndex, shareData, shareIndex)` for each share.
+        - [x] **User Feedback:** Progress messages (`loadingMessage`) and error handling are in place.
+        - [x] **BLS Private Key Handling:** Securely managed/derived using password and stored encrypted payload (logic for decryption and usage is present).
+        - [ ] **Styling:** Review. (Not addressed in this pass).
 
 ---
 **4. `HolderStatusAndClaim.vue` (9.5KB, 275 lines)**
     - [ ] **Purpose:** For holders to view their status (submitted shares, rewards owed) and claim deposits/rewards.
-    - [ ] **Refactoring Tasks:**
-        - [ ] **Props:** `sessionId`, `participantRegistryAddress`.
-        - [ ] **Data Fetching:**
-            - [ ] Get participant info: `registryParticipantService.getParticipantInfo(sessionId, currentUserAddress)`.
-            - [ ] Get rewards owed: `registryFundService.getRewardsOwed(sessionId, currentUserAddress)`.
-            - [ ] Check if deposit claimed: `registryParticipantService.hasClaimedDeposit(sessionId, currentUserAddress)`.
-            - [ ] Check if reward claimed: `registryFundService.hasClaimedReward(sessionId, currentUserAddress)`.
-        - [ ] **Service Integration (Actions):**
-            - [ ] Check deposit claim period: `voteSessionViewService.isDepositClaimPeriodActive(voteSessionAddress)`.
-            - [ ] Claim deposit: `registryParticipantService.claimDeposit(sessionId)`.
-            - [ ] Claim reward: `registryFundService.claimReward(sessionId)`. (Assumes reward calculation is done).
-        - [ ] **Display Logic:** Conditionally show claim buttons based on status and eligibility.
-        - [ ] **User Feedback:** Loading, success/error for claims.
-        - [ ] **Styling:** Review.
+    - [/] **Refactoring Tasks:** (Marking as In Progress)
+        - [x] **Props:** `voteId` (renamed from `sessionId`), `sessionStatus` (existing), `voteSessionAddress` (added).
+        - [x] **Data Fetching (Implemented):**
+            - [x] Get participant info: `registryParticipantService.getParticipantInfo(sessionId, currentUserAddress)`.
+            - [x] Get rewards owed: `registryFundService.getRewardsOwed(sessionId, currentUserAddress)`.
+            - [x] Check if deposit claimed: `registryParticipantService.hasClaimedDeposit(sessionId, currentUserAddress)`.
+            - [x] Check if reward claimed: `registryFundService.hasClaimedReward(sessionId, currentUserAddress)`.
+        - [x] **Service Integration (Actions - Implemented):**
+            - [x] Check deposit claim period: `voteSessionViewService.isDepositClaimPeriodActive(voteSessionAddress)`.
+            - [x] Claim deposit: `registryParticipantService.claimDeposit(sessionId)`.
+            - [x] Claim reward: `registryFundService.claimReward(sessionId)`.
+        - [ ] **Display Logic:** Conditionally show claim buttons based on status and eligibility. (Partially addressed by new reactive vars, template might need minor updates).
+        - [x] **User Feedback:** Loading states and error messages for claims are present.
+        - [ ] **Styling:** Review. (Not addressed in this pass).
 
 ---
 **5. `VoteResults.vue` (8.9KB, 271 lines)**
     - [ ] **Purpose:** Displays the results of the vote after tallying.
-    - [ ] **Refactoring Tasks:**
-        - [ ] **Props:** `sessionId`.
-        - [ ] **Data Fetching:**
-            - [ ] Fetch submitted shares: `shareApi.getShares(sessionId)` (from `frontend/services/api.js`). This provides shares grouped by `vote_index`.
-            - [ ] Fetch encrypted votes: `encryptedVoteApi.getEncryptedVoteInfo(sessionId)` (from `frontend/services/api.js`). This provides `ciphertext` for each vote.
-            - [ ] **Decryption Logic (Client-Side Tallying):**
-                - For each `vote_index`:
-                    - Get the list of `submitted_shares` and the original `ciphertext`.
-                    - Reconstruct the AES key: This involves `shamirUtils.recomputeKey` using the collected shares (`share_value` from API). The `participantShares` for `recomputeKey` needs `index` (holder's original registration index, obtainable from `registryParticipantService.getParticipantIndex`) and `value` (the share).
-                    - Decrypt the vote: `voteCryptoUtils.decryptVote(ciphertext, reconstructedAesKey)`.
-                - Aggregate decrypted votes to show final tally per option.
-        - [ ] **Display Logic:** Show vote counts for each option, potentially charts.
-        - [ ] **Error Handling:** Handle cases where decryption fails for some votes (e.g., insufficient shares submitted).
-        - [ ] **Styling:** Review.
+    - [/] **Refactoring Tasks:** (Marking as In Progress)
+        - [x] **Props:** `options`, `voteId`, `releasedKeys`, `requiredKeys`, `displayHint`, `sliderConfig`, `voteSessionAddress` (added).
+        - [ ] **Data Fetching (Partially Implemented for status check, Decryption data fetching TODO):**
+            - [x] `voteSessionViewService.getSessionInfo(voteSessionAddress)` is used for status checks.
+            - [ ] Fetch submitted shares: `shareApi.getShares(sessionId)` (from `frontend/services/api.js`). (TODO in `runDecryptionProcess`)
+            - [ ] Fetch encrypted votes: `encryptedVoteApi.getEncryptedVoteInfo(sessionId)` (from `frontend/services/api.js`). (TODO in `runDecryptionProcess`)
+        - [ ] **Decryption Logic (Client-Side Tallying - TODO):**
+            - [ ] For each `vote_index`:
+                - [ ] Get `submitted_shares` and `ciphertext`.
+                - [ ] Reconstruct AES key using `shamirUtils.recomputeKey` (needs holder indexes and share values).
+                - [ ] Decrypt vote using `voteCryptoUtils.decryptVote(ciphertext, reconstructedAesKey)`.
+            - [ ] Aggregate decrypted votes.
+        - [ ] **Display Logic:** Show vote counts for each option, potentially charts. (Depends on `runDecryptionProcess` completion).
+        - [ ] **Error Handling:** Handle cases where decryption fails. (Basic structure exists, needs to be robust for decryption process).
+        - [ ] **Styling:** Review. (Not addressed in this pass).
 
 ---
 **6. `ResultsDisplay.vue` (9.3KB, 324 lines)**
     - [ ] **Purpose:** Alternative or enhanced display for vote results. Possibly includes more detailed views or visualizations.
-    - [ ] **Refactoring Tasks:**
-        - [ ] Similar to `VoteResults.vue` regarding data fetching and decryption logic.
-        - [ ] Differentiate its purpose from `VoteResults.vue`. If it's a more detailed view, ensure it leverages the decrypted data appropriately.
-        - [ ] **Visualization:** Implement charts or other visual aids for results.
-        - [ ] **Styling:** Review.
+    - [x] **Refactoring Tasks:** (Marking as Complete for service refactoring)
+        - [x] **Service Integration:** No direct blockchain service calls. Component is props-driven. (No refactoring needed for service calls).
+        - [ ] **Data Input:** Relies on `tallyResults` and other props. The source of this data (likely `VoteResults.vue` or parent page) is responsible for fetching/decrypting.
+        - [ ] **Visualization:** Uses Chart.js for slider distribution. (Already implemented).
+        - [ ] **Styling:** Review. (Not addressed in this pass).
 
 ---
 **7. `DecryptionFailed.vue` (4.3KB, 167 lines)**
     - [ ] **Purpose:** Displays a message when decryption of results cannot proceed (e.g., insufficient shares).
-    - [ ] **Refactoring Tasks:**
-        - [ ] **Props:** `sessionId`, potentially error messages or reasons.
-        - [ ] **Display Logic:** Clearly explain why decryption failed.
-        - [ ] **Possible Actions:** Suggest next steps if any (e.g., "Contact admin", "Wait for more shares").
-        - [ ] **Styling:** Review.
+    - [x] **Refactoring Tasks:** (Marking as Complete for service refactoring)
+        - [x] **Service Integration:** No direct blockchain service calls. Component is props-driven. (No refactoring needed for service calls).
+        - [ ] **Props:** `releasedKeys`, `requiredKeys`, `error`. (Already well-defined).
+        - [ ] **Display Logic:** Clearly explains why decryption failed. (Implemented).
+        - [ ] **Possible Actions:** Suggests checking holder status for deposit refunds. (Implemented).
+        - [ ] **Styling:** Review. (Not addressed in this pass).
 
 ---
 **8. `ResultsPending.vue` (5.0KB, 186 lines)**
     - [ ] **Purpose:** Displays a message when results are not yet available (e.g., voting period not ended, tallying in progress).
-    - [ ] **Refactoring Tasks:**
-        - [ ] **Props:** `sessionId`, current session status.
-        - [ ] **Display Logic:** Explain that results are pending and why. Possibly show expected availability time.
-        - [ ] **Auto-Refresh (Optional):** Consider adding a mechanism to periodically check for results.
-        - [ ] **Styling:** Review.
+    - [x] **Refactoring Tasks:** (Marking as Complete for service refactoring)
+        - [x] **Service Integration:** No direct blockchain service calls. Component is props-driven. (No refactoring needed for service calls).
+        - [x] **Props:** `releasedKeys`, `requiredKeys`, `votingStatusText`, `submissionDeadline`. (Already well-defined).
+        - [x] **Display Logic:** Explains pending results based on props. (Implemented).
+        - [ ] **Auto-Refresh (Optional):** Consider adding a mechanism to periodically check for results. (Not implemented, can be future enhancement).
+        - [ ] **Styling:** Review. (Not addressed in this pass).
 
 ### IV. Styling Refactoring (`frontend/assets/styles`)
 

@@ -66,15 +66,39 @@
       </div>
     </div>
 
+    <!-- Reward Funding Section (for Session Owner) -->
+    <div v-if="blockchainProviderService.isConnected() && isSessionOwner && isSessionActiveForFunding" class="admin-section reward-funding-section">
+      <h3>Fund Reward Pool</h3>
+      <p>As the session owner, you can add funds to the reward pool.</p>
+      <div class="form-group">
+        <label for="reward-amount">Amount in ETH to Add:</label>
+        <input 
+          type="number" 
+          id="reward-amount" 
+          v-model="rewardAmountToAdd" 
+          placeholder="e.g., 0.5" 
+          min="0.000001" 
+          step="any" 
+          class="form-input"
+        />
+      </div>
+      <button @click="fundRewardPool" class="btn primary" :disabled="fundingLoading">
+        {{ fundingLoading ? 'Processing Funding...' : 'Fund Rewards' }}
+      </button>
+      <p v-if="fundingError" class="error-message">{{ fundingError }}</p>
+      <p v-if="fundingLoading" class="loading-message-inline">Please wait for the transaction to confirm...</p>
+    </div>
+
     <!-- Registration section OR message - updated v-if -->
-    <template v-if="vote?.status === 'join'">
+    <template v-if="vote && vote.status === 'RegistrationOpen'">
       <div v-if="isCheckingStatus" class="loading-message">Checking registration status...</div>
       <RegisterToVote 
         v-else-if="!isRegisteredForVote"
-        :vote-session-id="route.params.id"
-        :endDate="vote.endDate"
-        :rewardPool="vote.rewardPool"
-        :requiredDeposit="vote.requiredDeposit"
+        :vote-session-id="vote.id"
+        :vote-session-address="voteSessionAddress"
+        :end-date="vote.endDate"
+        :reward-pool="vote.rewardPool"
+        :required-deposit="vote.requiredDeposit"
         @registration-successful="handleRegistrationSuccess"
       />
       <div v-else class="status-message info">
@@ -84,10 +108,11 @@
 
     <!-- Voting section - Pass updated isRegisteredForVote -->
     <CastYourVote 
-      v-if="['join', 'active'].includes(vote?.status)"
-      :vote-id="route.params.id"
+      v-if="vote && ['RegistrationOpen', 'VotingOpen'].includes(vote.status)"
+      :vote-id="vote.id"
+      :vote-session-address="voteSessionAddress"
       :options="vote.options"
-      :endDate="vote.endDate"
+      :end-date="vote.endDate"
       :status="vote.status"
       :is-registered="isRegisteredForVote"
       :displayHint="displayHint"
@@ -97,14 +122,15 @@
 
     <!-- Submit Secret Share section -->
     <SubmitSecretShare
-      v-if="isRegisteredForVote && vote?.status === 'ended'"
-      :vote-id="route.params.id"
-      :endDate="vote.endDate"
+      v-if="vote && isRegisteredForVote && vote.status === 'ShareCollectionOpen'"
+      :vote-id="vote.id"
+      :vote-session-address="voteSessionAddress"
+      :end-date="vote.endDate"
     />
 
     <!-- Submit Decryption Value Section (New) -->
     <div 
-      v-if="isRegisteredForVote && vote && (vote.status === 'shares' || vote.status === 'ended' || vote.status === 'complete') && !hasSubmittedDecryptionValue"
+      v-if="vote && isRegisteredForVote && vote.status === 'ShareCollectionOpen' && !hasSubmittedDecryptionValue"
       class="voting-section"
     >
       <h3>Submit Decryption Value</h3>
@@ -131,7 +157,7 @@
       <p v-if="submitDecryptionValueError" class="error-message">{{ submitDecryptionValueError }}</p>
     </div>
     <div 
-      v-if="isRegisteredForVote && hasSubmittedDecryptionValue"
+      v-if="vote && isRegisteredForVote && hasSubmittedDecryptionValue"
       class="status-message success"
     >
       <i class="icon check">✔️</i> You have submitted your decryption value.
@@ -139,7 +165,7 @@
 
     <!-- Claim Deposit/Reward Section (New) -->
     <div 
-      v-if="isRegisteredForVote && canClaim"
+      v-if="vote && isRegisteredForVote && canClaim"
       class="voting-section"
     >
         <h3>Claim Deposit/Reward</h3>
@@ -158,7 +184,7 @@
         <p v-if="claimError" class="error-message">{{ claimError }}</p>
     </div>
     <div 
-        v-if="isRegisteredForVote && hasClaimed"
+        v-if="vote && isRegisteredForVote && hasClaimed"
         class="status-message success"
     >
         <i class="icon check">✔️</i> You have already claimed your deposit/reward for this session.
@@ -166,11 +192,13 @@
 
     <!-- Results section - only shown for ended votes -->
     <VoteResults
+      v-if="vote"
       :options="vote.options"
-      :voteId="route.params.id"
-      :endDate="vote.endDate"
-      :releasedKeys="vote.releasedKeys"
-      :requiredKeys="vote.requiredKeys"
+      :vote-id="vote.id"
+      :vote-session-address="voteSessionAddress"
+      :end-date="vote.endDate"
+      :released-keys="vote.releasedKeys"
+      :required-keys="vote.requiredKeys"
       :displayHint="displayHint"
       :sliderConfig="sliderConfig"
     />
@@ -180,53 +208,46 @@
 
 <script setup>
   import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-  import { useRoute } from 'vue-router'
-  import { holderApi, voteSessionApi } from '@/services/api'
+  import { voteSessionApi, participantApi } from '@/services/api'
   import Cookies from 'js-cookie'
   import CastYourVote from '@/components/vote/CastYourVote.vue'
   import VoteResults from '@/components/vote/VoteResults.vue'
   import RegisterToVote from '@/components/vote/RegisterToVote.vue'
   import SubmitSecretShare from '~/components/vote/SubmitSecretShare.vue'
-  import { ethersBaseService, factoryService, registryService, voteSessionService } from '~/services/contracts/ethersService'
-  import { aesUtils } from '~/services/utils/aesUtils';
-  import { cryptographyUtils } from '~/services/utils/cryptographyUtils';
+  import { decryptWithPassword } from '@/services/utils/aesUtils.js'
+  import { calculateDecryptionValue } from '@/services/utils/cryptographyUtils.js'
 
-  // Get route params for vote ID
-  const route = useRoute()
-  const loading = ref(true)
-  const error = ref(null)
-  const vote = ref(null)
-  const voteSessionAddress = ref(null);
-  const participantRegistryAddress = ref(null);
-  const actualIsRegistered = ref(false)
-  const hasSubmittedDecryptionValue = ref(false)
-  const hasClaimed = ref(false)
-  const canClaim = ref(false)
-  const isCheckingStatus = ref(true)
-  const decryptionPassword = ref('');
-  const submitDecryptionValueLoading = ref(false);
-  const submitDecryptionValueError = ref(null);
-  const claimableDeposit = ref('0');
-  const claimableReward = ref('0');
+  // Add new service imports
+  import { blockchainProviderService } from '@/services/blockchainProvider.js';
+  import { factoryService } from '@/services/contracts/factoryService.js'; // Assuming this is the new one
+  import { registryParticipantService } from '@/services/contracts/registryParticipantService.js';
+  import { registryFundService } from '@/services/contracts/registryFundService.js';
+  import { voteSessionVotingService } from '@/services/contracts/voteSessionVotingService.js'; // Added for submitMyDecryptionValue
+  import { voteSessionViewService } from '@/services/contracts/voteSessionViewService.js'; // Added for owner check & other view functions
 
-  const timeRemaining = ref('');
-  const timeUpdateInterval = ref(null);
-  const timerLabel = ref('Time Remaining:');
+  // Import the new date utility
+  import { normaliseTs } from '~/utils/date.js'; // Adjust path if Nuxt alias is different (e.g., @/utils/date.js)
 
-  // Add state for metadata
-  const displayHint = ref(null);
-  const sliderConfig = ref(null);
+  // Import new composables
+  import { useSessionTimer } from '~/composables/useSessionTimer.js';
+  import { useVoteSessionData } from '~/composables/useVoteSessionData.js'; // Adjust path if Nuxt alias is different
 
-  onBeforeUnmount(() => {
-    if (timeUpdateInterval.value) {
-        clearInterval(timeUpdateInterval.value);
-        timeUpdateInterval.value = null;
-    }
-  });
+  // --- Initialize Composables ---
+  const {
+    loading, error, vote, voteSessionAddress, participantRegistryAddress,
+    actualIsRegistered, hasSubmittedDecryptionValue, hasClaimed, canClaim,
+    isCheckingStatus, claimableDeposit, claimableReward, isSessionOwner,
+    displayHint, sliderConfig, fetchVoteData
+  } = useVoteSessionData();
 
-  const isRegisteredForVote = computed(() => {
-    return actualIsRegistered.value;
-  });
+  const { 
+    timeRemaining, 
+    timerLabel, 
+    formatDateTime 
+  } = useSessionTimer(vote); 
+
+  // --- Computed Properties ---
+  const isRegisteredForVote = computed(() => actualIsRegistered.value);
 
   const isRegisteredHolderForVote = computed(() => {
     if (!vote.value) return false;
@@ -234,246 +255,46 @@
     return Cookies.get(isHolderCookie) === 'true';
   });
 
-  const fetchVoteData = async (showLoading = true) => {
-      const voteSessionIdString = route.params.id;
-      if (!voteSessionIdString || voteSessionIdString === 'undefined' || voteSessionIdString === ':id') {
-          console.warn("fetchVoteData called with invalid voteSessionId:", voteSessionIdString);
-          error.value = "Invalid or missing Vote Session ID.";
-          loading.value = false;
-          vote.value = null;
-          voteSessionAddress.value = null;
-          participantRegistryAddress.value = null;
-          displayHint.value = null;
-          sliderConfig.value = null;
-          if (timeUpdateInterval.value) {
-              clearInterval(timeUpdateInterval.value);
-              timeUpdateInterval.value = null;
-          }
-          return;
-      }
-      // Convert ID from route param (string) to number for service calls
-      const voteSessionId = parseInt(voteSessionIdString, 10); 
-      if (isNaN(voteSessionId)) {
-          console.error("fetchVoteData: Invalid vote session ID format:", voteSessionIdString);
-          error.value = "Invalid Vote Session ID format.";
-          loading.value = false;
-          return;
-      }
+  const isSessionActiveForFunding = computed(() => {
+    if (!vote.value || !vote.value.status) return false;
+    // Define statuses where funding is no longer allowed
+    const terminalStatuses = ['Completed', 'Aborted', 'Cancelled', 'DecryptionOpen']; // DecryptionOpen might be too late too
+    return !terminalStatuses.includes(vote.value.status);
+  });
 
-      if (showLoading) loading.value = true
-      error.value = null
+  // --- Refs for actions still managed by this component ---
+  const decryptionPassword = ref('');
+  const submitDecryptionValueLoading = ref(false);
+  const submitDecryptionValueError = ref(null);
+  const claimLoading = ref(false);
+  const claimError = ref(null);
+  const rewardAmountToAdd = ref('');
+  const fundingLoading = ref(false);
+  const fundingError = ref(null);
 
-      try {
-          // --- Blockchain Data Fetching ---
-          console.log(`Fetching addresses for session ID: ${voteSessionId}`);
-          const addresses = await factoryService.getSessionAddresses(voteSessionId);
-          if (!addresses || !addresses.sessionAddress || !addresses.registryAddress) {
-              throw new Error(`Could not fetch contract addresses for session ${voteSessionId}. It might not exist or the factory is unavailable.`);
-          }
-          voteSessionAddress.value = addresses.sessionAddress;
-          participantRegistryAddress.value = addresses.registryAddress;
-          console.log(`Addresses found - Session: ${voteSessionAddress.value}, Registry: ${participantRegistryAddress.value}`);
+  // --- Lifecycle Hooks ---
+  onMounted(async () => {
+    await fetchVoteData(); 
+  });
 
-          // Fetch session info directly from the VoteSession contract
-          console.log(`Fetching session info from contract: ${voteSessionAddress.value}`);
-          const blockchainSessionInfo = await voteSessionService.getSessionInfo(voteSessionId); // Assumes service handles using the address
-          if (!blockchainSessionInfo) {
-               throw new Error(`Failed to fetch session details from contract ${voteSessionAddress.value}.`);
-          }
-          console.log("Blockchain session info:", blockchainSessionInfo);
+  // onBeforeUnmount is handled by useSessionTimer for its interval
 
-          // Fetch participant count from the ParticipantRegistry contract
-          console.log(`Fetching participant count from contract: ${participantRegistryAddress.value}`);
-          const participantCount = await registryService.getNumberOfActiveParticipants(voteSessionId); // Assumes service handles using the address
-          console.log("Blockchain participant count:", participantCount);
+  // --- Methods ---
 
-          // --- Backend API Data Fetching (Optional / Supplementary) ---
-          // Example: Fetch metadata or other off-chain data if needed
-          // const metadataResponse = await voteSessionApi.getVoteSessionMetadata(voteSessionId);
-          // const metadata = metadataResponse.data.data;
-          // displayHint.value = metadata?.displayHint; 
-          // Handle slider config from metadata if applicable
-          // let parsedSliderConfig = null;
-          // ... parsing logic ...
-          // sliderConfig.value = parsedSliderConfig;
-
-          // --- Check Registration & Submission Statuses --- (After getting addresses)
-          const currentAccount = ethersBaseService.getAccount();
-          if (currentAccount) {
-               console.log(`Checking registration, decryption, and claim status for ${currentAccount}...`);
-               try {
-                   const details = await registryService.getParticipantDetails(voteSessionId, currentAccount);
-                   actualIsRegistered.value = !!details;
-                   hasSubmittedDecryptionValue.value = details ? details.hasSubmittedDecryptionValue : false;
-                   hasClaimed.value = details ? details.hasClaimed : false;
-                   console.log(`Status - Registered: ${actualIsRegistered.value}, Submitted Decryption: ${hasSubmittedDecryptionValue.value}, Claimed: ${hasClaimed.value}`);
-
-                   // Determine eligibility to claim (example logic)
-                   const sessionState = getStatusString(blockchainSessionInfo.sessionStatus);
-                   const isSessionEffectivelyEnded = sessionState === 'ended' || sessionState === 'complete' || sessionState === 'shares'; // Shares state also means voting is over
-                   
-                   canClaim.value = actualIsRegistered.value && !hasClaimed.value && isSessionEffectivelyEnded;
-                   console.log(`Can Claim: ${canClaim.value} (Registered: ${actualIsRegistered.value}, Not Claimed: ${!hasClaimed.value}, Session Ended: ${isSessionEffectivelyEnded})`);
-                   
-                   if (canClaim.value) {
-                      console.log(`Fetching claimable amounts for ${currentAccount} in session ${voteSessionId}`);
-                      const amounts = await registryService.getClaimableAmounts(voteSessionId, currentAccount);
-                      if (amounts) {
-                        claimableDeposit.value = amounts.deposit;
-                        claimableReward.value = amounts.reward;
-                        console.log(`Claimable amounts - Deposit: ${amounts.deposit} ETH, Reward: ${amounts.reward} ETH`);
-                      } else {
-                        console.warn("Could not fetch claimable amounts, defaulting to 0.");
-                        claimableDeposit.value = '0';
-                        claimableReward.value = '0';
-                      }
-                   }
-
-               } catch (statusError) {
-                    console.error("Error checking participant status during fetch:", statusError);
-                    // Don't necessarily fail the whole fetch, but log it
-                    actualIsRegistered.value = false;
-                    hasSubmittedDecryptionValue.value = false;
-                    hasClaimed.value = false;
-                    canClaim.value = false;
-                    claimableDeposit.value = '0'; // Reset on error or no vote
-                    claimableReward.value = '0'; // Reset on error or no vote
-               }
-          } else {
-              actualIsRegistered.value = false;
-              hasSubmittedDecryptionValue.value = false;
-              hasClaimed.value = false;
-              canClaim.value = false;
-              claimableDeposit.value = '0'; // Reset on error or no vote
-              claimableReward.value = '0'; // Reset on error or no vote
-          }
-          // ---------------------------------------------
-
-          // --- Combine Data ---
-          // Prioritize blockchain data for on-chain state
-          vote.value = {
-              id: voteSessionId, // Use the ID from the route
-              title: blockchainSessionInfo.title,
-              description: blockchainSessionInfo.description,
-              status: getStatusString(blockchainSessionInfo.sessionStatus), // Convert enum number to string
-              startDate: new Date(blockchainSessionInfo.startDate * 1000).toISOString(), // Convert timestamp to ISO string
-              endDate: new Date(blockchainSessionInfo.endDate * 1000).toISOString(),
-              sharesEndDate: new Date(blockchainSessionInfo.sharesEndDate * 1000).toISOString(), // Added shares end date
-              options: blockchainSessionInfo.options,
-              metadata: blockchainSessionInfo.metadata, // Store raw metadata
-              participantCount: participantCount, 
-              secretHolderCount: participantCount, // Assuming registered participants are holders for now
-              requiredDeposit: blockchainSessionInfo.requiredDeposit, // Already formatted ETH string from service
-              minShareThreshold: blockchainSessionInfo.minShareThreshold, // Already number from service
-              // TODO: Need functions in services/contracts for these?
-              requiredKeys: blockchainSessionInfo.minShareThreshold, // Placeholder - Use threshold for now
-              releasedKeys: 0, // Placeholder - Need contract view function
-              rewardPool: 0, // Placeholder - Reward pool might be off-chain or managed differently
-          };
-
-          // Parse metadata for slider if present
-          if (vote.value.metadata) {
-              try {
-                  const parsedMeta = JSON.parse(vote.value.metadata);
-                  if (parsedMeta.type === 'slider') {
-                      sliderConfig.value = {
-                          min: parsedMeta.min,
-                          max: parsedMeta.max,
-                          step: parsedMeta.step,
-                      };
-                  }
-              } catch (e) {
-                   console.warn("Metadata is not valid JSON or doesn't contain slider config:", e);
-                   sliderConfig.value = null;
-              }
-          } else {
-               sliderConfig.value = null;
-          }
-          
-          
-      } catch (err) {
-          console.error("Failed to fetch vote session data:", err);
-          error.value = `Error loading Vote Session ${voteSessionId}: ${err.message || 'Network error or unknown issue'}`;
-          vote.value = null;
-          voteSessionAddress.value = null;
-          participantRegistryAddress.value = null;
-          displayHint.value = null;
-          sliderConfig.value = null;
-          actualIsRegistered.value = false;
-          hasSubmittedDecryptionValue.value = false;
-          hasClaimed.value = false;
-          canClaim.value = false;
-          claimableDeposit.value = '0'; // Reset on error or no vote
-          claimableReward.value = '0'; // Reset on error or no vote
-      } finally {
-          if (showLoading) loading.value = false
-          if (vote.value) {
-              startTimerUpdates(); // Start timer based on fetched blockchain dates
-          } else {
-             if (timeUpdateInterval.value) {
-                 clearInterval(timeUpdateInterval.value);
-                 timeUpdateInterval.value = null;
-             }
-             actualIsRegistered.value = false;
-             hasSubmittedDecryptionValue.value = false;
-             hasClaimed.value = false;
-             canClaim.value = false;
-             claimableDeposit.value = '0'; // Reset on error or no vote
-             claimableReward.value = '0'; // Reset on error or no vote
-          }
-          isCheckingStatus.value = false; // Assume status check is done here
-      }
-  }
-
-  // Helper to convert session status enum (number) to string
-  // Adjust based on actual enum order in Structs.sol
-  function getStatusString(statusEnum) {
-      switch (statusEnum) {
-          case 0: return 'pending'; // Assuming Pending = 0
-          case 1: return 'active'; // Assuming Active = 1
-          case 2: return 'ended'; // Assuming Ended = 2
-          case 3: return 'shares'; // Assuming SharesSubmission = 3
-          case 4: return 'complete'; // Assuming Complete = 4
-          default: return 'unknown';
-      }
-  }
-
-  const formatTimeDifference = (diff) => {
-      if (diff <= 0) return '00:00:00';
-
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-
-      let formattedTime = '';
-      if (days > 0) formattedTime += `${days}d `;
-      formattedTime += `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-      return formattedTime;
+  // Placeholder for registration success handler
+  const handleRegistrationSuccess = () => {
+    console.log('Vote session page: Registration successful event received!');
+    fetchVoteData(false); 
   };
 
-  const updateTimerState = () => {
-    // ... rest of script ...
-  };
-
-  // Placeholder for where encrypted SK might be stored/retrieved
-  // This needs to be implemented based on how you store it during registration
+  // getEncryptedSessionSK remains here as it uses localStorage directly for now
   async function getEncryptedSessionSK(voteSessionId) {
-    // Example: retrieve from localStorage or a secure store
-    // IMPORTANT: Replace with your actual secure retrieval logic
-    const storedKeyInfo = localStorage.getItem(`vote_${voteSessionId}_encrypted_sk`);
-    if (!storedKeyInfo) {
-      console.error("Encrypted SK not found for session:", voteSessionId);
-      throw new Error("Encrypted secret key not found. Please ensure you registered correctly.");
+    const storedKeyHex = localStorage.getItem(`vote_${voteSessionId}_encrypted_sk_hex`); 
+    if (!storedKeyHex) {
+      console.error("Encrypted SK hex string not found for session:", voteSessionId);
+      throw new Error("Encrypted secret key not found. Please ensure you registered correctly and stored the key.");
     }
-    try {
-      const keyInfo = JSON.parse(storedKeyInfo);
-      // Assuming keyInfo has { encryptedKey, salt, iv }
-      return keyInfo; 
-    } catch (e) {
-      console.error("Error parsing stored encrypted SK:", e);
-      throw new Error("Could not retrieve stored secret key information.");
-    }
+    return storedKeyHex; 
   }
 
   const submitMyDecryptionValue = async () => {
@@ -485,57 +306,27 @@
         submitDecryptionValueError.value = "Please enter your vote session key password.";
         return;
     }
-
     submitDecryptionValueLoading.value = true;
     submitDecryptionValueError.value = null;
-
     try {
-        const voteSessionId = vote.value.id;
-        const currentAccount = ethersBaseService.getAccount();
+        const voteIdForAction = vote.value.id; // Use id from vote ref
+        const currentAccount = blockchainProviderService.getAccount();
         if (!currentAccount) {
             throw new Error("Wallet not connected or account not found.");
         }
-
-        // 1. Retrieve the encrypted secret key (sk) and salt/iv
-        // This needs to be securely stored during registration and retrieved here.
-        // For demonstration, using a placeholder function.
-        console.log(`Attempting to retrieve encrypted SK for session ${voteSessionId}`);
-        const { encryptedKey, salt, iv } = await getEncryptedSessionSK(voteSessionId);
-        if (!encryptedKey || !salt || !iv) {
-          throw new Error("Could not retrieve complete encrypted key information.");
+        const encryptedSkHex = await getEncryptedSessionSK(voteIdForAction);
+        if (!encryptedSkHex) {
+          throw new Error("Could not retrieve complete encrypted key information string.");
         }
-        console.log("Encrypted key information retrieved.");
-
-        // 2. Decrypt the secret key (sk) using the provided password
-        console.log("Attempting to decrypt SK with provided password...");
-        const secretKeyHex = await aesUtils.decryptWithPassword(encryptedKey, decryptionPassword.value, salt, iv);
+        const secretKeyHex = await decryptWithPassword(encryptedSkHex, decryptionPassword.value); 
         if (!secretKeyHex) {
             throw new Error("Failed to decrypt the secret key. Please check your password.");
         }
-        // Assuming the secretKeyHex needs to be a Uint8Array for calculateDecryptionValue
-        // const secretKeyBytes = cryptographyUtils.hexToBytes(secretKeyHex); // Or however your crypto utils expect it
-        console.log("Secret key decrypted successfully.");
-
-        // 3. Calculate the decryption value using the decrypted sk
-        // The `calculateDecryptionValue` function in `cryptographyUtils` expects the raw secret key.
-        // The output of `decryptWithPassword` is hex, ensure `calculateDecryptionValue` handles hex or convert it.
-        // For now, assuming calculateDecryptionValue can take the hex string or you have a hexToBytes utility.
-        console.log(`Calculating decryption value with SK (hex): ${secretKeyHex.substring(0,10)}...`); // Log only a part of the key
-        const decryptionValue = await cryptographyUtils.calculateDecryptionValue(secretKeyHex); // Pass the hex string directly
-        console.log("Decryption value calculated:", decryptionValue);
-
-
-        // 4. Submit the decryption value to the contract
-        console.log(`Submitting decryption value to VoteSession contract for session ID: ${voteSessionId}`);
-        const tx = await voteSessionService.submitDecryptionValue(voteSessionId, currentAccount, decryptionValue);
-        console.log("Decryption value submission transaction:", tx);
-        await tx.wait(); // Wait for transaction confirmation
-
-        hasSubmittedDecryptionValue.value = true; // Update UI
-        decryptionPassword.value = ''; // Clear password field
-        // Optionally, re-fetch vote data or participant status to confirm
-        // await fetchVoteData(false); 
-
+        const decryptionValue = await calculateDecryptionValue(secretKeyHex); 
+        const tx = await voteSessionVotingService.submitDecryptionValue(voteSessionAddress.value, decryptionValue);
+        await tx.wait(); 
+        hasSubmittedDecryptionValue.value = true; // This ref is from useVoteSessionData
+        decryptionPassword.value = ''; 
     } catch (err) {
         console.error("Error submitting decryption value:", err);
         submitDecryptionValueError.value = `Error: ${err.message || 'An unexpected error occurred.'}`;
@@ -544,7 +335,82 @@
     }
   };
 
-  // Claim Deposit/Reward Logic
-  const claimLoading = ref(false);
-  // ... rest of script ...
+  const submitClaim = async () => {
+    if (!vote.value || !vote.value.id || !canClaim.value) { // canClaim is from useVoteSessionData
+      claimError.value = "Not eligible to claim or vote details not loaded.";
+      return;
+    }
+    claimLoading.value = true;
+    claimError.value = null;
+    try {
+      const voteIdForAction = vote.value.id;
+      const currentAccount = blockchainProviderService.getAccount();
+      if (!currentAccount) {
+        throw new Error("Wallet not connected or account not found.");
+      }
+      let depositTx, rewardTx;
+      if (claimableDeposit.value !== '0' && claimableDeposit.value !== '0.0') { 
+        depositTx = await registryParticipantService.claimDeposit(voteIdForAction);
+        await depositTx.wait();
+      }
+      if (claimableReward.value !== '0' && claimableReward.value !== '0.0') { 
+        rewardTx = await registryFundService.claimReward(voteIdForAction);
+        await rewardTx.wait();
+      }
+      if (depositTx || rewardTx) {
+          // If any claim was successful, update relevant state from useVoteSessionData
+          hasClaimed.value = true; 
+          canClaim.value = false; 
+          // Consider re-fetching or directly setting claimable amounts to 0 if appropriate
+          // fetchVoteData(false); // Or just update local view if backend isn't instantly consistent
+          claimableDeposit.value = '0'; // Assuming these are correctly updated by the composable upon re-fetch or should be manually reset here for UI
+          claimableReward.value = '0';
+      }
+    } catch (err) {
+      console.error("Error submitting claim:", err);
+      claimError.value = `Claim Error: ${err.message || 'An unexpected error occurred.'}`;
+    } finally {
+      claimLoading.value = false;
+    }
+  };
+
+  const fundRewardPool = async () => {
+    if (!rewardAmountToAdd.value || parseFloat(rewardAmountToAdd.value) <= 0) {
+      fundingError.value = "Please enter a valid positive amount to fund.";
+      return;
+    }
+    if (!isSessionOwner.value) { // isSessionOwner from useVoteSessionData
+      fundingError.value = "Only the session owner can fund the reward pool.";
+      return;
+    }
+    fundingLoading.value = true;
+    fundingError.value = null;
+    try {
+      const amountInEth = String(rewardAmountToAdd.value);
+      const amountInWei = blockchainProviderService.parseEther(amountInEth);
+      const tx = await registryFundService.addRewardFunding(vote.value.id, amountInWei);
+      rewardAmountToAdd.value = ''; 
+      fetchVoteData(false); // Re-fetch to update reward pool display
+    } catch (err) {
+      console.error("Error funding reward pool:", err);
+      fundingError.value = `Failed to fund reward pool: ${err.message || 'Unknown error'}`;
+    } finally {
+      fundingLoading.value = false;
+    }
+  };
+
+  // Ensure all imports are used or remove unused ones (e.g. useRoute if not directly used here anymore)
+  // Keep blockchainProviderService if parseEther is still used locally (it is for fundRewardPool)
+  // Keep contract services if action handlers remain in this file (they do)
+  // Keep aesUtils and cryptographyUtils if their functions are used here (they are for submitMyDecryptionValue)
+
 </script>
+
+<style lang="scss" scoped>
+/* Styles will be moved to _session-detail.scss or _vote-details.scss later */
+.loading, .error-message {
+  text-align: center;
+  padding: 2rem;
+}
+// ... existing styles ...
+</style>

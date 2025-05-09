@@ -34,4 +34,13 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
+}
+
+@mixin button-variant($bg-color, $text-color) {
+  background-color: $bg-color;
+  color: $text-color;
+  // Assuming base .btn class handles padding, border-radius, font-weight etc.
+  // This mixin primarily overrides colors.
+  // If border is desired for variants, it can be added here:
+  // border: 1px solid $bg-color; 
 } 

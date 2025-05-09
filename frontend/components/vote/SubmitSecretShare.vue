@@ -51,29 +51,35 @@
 
 <script setup>
     import { ref, computed, onMounted, watch } from 'vue';
-    import { useRoute } from 'vue-router';
-    // Removed API imports
-    // import { encryptedVoteApi, shareApi } from '@/services/api';
-    // Import required services
-    import { ethersBaseService, registryService, voteSessionService } from '~/services/contracts/ethersService.js'; 
+    // import { useRoute } from 'vue-router'; // useRoute is not used in this component's script setup
+
+    // API Services
+    import { encryptedVoteApi, shareApi } from '@/services/api'; 
+
+    // Blockchain Interaction Services
+    import { blockchainProviderService } from '@/services/blockchainProvider.js';
+    import { registryParticipantService } from '@/services/contracts/registryParticipantService.js';
+    import { voteSessionVotingService } from '@/services/contracts/voteSessionVotingService.js';
+    import { voteSessionViewService } from '@/services/contracts/voteSessionViewService.js';
+
+    // Utility Services (using @ alias for consistency, assuming it's configured)
+    // If '~' is indeed your project's alias for this path, you can revert this part.
     import { 
-        generateShares, 
-        deriveKeyFromPassword, 
-        AESDecrypt, 
-        hexToBytes 
-    } from '~/services/utils/cryptographyUtils.js'; 
-    // Removed config import
-    // import { config } from '@/config'; 
-    // import Cookies from "js-cookie"; // Removed cookie usage
-    import { ethers } from 'ethers'; // Keep ethers for utils if needed
-    // Removed stable stringify
-    // import jsonStableStringify from 'fast-json-stable-stringify';
+        // generateShares, // This specific function name might not exist; will be replaced by blsCryptoUtils.calculateDecryptionShareForSubmission
+        // deriveKeyFromPassword, // Moved to aesUtils
+        // AESDecrypt, // Moved to aesUtils
+        // hexToBytes // Moved to conversionUtils
+    } from '@/services/utils/cryptographyUtils.js'; // This import might become empty or be removed if all are moved
+    import { calculateDecryptionShareForSubmission } from '@/services/utils/blsCryptoUtils.js'; // NEW - Importing named function
+
+    // NEW IMPORTS for AES and conversion utilities
+    import { AESDecrypt, deriveKeyFromPassword } from '@/services/utils/aesUtils.js';
+    import { hexToBytes } from '@/services/utils/conversionUtils.js';
 
     const props = defineProps({
         voteId: { type: [String, Number], required: true }, // Allow string or number
-        endDate: { type: String, required: true }
-        // sharesEndDate might be more relevant than endDate + buffer?
-        // Add sharesEndDate prop if available from parent
+        endDate: { type: String, required: true },
+        voteSessionAddress: { type: String, required: true } // Added prop
         // sharesEndDate: { type: String, required: false }
     });
 
@@ -113,9 +119,9 @@
         isCheckingStatus.value = true;
         try {
             // Check wallet connection
-            if (ethersBaseService.getAccount()) {
+            if (blockchainProviderService.getAccount()) {
                  isWalletConnected.value = true;
-                 currentAccount.value = ethersBaseService.getAccount();
+                 currentAccount.value = blockchainProviderService.getAccount();
                  // Check submission status via contract
                  await checkSubmissionStatus(); 
             } else {
@@ -143,8 +149,8 @@
         }
         console.log(`Checking share submission status for ${currentAccount.value} in session ${sessionId}...`);
         try {
-            // Use registryService to get participant details
-            const participantDetails = await registryService.getParticipantDetails(sessionId, currentAccount.value);
+            // Use registryParticipantService to get participant details
+            const participantDetails = await registryParticipantService.getParticipantInfo(sessionId, currentAccount.value);
             
             if (participantDetails) {
                 hasSubmittedShare.value = participantDetails.hasSubmittedShares; 
@@ -166,6 +172,8 @@
     // --- Refactored function to submit share directly to contract ---
     const prepareAndSubmitShare = async () => {
         error.value = null;
+        currentAccount.value = blockchainProviderService.getAccount(); // Make sure currentAccount is updated if not already
+
         if (loading.value || !isWalletConnected.value || !currentAccount.value || !decryptionPassword.value) {
             error.value = "Please connect wallet and enter password.";
             return;
@@ -198,41 +206,102 @@
             console.log("BLS key decrypted successfully.");
             // -------------------------------------
 
-            // --- Fetch g1r from VoteSession contract --- 
-            loadingMessage.value = 'Fetching round parameters...';
-            console.log(`Fetching vote round parameters for session ${sessionId}...`);
-            const roundParams = await voteSessionService.getVoteRoundParameters(sessionId);
-            if (!roundParams || !roundParams.g1r) {
-                throw new Error("Could not fetch necessary round parameters (g1r) from the contract.");
+            // --- Fetch all encrypted votes and calculate shares ---
+            loadingMessage.value = 'Fetching encrypted votes...';
+            if (!props.voteSessionAddress) {
+                throw new Error("Vote session address is not available.");
             }
-            const g1rValue = roundParams.g1r;
-            console.log(`Fetched g1r: ${g1rValue}`);
-            // -------------------------------------------
 
-            // --- Generate Share --- 
-            loadingMessage.value = 'Generating share...';
-            if (!decryptedPrivateKeyHex) {
-                throw new Error("Decrypted key is not available for share generation.");
+            const numberOfVotes = await voteSessionViewService.getNumberOfVotes(props.voteSessionAddress);
+            if (numberOfVotes === 0) {
+                throw new Error("No votes found in this session to submit shares for.");
             }
-            const generatedShareHex = generateShares(g1rValue, decryptedPrivateKeyHex);
-            // Clear the decrypted key from memory ASAP
-            decryptedPrivateKeyHex = null;
-            console.log("Share generated:", generatedShareHex); 
-            console.log("Decrypted key cleared from memory.");
-            // ----------------------
+            console.log(`Found ${numberOfVotes} encrypted votes.`);
 
-            // --- Submit Share to Contract --- 
-            loadingMessage.value = 'Submitting transaction...';
-            console.log(`Calling voteSessionService.submitShares for session ${sessionId}...`);
+            const calculatedShares = [];
+            const privateKeyBigInt = BigInt(decryptedPrivateKeyHex); // Convert hex private key to BigInt
+            decryptedPrivateKeyHex = null; // Clear hex key from memory immediately after conversion
+            console.log("Decrypted private key converted to BigInt and original hex cleared.");
+
+            for (let i = 0; i < numberOfVotes; i++) {
+                loadingMessage.value = `Processing vote ${i + 1} of ${numberOfVotes}...`;
+                // Option 1: Use API service (if it provides g1r for each vote easily)
+                // const voteInfo = await encryptedVoteApi.getEncryptedVoteInfo(sessionId, i);
+                // const g1rValue = voteInfo.g1r; // Adjust based on actual API response structure
+                
+                // Option 2: Use direct contract call via view service
+                const voteData = await voteSessionViewService.getEncryptedVote(props.voteSessionAddress, i);
+                if (!voteData || !voteData.g1r) {
+                    throw new Error(`Could not fetch g1r for vote index ${i}.`);
+                }
+                const g1rHex = voteData.g1r; // Assuming g1r is a hex string
+                console.log(`Fetched g1r for vote ${i}: ${g1rHex.substring(0,20)}...`);
+
+                const shareHex = await calculateDecryptionShareForSubmission(privateKeyBigInt, g1rHex.startsWith('0x') ? g1rHex.substring(2) : g1rHex);
+                calculatedShares.push({ voteIndex: i, share: shareHex }); // shareHex is raw hex from blsCryptoUtils
+                console.log(`Calculated share for vote ${i}: ${shareHex.substring(0,20)}...`);
+            }
+            // Clear BigInt key from memory after all shares are calculated
+            // privateKeyBigInt = null; // Not strictly necessary as it's function-scoped, but good practice if it were wider
+
+            if (calculatedShares.length === 0) {
+                throw new Error("No shares were calculated.");
+            }
+            console.log("All shares calculated:", calculatedShares.map(s => ({...s, share: s.share.substring(0,10) + '...'})));
+            // -----------------------------------------------------
+
+            // --- Submit Shares (Two-Step Process as per plan) ---
+            loadingMessage.value = 'Preparing shares for submission...';
+
+            // Step 1: (Optional but Recommended) Backend API submission for verification
+            // This requires constructing a payload, potentially signing it, and calling shareApi.submitShare
+            // For now, we will log and proceed to direct contract submission.
+            // TODO: Implement backend share verification call if required by project design
+            const sharesToSubmitToApi = calculatedShares.map(cs => ({
+                vote_index: cs.voteIndex,
+                share_value: cs.share.startsWith('0x') ? cs.share : `0x${cs.share}` // Ensure 0x prefix for API/Contract
+            }));
+            console.log("Shares prepared for API/Contract submission:", sharesToSubmitToApi.map(s => ({...s, share_value: s.share_value.substring(0,10) + '...'})));
             
-            // Assuming submitShares expects sessionId and the share data (bytes or hex string)
-            // Check the exact expected type in voteSessionService.js / VoteSession.sol
-            const txReceipt = await voteSessionService.submitShares(
-                sessionId,
-                generatedShareHex.startsWith('0x') ? generatedShareHex : `0x${generatedShareHex}` // Ensure 0x prefix for service
-            );
-            console.log("Share submission transaction successful:", txReceipt);
-            // -------------------------------
+            // Example: If you had a shareApi.submitShare for pre-validation
+            // try {
+            //     loadingMessage.value = 'Verifying shares with backend...';
+            //     const apiVerificationResponse = await shareApi.submitShare(sessionId, { shares: sharesToSubmitToApi });
+            //     if (!apiVerificationResponse || !apiVerificationResponse.data || !apiVerificationResponse.data.success) {
+            //         throw new Error(apiVerificationResponse?.data?.message || "Backend share verification failed.");
+            //     }
+            //     console.log("Backend share verification successful.");
+            // } catch (apiErr) {
+            //     throw new Error(`Backend share verification failed: ${apiErr.message}`);
+            // }
+
+            // Step 2: Contract Interaction
+            loadingMessage.value = 'Fetching your share index...';
+            const holderShareIndex = await registryParticipantService.getParticipantIndex(sessionId, currentAccount.value);
+            if (!holderShareIndex || holderShareIndex === 0) { // getParticipantIndex returns 0 if not found/not a holder
+                throw new Error("Could not retrieve your participant index. Are you registered as a holder for this session?");
+            }
+            console.log(`Retrieved holder share index: ${holderShareIndex}`);
+
+            loadingMessage.value = 'Submitting shares to contract...';
+            for (const { voteIndex, share } of calculatedShares) {
+                loadingMessage.value = `Submitting share for vote ${voteIndex + 1} of ${numberOfVotes}...`;
+                const shareDataForContract = share.startsWith('0x') ? share : `0x${share}`; // Ensure 0x prefix
+                
+                console.log(`Submitting to voteSessionVotingService.submitDecryptionShare: sessionAddr=${props.voteSessionAddress}, voteIdx=${voteIndex}, share=${shareDataForContract.substring(0,10)}..., holderIdx=${holderShareIndex}`);
+                const txReceipt = await voteSessionVotingService.submitDecryptionShare(
+                    props.voteSessionAddress, 
+                    voteIndex, 
+                    shareDataForContract, 
+                    holderShareIndex
+                );
+                // Await confirmation for each share submission or submit in a batch if contract allows?
+                // For now, assume sequential submission and waiting.
+                // await txReceipt.wait(); // Assuming service returns tx object with wait()
+                console.log(`Share for vote ${voteIndex} submitted. Tx: ${txReceipt.transactionHash}`);
+            }
+            console.log("All shares submitted to contract successfully.");
+            // ------------------------------- // Old submission logic below is now replaced
 
             // Update UI on success
             hasSubmittedShare.value = true;

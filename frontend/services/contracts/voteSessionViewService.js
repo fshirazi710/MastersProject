@@ -447,6 +447,28 @@ class VoteSessionViewService {
       throw error;
     }
   }
+
+  // Method to check if a user has already voted in a session
+  async hasVoted(voteSessionAddress, userAddress) {
+    if (!voteSessionAddress || !ethers.isAddress(voteSessionAddress)) {
+      throw new Error('VoteSessionViewService: Invalid or missing VoteSession address for hasVoted check.');
+    }
+    if (!userAddress || !ethers.isAddress(userAddress)) {
+      throw new Error('VoteSessionViewService: Invalid or missing user address for hasVoted check.');
+    }
+    console.log(`VoteSessionViewService: Checking if ${userAddress} has voted in session ${voteSessionAddress}...`);
+    try {
+      const contractReader = this._getContractInstance(voteSessionAddress, false);
+      const alreadyVoted = await blockchainProviderService.readContract(contractReader, 'hasVoted', [userAddress]);
+      console.log(`VoteSessionViewService: User ${userAddress} hasVoted status in session ${voteSessionAddress}: ${alreadyVoted}`);
+      return Boolean(alreadyVoted); // Ensure boolean return
+    } catch (error) {
+      console.error(`VoteSessionViewService: Error checking if user ${userAddress} has voted in session ${voteSessionAddress}:`, error);
+      // It's generally safer to assume false or re-throw if the check is critical and fails
+      // For now, re-throwing to make the caller aware the check failed.
+      throw error; 
+    }
+  }
 }
 
 export const voteSessionViewService = new VoteSessionViewService(); 

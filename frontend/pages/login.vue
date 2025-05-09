@@ -53,7 +53,7 @@
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { authApi } from '@/services/api'
-import { store } from '../authentication.js'
+import { store } from '@/composables/authentication.js'
 
 const router = useRouter()
 const route = useRoute()

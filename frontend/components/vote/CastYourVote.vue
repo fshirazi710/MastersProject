@@ -71,16 +71,8 @@
   
       <!-- Message shown if user is NOT registered VIA PROP -->
       <div v-else class="status-message warning">
-        <span v-if="status === 'join'">
-          You must be registered for this election to cast a vote. Please register first.
-        </span>
-        <span v-else-if="status === 'active' || status === 'ended'">
-          You are not registered for this election. Registration is closed.
-        </span>
-        <!-- Fallback message if status is unexpected -->
-        <span v-else>
-          You are not registered for this election.
-        </span>
+        <!-- Simplified message, parent controls registration flow -->
+        You are not registered for this election.
       </div>
     </div>
   </template>
@@ -89,22 +81,32 @@
   import { ref, computed, onMounted, watch } from 'vue'
   // Removed API imports
   // import { holderApi, encryptedVoteApi } from '@/services/api'
-  import { 
-      getKAndSecretShares, 
-      AESEncrypt, 
-      importBigIntAsCryptoKey, 
-      // Need functions for nullifier/proof generation (add later)
-      // generateNullifier, generateProof 
-  } from '~/services/utils/cryptographyUtils';
+  // CRYPTO UTILS - To be updated for encryptVoteData
+  // import { 
+  //     getKAndSecretShares, 
+  //     AESEncrypt, 
+  //     importBigIntAsCryptoKey,
+  // } from '~/services/utils/cryptographyUtils.js'; // OLD
+  import { encryptVoteData } from '@/services/utils/voteCryptoUtils.js'; // NEW
+  import { randomBytes } from '@/services/utils/aesUtils.js'; // NEW - For manual key generation
   // Import required services
-  import { ethersBaseService, registryService, voteSessionService } from '~/services/ethersService.js'; 
+  // import { ethersBaseService, registryService, voteSessionService } from '~/services/ethersService.js'; // OLD - REMOVE THIS LINE
   // Removed config import
   // import { config } from '@/config'; 
   import CustomSlider from '@/components/shared/CustomSlider.vue'
+  // NEW SERVICE IMPORTS
+  import { blockchainProviderService } from '@/services/blockchainProvider.js';
+  import { registryParticipantService } from '@/services/contracts/registryParticipantService.js';
+  import { voteSessionVotingService } from '@/services/contracts/voteSessionVotingService.js';
+  import { voteSessionViewService } from '@/services/contracts/voteSessionViewService.js'; // For hasVoted check
 
   const props = defineProps({
     voteId: {
       type: [String, Number], // Allow string or number
+      required: true
+    },
+    voteSessionAddress: { // ADDED/CONFIRMED PROP
+      type: String,
       required: true
     },
     options: {
@@ -157,52 +159,69 @@
       return [];
   });
 
-  onMounted(() => {
-      if (props.displayHint === 'slider' && props.sliderConfig && sliderSteps.value.length > 0) {
-          // Set initial value to min from config, ensure it's in the allowed steps
-          const initialValue = props.sliderConfig.min;
-          if (sliderSteps.value.includes(initialValue)) {
-              selectedSliderValue.value = initialValue;
-          } else {
-              // Fallback to the first available step if min isn't directly allowed
-              selectedSliderValue.value = sliderSteps.value[0]; 
-          }
-      }
-      // TODO: Check if user has already voted using a read call?
-      // e.g., call voteSessionService.hasVoted(props.voteId, userAddress)
-      // and set hasVoted.value accordingly.
+  watch(() => props.isRegistered, (newValue, oldValue) => {
+    console.log(`CastYourVote: props.isRegistered changed from ${oldValue} to ${newValue}. Current component status: ${props.status}, local hasVoted: ${hasVoted.value}`);
+  });
+
+  onMounted(async () => {
+    if (props.displayHint === 'slider' && props.sliderConfig && sliderSteps.value.length > 0) {
+        const initialValue = props.sliderConfig.min;
+        if (sliderSteps.value.includes(initialValue)) {
+            selectedSliderValue.value = initialValue;
+        } else {
+            selectedSliderValue.value = sliderSteps.value[0]; 
+        }
+    }
+    // Check if user has already voted
+    const currentUserAddress = blockchainProviderService.getAccount();
+    if (currentUserAddress && props.voteSessionAddress) {
+        try {
+            console.log(`CastVote: Checking if ${currentUserAddress} has voted in session ${props.voteSessionAddress} using voteSessionViewService...`);
+            const alreadyVoted = await voteSessionViewService.hasVoted(props.voteSessionAddress, currentUserAddress);
+            hasVoted.value = alreadyVoted;
+            console.log(`CastVote: User alreadyVoted status from service: ${alreadyVoted}`);
+            if (alreadyVoted) {
+                error.value = "You have already cast your vote in this session.";
+            }
+        } catch (err) {
+            console.error("CastVote: Error checking if user has voted via service:", err);
+            error.value = "Could not verify previous voting status. If you haven't voted, please try.";
+            // Default to false to allow voting if check fails, error message will be shown.
+            hasVoted.value = false; 
+        }
+    } else {
+        console.log("CastVote: Wallet not connected or voteSessionAddress missing, cannot check voted status.");
+        // Ensure hasVoted is false if we can't check, to show the form if user connects later
+        hasVoted.value = false;
+    }
   });
   
   // Removed validateKeyPair - validation happens implicitly if registration key exists
   
   // --- Refactored handleEncryptedVoteSubmit ---
   const handleEncryptedVoteSubmit = async () => {
-    error.value = null; // Clear previous errors
+    error.value = null; 
     if (loading.value) return;
     loading.value = true;
 
     try {
-      const userAddress = ethersBaseService.getAccount();
+      // const userAddress = ethersBaseService.getAccount(); // OLD
+      const userAddress = blockchainProviderService.getAccount(); // NEW
       if (!userAddress) {
           throw new Error("Wallet not connected.");
       }
       
-      // Convert voteId prop to number
       const sessionId = Number(props.voteId);
       if (isNaN(sessionId)) {
           throw new Error("Invalid voteId prop.");
       }
 
-      // Determine the actual option string to encrypt
       let optionToEncrypt = null;
       if (props.displayHint === 'slider') {
           if (selectedSliderValue.value === null) {
               throw new Error("No slider value selected.");
           }
-          // The v-model value IS the selected allowed number.
-          // We need to send the *string* version that exists in props.options
           optionToEncrypt = String(selectedSliderValue.value);
-          // Double-check it exists in the original options, just in case
           if (!props.options.includes(optionToEncrypt)) {
               console.error(`Slider value ${optionToEncrypt} not found in original options:`, props.options);
               throw new Error("Internal error: Selected slider value mismatch.");
@@ -213,55 +232,68 @@
       if (!optionToEncrypt) {
           throw new Error("No option selected or determined for voting.");
       }
-      // -------------------------------------------------
 
-      // --- Fetch Participant BLS Keys using registryService --- 
-      console.log(`Fetching participant BLS keys for session ${sessionId}...`);
-      const participantBlsKeys = await registryService.getAllParticipantKeys(sessionId);
-      console.log("Retrieved Participant BLS Keys:", participantBlsKeys);
+      // --- Fetch Active Holder BLS Keys --- 
+      console.log(`Fetching active holder BLS keys for session ${sessionId}...`);
+      // const participantBlsKeys = await registryService.getAllParticipantKeys(sessionId); // OLD
+      const holderInfo = await registryParticipantService.getHolderBlsKeys(sessionId); // NEW
+      const activeHolderBlsPublicKeysHex = holderInfo ? holderInfo.blsKeysHex : []; // NEW
+      console.log("Retrieved Active Holder BLS Keys:", activeHolderBlsPublicKeysHex);
       
-      if (!participantBlsKeys || participantBlsKeys.length === 0) {
-          throw new Error("Could not retrieve participant BLS keys from the registry contract.");
+      if (!activeHolderBlsPublicKeysHex || activeHolderBlsPublicKeysHex.length === 0) {
+          throw new Error("Could not retrieve active holder BLS public keys. Cannot encrypt vote.");
       }
-      const public_keys = participantBlsKeys;
-      const totalParticipants = public_keys.length;
+      // const public_keys = participantBlsKeys; // OLD
+      // const totalParticipants = public_keys.length; // OLD - not directly needed for encryptVoteData
       // ------------------------------------------------
       
-      // --- Use existing threshold --- 
-      const threshold = props.existingThreshold;
-      if (threshold <= 0) {
-          // Threshold should have been fetched by parent
-          console.error("Invalid or missing threshold provided via props:", threshold);
+      // --- Get Threshold --- 
+      const voteEncryptionThreshold = props.existingThreshold;
+      if (voteEncryptionThreshold <= 0) {
+          console.error("Invalid or missing threshold provided via props:", voteEncryptionThreshold);
           throw new Error("Cannot proceed without a valid decryption threshold.");
       }
-      console.log(`Using threshold: ${threshold} (from props)`);
+      console.log(`Using voteEncryptionThreshold: ${voteEncryptionThreshold}`);
       // --------------------------------------
 
-      // --- Threshold Encryption --- 
-      // (This part remains largely the same, but doesn't need g1r/g2r/alphas returned here)
-      console.log("Generating threshold encryption components...");
-      const [k_bigint, , , ] = await getKAndSecretShares(public_keys, threshold, totalParticipants);
-      console.log("Importing derived symmetric key k for AES...");
-      const aesCryptoKey = await importBigIntAsCryptoKey(k_bigint);
-      console.log("Symmetric key k imported successfully.");
+      // --- Generate Ephemeral AES Key for this vote --- 
+      console.log("Generating ephemeral AES key for vote encryption...");
+      // const aesKey = await generateAesKey(); // OLD - incorrect assumption
+      const keyMaterial = randomBytes(32); // Use 32 bytes for AES-256
+      const aesKey = await crypto.subtle.importKey(
+          "raw",
+          keyMaterial,
+          { name: "AES-GCM", length: 256 },
+          true, // extractable
+          ["encrypt", "decrypt"]
+      );
+      if (!aesKey) {
+        throw new Error("Failed to generate AES key for vote encryption.");
+      }
+      console.log("Ephemeral AES key generated.");
+      // --------------------------------------------------
 
-      const voteString = JSON.stringify({ vote: optionToEncrypt });
-      const encryptedVoteHex = await AESEncrypt(voteString, aesCryptoKey);
-      console.log("Vote encrypted successfully.");
+      // --- Encrypt Vote Data using voteCryptoUtils.encryptVoteData --- 
+      console.log(`Encrypting vote: '${optionToEncrypt}'`);
+      const { 
+        ciphertext, 
+        g1r, 
+        g2r, 
+        alpha, // This should be an array of Uint8Array from the public keys
+        threshold // This is the voteEncryptionThreshold passed in
+      } = await encryptVoteData(optionToEncrypt, aesKey, activeHolderBlsPublicKeysHex, voteEncryptionThreshold);
+      console.log("Vote encrypted successfully by voteCryptoUtils.encryptVoteData.");
       // -----------------------------------------------------------
 
-      // --- Generate Nullifier --- (Placeholder)
+      // --- Generate Nullifier --- (Placeholder - remains the same for this refactor pass)
       console.warn("Nullifier generation is required!");
-      // const nullifierHash = await generateNullifier(sessionId, userPrivateKey); // Needs implementation
-      const nullifierHash = ethersBaseService.hashMessage(`dummy_nullifier_${sessionId}_${userAddress}_${Date.now()}`); // TODO: REPLACE with real nullifier!
+      const nullifierHash = blockchainProviderService.hashMessage(`dummy_nullifier_${sessionId}_${userAddress}_${Date.now()}`); 
       console.log("Generated Placeholder Nullifier Hash:", nullifierHash);
       // ------------------------
 
-      // --- Generate ZK Proof --- (Placeholder)
+      // --- Generate ZK Proof --- (Placeholder - remains the same)
       console.warn("ZK Proof generation is required!");
-      // const proofInputs = { ... }; // Inputs based on circuit
-      // const zkProof = await generateProof(proofInputs); // Needs implementation & setup
-      const zkProof = { // TODO: REPLACE with real proof!
+      const zkProof = { 
           a: ['0x00', '0x00'],
           b: [['0x00', '0x00'], ['0x00', '0x00']],
           c: ['0x00', '0x00']
@@ -269,18 +301,25 @@
       console.log("Using Placeholder ZK Proof:", zkProof);
       // -----------------------
 
-      // --- Call voteSessionService.castVote --- 
-      console.log(`Calling voteSessionService.castVote for session ${sessionId}...`);
-      const txReceipt = await voteSessionService.castVote(
-          sessionId,
-          encryptedVoteHex, 
-          nullifierHash, 
-          zkProof
+      // --- Call voteSessionVotingService.castEncryptedVote --- 
+      console.log(`Calling voteSessionVotingService.castEncryptedVote for session address ${props.voteSessionAddress}...`);
+      // const txReceipt = await voteSessionService.castVote( // OLD
+      //     sessionId,
+      //     encryptedVoteHex, 
+      //     nullifierHash, 
+      //     zkProof
+      // );
+      const txReceipt = await voteSessionVotingService.castEncryptedVote( // NEW
+          props.voteSessionAddress,
+          ciphertext, // From encryptVoteData
+          g1r,        // From encryptVoteData
+          g2r,        // From encryptVoteData
+          alpha,      // From encryptVoteData (Uint8Array[])
+          threshold   // From encryptVoteData (number)
       );
-      console.log("castVote transaction successful:", txReceipt);
+      console.log("castEncryptedVote transaction successful:", txReceipt);
       // ----------------------------------------
 
-      // Update UI state on success
       hasVoted.value = true; 
       alert("Your encrypted vote has been successfully submitted to the blockchain!");
 

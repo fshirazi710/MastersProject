@@ -61,4 +61,10 @@
   .form-row {
     grid-template-columns: 1fr;
   }
+}
+
+@mixin form-layout {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-lg; // Consistent spacing between form sections/groups
 } 

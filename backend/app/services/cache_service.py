@@ -5,6 +5,7 @@ Listens to events and updates the database cache.
 import asyncio
 import logging
 from web3 import Web3
+from web3.exceptions import ContractLogicError, BadFunctionCallOutput
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from datetime import datetime, timezone # Import timezone
 
@@ -39,6 +40,10 @@ class CacheService:
             
             if not session_details or not session_details.get('parameters'):
                  logger.warning(f"Could not fetch details for session {session_id} during cache update.")
+                 # It's possible the session ID was invalid or details couldn't be fetched for other reasons.
+                 # If get_session_details itself handles "not found" by returning None/empty,
+                 # we might want to remove it from cache here too.
+                 # For now, we assume ContractLogicError/RuntimeError is the primary path for "not found".
                  return False # Indicate failure
 
             params = session_details['parameters']
@@ -51,6 +56,7 @@ class CacheService:
                 session_addr, registry_addr_factory = await self.blockchain_service.get_session_addresses(session_id)
                 if not session_addr or not registry_addr_factory:
                     logger.warning(f"Could not get contract addresses for session {session_id} in update_session_cache.")
+                    # This could also indicate a non-existent session if get_session_addresses returns None for stale IDs.
                     return False
                 
                 if session_addr:
@@ -113,8 +119,28 @@ class CacheService:
             logger.info(f"Successfully updated/inserted cache for session ID: {session_id}")
             return True # Indicate success
 
+        except (ContractLogicError, RuntimeError) as e:
+            error_message = str(e).lower()
+            if "session id not found" in error_message or "invalid session id" in error_message:
+                logger.warning(f"Session ID {session_id} not found on blockchain. Removing from cache. Error: {e}")
+                try:
+                    delete_result = await self.db.sessions.delete_one({"session_id": session_id})
+                    if delete_result.deleted_count > 0:
+                        logger.info(f"Successfully removed stale session ID {session_id} from cache.")
+                    else:
+                        logger.info(f"Stale session ID {session_id} was not found in cache for deletion, or already removed.")
+                    # Also attempt to remove associated participants
+                    delete_participants_result = await self.db.session_participants.delete_many({"session_id": session_id})
+                    logger.info(f"Removed {delete_participants_result.deleted_count} participants for stale session ID {session_id}.")
+                except Exception as db_err:
+                    logger.error(f"Error deleting stale session ID {session_id} from cache: {db_err}", exc_info=True)
+                return False # Indicate failure to update, but handled
+            else:
+                # For other errors, log them as critical and re-raise or return False
+                logger.error(f"Error updating cache for session {session_id}: {e}", exc_info=True)
+                return False # Indicate failure
         except Exception as e:
-            logger.error(f"Error updating cache for session {session_id}: {e}", exc_info=True)
+            logger.error(f"Unexpected error updating cache for session {session_id}: {e}", exc_info=True)
             return False # Indicate failure
 
     async def update_participant_cache(self, session_id: int, participant_address: str):
@@ -275,22 +301,46 @@ class CacheService:
         logger.debug(f"Polling participants for session {session_id}...")
         try:
             # Need the registry address for this session
-            session_doc = await self.db.sessions.find_one({"session_id": session_id}, projection={"participant_registry_address": 1})
+            session_doc = await self.db.sessions.find_one({"session_id": session_id}, projection={"participant_registry_address": 1, "vote_session_address": 1})
             registry_addr = session_doc.get('participant_registry_address') if session_doc else None
-            if not registry_addr:
+            session_addr = session_doc.get('vote_session_address') if session_doc else None
+
+            if not registry_addr or not session_addr:
                  # Try fetching from factory if not in cache yet
-                 _, registry_addr = await self.blockchain_service.get_session_addresses(session_id)
+                 try:
+                     session_addr, registry_addr = await self.blockchain_service.get_session_addresses(session_id)
+                 except (self.blockchain_service.w3.exceptions.ContractLogicError, RuntimeError) as e:
+                    error_message = str(e).lower()
+                    if "session id not found" in error_message or "invalid session id" in error_message:
+                        logger.warning(f"Session ID {session_id} not found when trying to get addresses for participant polling. Skipping. Error: {e}")
+                        # The main session poller (update_session_cache) should handle removing this session from cache.
+                        return
+                    else:
+                        logger.error(f"Error getting addresses for session {session_id} in participant poller: {e}", exc_info=True)
+                        return # Skip this session if addresses can't be confirmed
+                 except Exception as e:
+                    logger.error(f"Unexpected error getting addresses for session {session_id} in participant poller: {e}", exc_info=True)
+                    return
             
-            if not registry_addr:
-                 logger.warning(f"Cannot poll participants for session {session_id}: Registry address unknown.")
+            if not registry_addr or not session_addr: # Check again after trying to fetch
+                 logger.warning(f"Cannot poll participants for session {session_id}: Registry or Session address unknown after fetch attempt.")
                  return
                  
             registry_contract = self.blockchain_service.get_registry_contract(registry_addr)
             
-            # Get list of active holders (primary participants)
-            # Note: If non-holder voters exist and need caching, logic needs adjustment
-            # Pass session_id as required by the contract ABI
-            active_holders = await self.blockchain_service.call_contract_function(registry_contract, "getActiveHolders", session_id)
+            active_holders = []
+            try:
+                # Get list of active holders (primary participants)
+                # Pass session_id as required by the contract ABI
+                active_holders = await self.blockchain_service.call_contract_function(registry_contract, "getActiveHolders", session_id)
+            except BadFunctionCallOutput as e:
+                # This can happen if the registry_contract address is stale (session removed)
+                logger.warning(f"BadFunctionCallOutput when calling getActiveHolders for session {session_id} (registry: {registry_addr}). Potentially stale session. Error: {e}")
+                # The main session poller should handle removing the session itself.
+                return
+            except Exception as e:
+                logger.error(f"Error calling getActiveHolders for session {session_id} (registry: {registry_addr}): {e}", exc_info=True)
+                return # Skip if we can't get holders
             
             logger.info(f"Found {len(active_holders)} active holders for session {session_id}. Updating cache...")
             
